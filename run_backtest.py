@@ -59,14 +59,42 @@ def stats(equity: pd.Series) -> dict:
     }
 
 
-def run(prices: pd.DataFrame, strategy_cls, trade_size: int, **kwargs) -> pd.Series:
+def run(prices: pd.DataFrame, strategy_cls, trade_size: int, slippage_bps: float = 2.0,
+       commission_per_share: float = 0.005, **kwargs) -> pd.Series:
     """One full backtest, fresh components each time (they carry state)."""
     data = HistoricalDataHandler(prices)
     strategy = strategy_cls(data, **kwargs)
     portfolio = Portfolio(data, initial_cash=100_000.0, trade_size=trade_size)
-    execution = SimulatedExecutionHandler(data, slippage_bps=2.0,
-                                          commission_per_share=0.005)
+    execution = SimulatedExecutionHandler(data, slippage_bps=slippage_bps,
+                                          commission_per_share=commission_per_share)
     return Backtest(data, strategy, portfolio, execution).run()
+
+
+def cost_sensitivity(prices: pd.DataFrame, strategy_cls, trade_size: int,
+                     base_slippage_bps: float = 2.0, base_commission: float = 0.005,
+                     multipliers=(1, 5, 10, 25, 50, 100), **kwargs) -> list[dict]:
+    """How much of the result is costs, and at what multiple of realistic
+    costs would that stop being true?
+
+    The strategy decides WHEN to trade from price alone (moving averages),
+    never from cash or fill price, so the sequence of buy/sell bars is
+    identical at every cost level. That means the gap between a run's final
+    equity and a same-signals zero-cost run's final equity is exactly the
+    dollar cost of trading — nothing else about the run is moving.
+    """
+    zero_cost_final = run(prices, strategy_cls, trade_size, slippage_bps=0.0,
+                          commission_per_share=0.0, **kwargs).iloc[-1]
+
+    rows = []
+    for m in multipliers:
+        equity = run(prices, strategy_cls, trade_size,
+                    slippage_bps=base_slippage_bps * m,
+                    commission_per_share=base_commission * m, **kwargs)
+        s = stats(equity)
+        rows.append({"multiplier": m, "sharpe": s["sharpe"],
+                    "total_return": s["total_return"],
+                    "cost": zero_cost_final - equity.iloc[-1]})
+    return rows
 
 
 def report(label: str, equity: pd.Series) -> dict:
@@ -100,6 +128,16 @@ def main() -> None:
         report("SPY 2015-2024 - MA cross", spy_ma)
         spy_bh = run(spy, BuyAndHoldStrategy, trade_size=200)
         report("SPY 2015-2024 - buy & hold", spy_bh)
+
+        print("\nCost sensitivity - SPY MA cross at multiples of the base "
+              "2bps slippage / $0.005 commission:")
+        print(f"{'multiplier':>10} {'sharpe':>8} {'return':>9} {'total cost':>11}")
+        for row in cost_sensitivity(spy, MovingAverageCrossStrategy, trade_size=200,
+                                    short_window=50, long_window=200):
+            print(f"{row['multiplier']:>9}x {row['sharpe']:>8.2f} "
+                  f"{row['total_return']:>9.2%} {row['cost']:>10,.0f}$")
+        print("RESULTS.md says costs aren't the story ($102 against a $14,371 gap) -")
+        print("this is what it would take for that to stop being true.")
 
     n_panels = 2 if spy is None else 4
     fig, axes = plt.subplots(n_panels, 1, figsize=(11, 3 * n_panels))

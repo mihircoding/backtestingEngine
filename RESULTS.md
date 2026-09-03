@@ -46,6 +46,26 @@ Time in market: **74%**. Total transaction costs: **$102** ($9 commission + $93 
 $14,371 of underperformance. **Costs are not the story.** Anyone who blames the shortfall on
 frictions hasn't read the trade log.
 
+That's an assertion until it's tested against something. `cost_sensitivity()` reruns the same
+SPY MA-cross backtest at multiples of the 2bps/$0.005 base cost — the strategy decides *when* to
+trade from price alone, never from cash or fill price, so every run makes the identical trades;
+only the cost of making them changes:
+
+| Cost multiplier | Sharpe | Return | Total cost |
+|---|---|---|---|
+| 1x (base case above) | 0.75 | 67.35% | $102 |
+| 5x | 0.74 | 66.94% | $509 |
+| 10x | 0.74 | 66.43% | $1,019 |
+| 25x | 0.72 | 64.90% | $2,547 |
+| 50x | 0.69 | 62.35% | $5,095 |
+| 100x | 0.63 | 57.26% | $10,189 |
+
+Even at **100x** realistic costs — 2% one-way slippage, $0.50/share commission, nothing a real
+broker charges — total costs reach $10,189, still short of the $14,371 whipsaw-driven gap. Costs
+scale roughly linearly with the multiplier because the trade list never changes; the underperformance
+does not, because it was never a cost problem. This is the same claim as above, now with a number
+attached to "how wrong would the cost model have to be."
+
 The story is the whipsaws — every sell-then-buy-higher pair, priced out:
 
 | Round trip | Out at | Back in at | Cost (200 sh) |
