@@ -97,6 +97,36 @@ def cost_sensitivity(prices: pd.DataFrame, strategy_cls, trade_size: int,
     return rows
 
 
+def param_grid(prices: pd.DataFrame, trade_size: int,
+               short_windows=(10, 20, 30, 50, 75),
+               long_windows=(50, 100, 150, 200, 250),
+               **kwargs) -> list[dict]:
+    """Sharpe of MovingAverageCrossStrategy across a grid of (short, long)
+    windows, short < long only.
+
+    RESULTS.md picks 50/200 "by convention rather than fitted" and is
+    explicit that fitting the windows on this same sample would be data
+    snooping. This does not fit anything - it does not pick the best cell
+    and rerun with it. It just asks a narrower question: is 50/200
+    unremarkable among nearby honest choices, or did the 50/200 convention
+    get lucky on this particular sample? A convention that only looks good
+    at exactly one point in a smooth grid is a convention I would not
+    trust in a different sample either.
+    """
+    rows = []
+    for short in short_windows:
+        for long in long_windows:
+            if short >= long:
+                continue
+            equity = run(prices, MovingAverageCrossStrategy, trade_size,
+                        short_window=short, long_window=long, **kwargs)
+            s = stats(equity)
+            rows.append({"short": short, "long": long,
+                        "sharpe": s["sharpe"], "total_return": s["total_return"],
+                        "max_dd": s["max_dd"]})
+    return rows
+
+
 def report(label: str, equity: pd.Series) -> dict:
     s = stats(equity)
     print(f"{label:<28} {s['final']:>12,.0f} {s['total_return']:>9.2%} "
@@ -108,6 +138,8 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--no-download", action="store_true",
                         help="skip the SPY run (no network)")
+    parser.add_argument("--param-grid", action="store_true",
+                        help="also run the (short, long) window grid on SPY and exit")
     args = parser.parse_args()
 
     print(f"{'run':<28} {'final equity':>12} {'return':>9} {'sharpe':>8} {'max dd':>9}")
@@ -138,6 +170,23 @@ def main() -> None:
                   f"{row['total_return']:>9.2%} {row['cost']:>10,.0f}$")
         print("RESULTS.md says costs aren't the story ($102 against a $14,371 gap) -")
         print("this is what it would take for that to stop being true.")
+
+        if args.param_grid:
+            print("\nParameter grid - Sharpe by (short, long) window, SPY 2015-2024:")
+            grid = param_grid(spy, trade_size=200)
+            grid.sort(key=lambda r: r["sharpe"], reverse=True)
+            print(f"{'short':>6} {'long':>6} {'sharpe':>8} {'return':>9} {'max dd':>9}")
+            for row in grid:
+                marker = "  <- convention" if (row["short"], row["long"]) == (50, 200) else ""
+                print(f"{row['short']:>6} {row['long']:>6} {row['sharpe']:>8.2f} "
+                      f"{row['total_return']:>9.2%} {row['max_dd']:>9.2%}{marker}")
+            bh_sharpe = stats(spy_bh)["sharpe"]
+            beat_bh = sum(1 for r in grid if r["sharpe"] > bh_sharpe)
+            print(f"\n{beat_bh}/{len(grid)} grid cells beat buy & hold (Sharpe "
+                  f"{bh_sharpe:.2f}). 50/200 rank by Sharpe: "
+                  f"{[i for i, r in enumerate(grid, 1) if (r['short'], r['long']) == (50, 200)][0]}"
+                  f" of {len(grid)}.")
+            return
 
     n_panels = 2 if spy is None else 4
     fig, axes = plt.subplots(n_panels, 1, figsize=(11, 3 * n_panels))

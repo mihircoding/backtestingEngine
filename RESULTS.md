@@ -114,12 +114,41 @@ equity = 100,000 + 100 shares × (110 − 100) = 101,000
 engine that marks first still passes the final-value check but fails on bar 1. That was the bug
 worth writing a test for.
 
+## Is 50/200 special, or lucky?
+
+`run_backtest.py --param-grid` runs the same strategy across every (short, long) window pair
+in a 5x5 grid (short in 10/20/30/50/75, long in 50/100/150/200/250, short < long only — 23 valid
+pairs) on the same SPY 2015-2024 data, same costs, nothing else changed. This is not a fitting
+exercise — it does not pick the best cell and rerun with it, because that would just be the data
+snooping the bullet below warns about. It asks a narrower, honest question: is 50/200 unusual
+among nearby choices, or would a lot of round numbers have told the same story?
+
+```
+ short   long   sharpe    return    max dd
+    10    100     0.86    64.81%   -13.35%
+    10    200     0.83    65.92%   -11.14%
+    10    250     0.82    65.27%   -12.97%
+    50    250     0.77    70.06%   -17.41%
+    10    150     0.77    59.23%   -16.79%
+    50    150     0.76    67.89%   -17.28%
+    75    200     0.75    68.90%   -17.44%
+    50    200     0.75    67.35%   -17.33%  <- convention
+     ...   (15 more, sharpe 0.57-0.74)
+```
+
+50/200 lands 8th of 23 by Sharpe — solidly middle of the pack, not cherry-picked and not an
+outlier either way. More telling: only 3 of the 23 pairs beat buy-and-hold's 0.77 Sharpe, and
+50/200 is not one of them. That is consistent with the rest of this document — the crossover
+is not a free lunch at any nearby setting, and picking a "better" pair after the fact would have
+been curve-fitting the 2015-2024 sample, not finding a better strategy. Full grid, and the flag
+to reproduce it, in `run_backtest.py`.
+
 ## What is not modeled
 
 - Fills are complete, instant, at any size, at the same bar's close. No liquidity constraint.
 - Slippage scales with price, not with order size relative to volume.
 - No borrow costs, margin, or taxes.
 - Daily bars only. Intraday, the crossover dates would move.
-- One parameter pair (50/200), chosen by convention rather than fitted. That is deliberate —
-  fitting the windows on this same 2015–2024 sample would produce a better number and a worse
-  answer.
+- One parameter pair (50/200) is used throughout. It is not cherry-picked (see the grid above),
+  but it is also not fitted, and it shouldn't be — fitting the windows on this same 2015-2024
+  sample would launder curve-fitting as insight, not find a better strategy.
