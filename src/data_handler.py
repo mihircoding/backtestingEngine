@@ -12,10 +12,19 @@ from .events import MarketEvent
 
 
 class HistoricalDataHandler:
-    """Wraps a DataFrame of close prices (index: timestamps, columns: symbols)."""
+    """Wraps a DataFrame of close prices (index: timestamps, columns: symbols).
 
-    def __init__(self, prices: pd.DataFrame):
+    opens is optional: a same-shaped DataFrame of each bar's open price. It
+    only exists to support NextBarOpenExecutionHandler (see execution.py) —
+    everything else in the engine runs on closes alone. Pass None (the
+    default) and current_open() raises rather than silently returning a
+    close, so a caller can't accidentally price a "next bar open" fill off
+    the wrong number without noticing.
+    """
+
+    def __init__(self, prices: pd.DataFrame, opens: pd.DataFrame | None = None):
         self.prices = prices
+        self.opens = opens
         self.symbols = list(prices.columns)
         self._cursor = 0  # number of bars released so far
 
@@ -44,6 +53,20 @@ class HistoricalDataHandler:
     def current_price(self, symbol: str) -> float:
         """Close of the most recently released bar (used for fills/marking)."""
         return float(self.prices[symbol].iloc[self._cursor - 1])
+
+    def current_open(self, symbol: str) -> float:
+        """Open of the most recently released bar.
+
+        Only meaningful when this handler was built with an opens frame —
+        that's a deliberate hard failure, not a fallback to the close, so a
+        next-bar-open fill can never silently become a same-bar-close fill.
+        """
+        if self.opens is None:
+            raise ValueError(
+                "this HistoricalDataHandler has no open-price data — pass "
+                "opens=... to the constructor to use next-bar-open fills"
+            )
+        return float(self.opens[symbol].iloc[self._cursor - 1])
 
     def current_time(self) -> pd.Timestamp:
         return self.prices.index[self._cursor - 1]

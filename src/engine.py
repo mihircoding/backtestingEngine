@@ -33,6 +33,15 @@ class Backtest:
                 event = self.events.get()
 
                 if isinstance(event, MarketEvent):
+                    # Orders queued on the PREVIOUS bar settle here, first —
+                    # before this bar's own signals are generated. No-op for
+                    # SimulatedExecutionHandler, which never has anything
+                    # pending; this is what lets NextBarOpenExecutionHandler
+                    # defer a fill by one bar without the engine caring which
+                    # execution handler it's holding.
+                    for fill in self.execution.pop_settled_fills(event.time):
+                        self.events.put(fill)
+
                     for signal in self.strategy.on_market(event):
                         self.events.put(signal)
 
@@ -42,7 +51,9 @@ class Backtest:
                         self.events.put(order)
 
                 elif isinstance(event, OrderEvent):
-                    self.events.put(self.execution.execute(event))
+                    fill = self.execution.execute(event)
+                    if fill is not None:
+                        self.events.put(fill)
 
                 elif isinstance(event, FillEvent):
                     self.portfolio.on_fill(event)

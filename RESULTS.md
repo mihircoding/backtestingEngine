@@ -143,9 +143,25 @@ is not a free lunch at any nearby setting, and picking a "better" pair after the
 been curve-fitting the 2015-2024 sample, not finding a better strategy. Full grid, and the flag
 to reproduce it, in `run_backtest.py`.
 
+## Is same-bar-close as optimistic as the README claims?
+
+Every result above fills at the close of the bar the signal fired on — the README calls that
+"optimistic" and says the honest alternative is filling at the *next* bar's open. That was an
+assertion until now. `NextBarOpenExecutionHandler` (`src/execution.py`) implements the honest
+version: `run_backtest.py --fill-timing` runs the identical SPY MA-cross backtest through both
+handlers, same signals, same slippage and commission, changing only when the fill happens.
+
+```
+FILL_TIMING_TABLE_PLACEHOLDER
+```
+
+FILL_TIMING_NARRATIVE_PLACEHOLDER
+
 ## What is not modeled
 
-- Fills are complete, instant, at any size, at the same bar's close. No liquidity constraint.
+- Fills are complete, instant, at any size, under either fill-timing model. No liquidity
+  constraint — `NextBarOpenExecutionHandler` changes *when* the fill happens, not that it's
+  always instant and complete.
 - Slippage scales with price, not with order size relative to volume.
 - No borrow costs, margin, or taxes.
 - Daily bars only. Intraday, the crossover dates would move.

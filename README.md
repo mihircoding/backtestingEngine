@@ -4,13 +4,14 @@ A backtester built the way production trading systems are built: components that
 other only through a queue of events, processing one timestamp at a time. No component can see
 the future, because the future hasn't been pushed onto the queue yet.
 
-Roughly 300 lines of source, 18 tests, and one uncomfortable result — see
+Roughly 300 lines of source, 32 tests, and one uncomfortable result — see
 [RESULTS.md](RESULTS.md). Interview notes are in [INTERVIEW.md](INTERVIEW.md).
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q          # 18 passed
-python run_backtest.py       # synthetic + SPY, writes engine_backtest.png
+python -m pytest -q               # 32 passed
+python run_backtest.py            # synthetic + SPY, writes engine_backtest.png
+python run_backtest.py --fill-timing   # same-bar-close vs next-bar-open, SPY
 ```
 
 ![Synthetic and SPY backtests](engine_backtest.png)
@@ -104,8 +105,11 @@ Buys fill *above* the close, sells fill *below*, by `slippage_bps`. Slippage alw
 that asymmetry is the entire model. Commission is per share.
 
 Filling at the close of the bar you signalled on is optimistic: you observed the close and then
-traded at it. A stricter model fills at the next bar's open. That's a deliberate, documented
-modeling choice, not an oversight, and knowing to flag it is most of the point.
+traded at it. That was a deliberate, documented modeling choice, not an oversight — and it's now
+also a choice you can turn off. `NextBarOpenExecutionHandler` (`src/execution.py`) queues the
+order instead and fills it at the *following* bar's open, which is what a real order placed on
+a close actually gets. `run_backtest.py --fill-timing` runs the identical SPY backtest both ways;
+[RESULTS.md](RESULTS.md) has the numbers.
 
 ---
 
@@ -142,7 +146,7 @@ Each of these is a small, well-contained change, which is the point of the archi
 
 - **Limit orders** — the execution handler needs a resting book (see the limit-order-book
   project) and fills become conditional on subsequent bars.
-- **Next-bar-open fills** — queue the order and execute it on the following `MarketEvent`.
+- ~~Next-bar-open fills~~ — done, `NextBarOpenExecutionHandler` in `src/execution.py`.
 - **Position limits / stop losses** — pure portfolio-layer changes; no strategy edits.
 - **Multiple symbols** — already supported; the loop iterates `data.symbols`.
 - **Walk-forward parameter selection** — re-fit the MA windows on a rolling in-sample window.
@@ -151,7 +155,8 @@ Each of these is a small, well-contained change, which is the point of the archi
 
 Stated plainly, because a backtester that hides its assumptions is worse than no backtester.
 
-- Fills are always complete, at the same bar's close, at any size. No liquidity constraint.
+- Fills are always complete, at any size — no liquidity constraint, under either execution
+  handler. `NextBarOpenExecutionHandler` fixes the *timing* of the fill, not this.
 - Slippage is proportional to price, not to order size relative to volume.
 - No borrow costs, no margin, no dividends beyond what `auto_adjust` bakes into the prices.
 - Floats throughout. Real accounting systems use integer cents (`0.1 + 0.2 != 0.3`); the tests

@@ -21,7 +21,7 @@ import pandas as pd
 
 from src.data_handler import HistoricalDataHandler
 from src.engine import Backtest
-from src.execution import SimulatedExecutionHandler
+from src.execution import NextBarOpenExecutionHandler, SimulatedExecutionHandler
 from src.portfolio import Portfolio
 from src.strategy import BuyAndHoldStrategy, MovingAverageCrossStrategy
 
@@ -37,12 +37,44 @@ def make_prices(n: int = 500, seed: int = 7) -> pd.DataFrame:
     return pd.DataFrame({"SYN": path}, index=idx)
 
 
+def make_opens(closes: pd.DataFrame, seed: int = 11, gap_bps: float = 15.0) -> pd.DataFrame:
+    """Synthetic open prices for make_prices()'s synthetic series.
+
+    There's no real intraday process to draw on here, so this models the one
+    thing every real market actually does overnight: gap. Each open is the
+    prior close plus a small random jump (an overnight gap), NOT the same
+    bar's own close — using the same bar's close would make same-bar-close
+    and next-bar-open fills identical by construction and defeat the point
+    of comparing them. The first bar has no prior close, so its open equals
+    its own close (nothing traded before this backtest starts anyway).
+    """
+    rng = np.random.default_rng(seed)
+    prev_close = closes.shift(1)
+    gap = 1 + rng.normal(0, gap_bps / 10_000, len(closes))
+    opens = prev_close.mul(gap, axis=0)
+    opens.iloc[0] = closes.iloc[0]
+    return opens
+
+
 def fetch_prices(symbol: str = "SPY", start: str = "2015-01-01",
                  end: str = "2024-12-31") -> pd.DataFrame:
     import yfinance as yf
 
     raw = yf.download(symbol, start=start, end=end, auto_adjust=True,
                       progress=False)["Close"].dropna()
+    return pd.DataFrame({symbol: raw.squeeze()})
+
+
+def fetch_opens(symbol: str = "SPY", start: str = "2015-01-01",
+                end: str = "2024-12-31") -> pd.DataFrame:
+    """Real opening prices for the same symbol and range as fetch_prices() —
+    what NextBarOpenExecutionHandler needs, and fetch_prices() doesn't give
+    you. Fetched from the same yfinance download so the index lines up
+    exactly with the close series."""
+    import yfinance as yf
+
+    raw = yf.download(symbol, start=start, end=end, auto_adjust=True,
+                      progress=False)["Open"].dropna()
     return pd.DataFrame({symbol: raw.squeeze()})
 
 
@@ -60,14 +92,40 @@ def stats(equity: pd.Series) -> dict:
 
 
 def run(prices: pd.DataFrame, strategy_cls, trade_size: int, slippage_bps: float = 2.0,
-       commission_per_share: float = 0.005, **kwargs) -> pd.Series:
-    """One full backtest, fresh components each time (they carry state)."""
-    data = HistoricalDataHandler(prices)
+       commission_per_share: float = 0.005, opens: pd.DataFrame | None = None,
+       execution_cls=SimulatedExecutionHandler, **kwargs) -> pd.Series:
+    """One full backtest, fresh components each time (they carry state).
+
+    opens / execution_cls: pass opens=<DataFrame> and
+    execution_cls=NextBarOpenExecutionHandler to fill at the following bar's
+    open instead of the same bar's close. See fill_timing_comparison() below
+    for what that costs.
+    """
+    data = HistoricalDataHandler(prices, opens=opens)
     strategy = strategy_cls(data, **kwargs)
     portfolio = Portfolio(data, initial_cash=100_000.0, trade_size=trade_size)
-    execution = SimulatedExecutionHandler(data, slippage_bps=slippage_bps,
-                                          commission_per_share=commission_per_share)
+    execution = execution_cls(data, slippage_bps=slippage_bps,
+                              commission_per_share=commission_per_share)
     return Backtest(data, strategy, portfolio, execution).run()
+
+
+def fill_timing_comparison(prices: pd.DataFrame, opens: pd.DataFrame, strategy_cls,
+                           trade_size: int, **kwargs) -> dict:
+    """Same signals, same costs — only WHEN the fill happens changes.
+
+    README calls same-bar-close fills "optimistic": you saw the close and
+    then traded at it, which no real order can do. This runs the identical
+    backtest twice, swapping only the execution handler, to put a number on
+    that optimism instead of just asserting it.
+    """
+    same_bar = run(prices, strategy_cls, trade_size,
+                   execution_cls=SimulatedExecutionHandler, **kwargs)
+    next_open = run(prices, strategy_cls, trade_size, opens=opens,
+                    execution_cls=NextBarOpenExecutionHandler, **kwargs)
+    return {
+        "same_bar_close": stats(same_bar),
+        "next_bar_open": stats(next_open),
+    }
 
 
 def cost_sensitivity(prices: pd.DataFrame, strategy_cls, trade_size: int,
@@ -140,6 +198,8 @@ def main() -> None:
                         help="skip the SPY run (no network)")
     parser.add_argument("--param-grid", action="store_true",
                         help="also run the (short, long) window grid on SPY and exit")
+    parser.add_argument("--fill-timing", action="store_true",
+                        help="compare same-bar-close vs next-bar-open fills on SPY and exit")
     args = parser.parse_args()
 
     print(f"{'run':<28} {'final equity':>12} {'return':>9} {'sharpe':>8} {'max dd':>9}")
@@ -186,6 +246,23 @@ def main() -> None:
                   f"{bh_sharpe:.2f}). 50/200 rank by Sharpe: "
                   f"{[i for i, r in enumerate(grid, 1) if (r['short'], r['long']) == (50, 200)][0]}"
                   f" of {len(grid)}.")
+            return
+
+        if args.fill_timing:
+            spy_opens = fetch_opens()
+            print("\nFill timing - SPY MA cross, same-bar-close vs next-bar-open, "
+                  "same signals and costs:")
+            cmp = fill_timing_comparison(spy, spy_opens, MovingAverageCrossStrategy,
+                                         trade_size=200, short_window=50, long_window=200)
+            print(f"{'fill':<16} {'final equity':>12} {'return':>9} {'sharpe':>8} {'max dd':>9}")
+            for label, key in [("same-bar close", "same_bar_close"),
+                               ("next-bar open", "next_bar_open")]:
+                s = cmp[key]
+                print(f"{label:<16} {s['final']:>12,.0f} {s['total_return']:>9.2%} "
+                      f"{s['sharpe']:>8.2f} {s['max_dd']:>9.2%}")
+            gap = cmp["same_bar_close"]["final"] - cmp["next_bar_open"]["final"]
+            print(f"\nWaiting one extra bar to fill costs ${gap:,.0f} here - see "
+                  "RESULTS.md for what that number does and doesn't mean.")
             return
 
     n_panels = 2 if spy is None else 4
