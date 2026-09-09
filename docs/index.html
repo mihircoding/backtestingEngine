@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Event-Driven Backtesting Engine — Mihir Konda</title>
+<meta name="description" content="An event-driven backtester with no lookahead by construction. Same 50/200 crossover: Sharpe 4.10 on synthetic data, 0.75 on SPY, losing to buy-and-hold. Full attribution of why.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#fbfbfa; --surface:#fff; --line:#e5e4df; --line2:#d0cfc8;
+  --ink:#16161a; --ink2:#55554f; --ink3:#8b8a83;
+  --blue:#2a6fd6; --green:#12946a; --red:#d0413f; --amber:#b3760a;
+  --blue-bg:#eaf2fc; --green-bg:#e6f4ee; --red-bg:#fcecec; --amber-bg:#fdf3e3;
+  --radius:10px; --max:1120px;
+}
+@media (prefers-color-scheme:dark){
+  :root{--bg:#141414;--surface:#1c1c1b;--line:#2e2e2c;--line2:#3d3d3a;
+  --ink:#f2f2ef;--ink2:#b8b7b0;--ink3:#87867f;
+  --blue:#5b9bf0;--green:#3fbf90;--red:#ef6a68;--amber:#dfa03c;
+  --blue-bg:#17263a;--green-bg:#122a22;--red-bg:#331a1a;--amber-bg:#332715;}
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  font-size:16px;line-height:1.65;-webkit-font-smoothing:antialiased}
+.wrap{max-width:var(--max);margin:0 auto;padding:0 24px}
+code,.mono{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:.88em}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+h1{font-size:38px;line-height:1.15;font-weight:600;letter-spacing:-.02em;margin:0 0 12px}
+h2{font-size:25px;font-weight:600;letter-spacing:-.015em;margin:0 0 6px}
+h3{font-size:17px;font-weight:600;margin:0 0 8px}
+p{margin:0 0 14px;color:var(--ink2)}
+section{padding:46px 0;border-top:1px solid var(--line)}
+.lede{font-size:18px;color:var(--ink2);max-width:70ch}
+.eyebrow{font-size:12px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--ink3);margin-bottom:10px}
+header{padding:60px 0 46px}
+.tagline{display:inline-block;font-size:12.5px;font-weight:500;padding:4px 11px;border-radius:99px;
+  background:var(--red-bg);color:var(--red);margin-bottom:18px}
+.links{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px}
+.btn{display:inline-flex;align-items:center;gap:7px;padding:8px 15px;border-radius:8px;
+  border:1px solid var(--line2);color:var(--ink);font-size:14px;font-weight:500;background:var(--surface)}
+.btn:hover{border-color:var(--ink3);text-decoration:none}
+.btn.primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px;margin:26px 0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:15px 17px}
+.card .k{font-size:12px;color:var(--ink3);margin-bottom:5px;font-weight:500}
+.card .v{font-size:29px;font-weight:600;letter-spacing:-.02em;line-height:1.05}
+.card .s{font-size:12.5px;color:var(--ink3);margin-top:5px}
+.v.red{color:var(--red)} .v.green{color:var(--green)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:26px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px}
+.chart{position:relative;height:210px;margin-top:4px}
+.cap{font-size:13px;color:var(--ink3);line-height:1.6;margin-top:10px}
+.note{border-left:3px solid var(--amber);background:var(--amber-bg);padding:13px 16px;border-radius:0 8px 8px 0;margin:18px 0}
+.note.blue{border-color:var(--blue);background:var(--blue-bg)}
+.note p{margin:0;color:var(--ink);font-size:14.5px}
+.note p+p{margin-top:9px}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{text-align:left;font-weight:600;color:var(--ink2);padding:9px 10px;border-bottom:1px solid var(--line2);
+  white-space:nowrap;font-size:12.5px}
+th.sortable{cursor:pointer;user-select:none}
+th.sortable:hover{color:var(--ink)}
+td{padding:8px 10px;border-bottom:1px solid var(--line);color:var(--ink2)}
+td.n{text-align:right;font-family:"JetBrains Mono",monospace;font-size:12.5px}
+td strong{color:var(--ink);font-weight:600}
+.pos{color:var(--green)} .neg{color:var(--red)}
+.pill{display:inline-block;font-size:11px;padding:2px 8px;border-radius:99px;background:var(--blue-bg);color:var(--blue);font-weight:500}
+.pill.grey{background:var(--line);color:var(--ink3)}
+.ctl{display:flex;gap:14px;flex-wrap:wrap;align-items:end;margin-bottom:16px}
+.ctl label{display:block;font-size:12px;color:var(--ink3);margin-bottom:5px;font-weight:500}
+select,input[type=search]{padding:7px 10px;border:1px solid var(--line2);border-radius:7px;
+  background:var(--surface);color:var(--ink);font-size:13.5px;font-family:inherit}
+.slider{min-width:150px}
+.slider .row{display:flex;justify-content:space-between;font-size:12px;color:var(--ink3);margin-bottom:4px;font-weight:500}
+.slider .row b{color:var(--ink);font-family:"JetBrains Mono",monospace}
+input[type=range]{width:100%;accent-color:var(--blue)}
+.scroll{overflow-x:auto}
+.pager{display:flex;gap:8px;align-items:center;margin-top:14px;font-size:13px;color:var(--ink3)}
+.pager button{padding:5px 11px;border:1px solid var(--line2);background:var(--surface);color:var(--ink);
+  border-radius:6px;cursor:pointer;font-size:13px;font-family:inherit}
+.pager button:disabled{opacity:.4;cursor:default}
+ul{color:var(--ink2);padding-left:20px;margin:0 0 14px}
+li{margin-bottom:7px}
+footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);font-size:13.5px}
+@media(max-width:860px){.grid2{grid-template-columns:1fr}h1{font-size:30px}}
+</style>
+
+</head>
+<body>
+
+<header>
+<div class="wrap">
+  <div class="tagline">Sharpe 4.10 on one dataset, 0.75 on the other</div>
+  <h1>Event-Driven Backtesting Engine</h1>
+  <p class="lede">A backtester built the way production trading systems are built: five components that talk to each other only through a queue of events, processing one timestamp at a time. <strong style="color:var(--ink)">No component can see the future, because the future hasn't been pushed onto the queue yet.</strong> Roughly 300 lines of source and 32 tests — and one uncomfortable result.</p>
+  <div class="links">
+    <a class="btn primary" href="#results">The uncomfortable result</a>
+    <a class="btn" href="https://github.com/mihircoding/backtestingEngine">Source on GitHub</a>
+    <a class="btn" href="https://github.com/mihircoding/backtestingEngine/blob/main/RESULTS.md">Full write-up</a>
+  </div>
+</div>
+</header>
+
+<section>
+<div class="wrap">
+  <div class="eyebrow">Architecture</div>
+  <h2>Five components, four messages</h2>
+  <p class="lede">The natural way to backtest in pandas is vectorized: compute a signal column, shift it, multiply by returns. It's fast, and it has three structural problems — lookahead is one missing <span class="mono">.shift(1)</span> away, order handling doesn't map to column arithmetic, and the research code looks nothing like live code.</p>
+
+  <div class="panel" style="margin:22px 0">
+    <svg viewBox="0 0 940 210" style="width:100%;height:auto" role="img" aria-label="Event flow: DataHandler emits MarketEvent to Strategy, which emits SignalEvent to Portfolio, which emits OrderEvent to ExecutionHandler, which emits FillEvent back to Portfolio">
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--ink3)"/>
+        </marker>
+      </defs>
+      <g font-family="Inter,sans-serif">
+        <rect x="8" y="58" width="150" height="52" rx="8" fill="var(--surface)" stroke="var(--line2)"/>
+        <text x="83" y="82" text-anchor="middle" font-size="14" font-weight="600" fill="var(--ink)">DataHandler</text>
+        <text x="83" y="99" text-anchor="middle" font-size="11" fill="var(--ink3)">replays bars</text>
+
+        <rect x="228" y="58" width="150" height="52" rx="8" fill="var(--surface)" stroke="var(--line2)"/>
+        <text x="303" y="82" text-anchor="middle" font-size="14" font-weight="600" fill="var(--ink)">Strategy</text>
+        <text x="303" y="99" text-anchor="middle" font-size="11" fill="var(--ink3)">has opinions</text>
+
+        <rect x="448" y="58" width="150" height="52" rx="8" fill="var(--surface)" stroke="var(--blue)" stroke-width="1.6"/>
+        <text x="523" y="82" text-anchor="middle" font-size="14" font-weight="600" fill="var(--ink)">Portfolio</text>
+        <text x="523" y="99" text-anchor="middle" font-size="11" fill="var(--blue)">sizing + risk lives here</text>
+
+        <rect x="668" y="58" width="164" height="52" rx="8" fill="var(--surface)" stroke="var(--line2)"/>
+        <text x="750" y="82" text-anchor="middle" font-size="14" font-weight="600" fill="var(--ink)">ExecutionHandler</text>
+        <text x="750" y="99" text-anchor="middle" font-size="11" fill="var(--ink3)">slippage + commission</text>
+
+        <line x1="160" y1="84" x2="222" y2="84" stroke="var(--ink3)" stroke-width="1.4" marker-end="url(#ar)"/>
+        <text x="191" y="74" text-anchor="middle" font-size="10.5" font-family="JetBrains Mono,monospace" fill="var(--ink2)">Market</text>
+
+        <line x1="380" y1="84" x2="442" y2="84" stroke="var(--ink3)" stroke-width="1.4" marker-end="url(#ar)"/>
+        <text x="411" y="74" text-anchor="middle" font-size="10.5" font-family="JetBrains Mono,monospace" fill="var(--ink2)">Signal</text>
+
+        <line x1="600" y1="84" x2="662" y2="84" stroke="var(--ink3)" stroke-width="1.4" marker-end="url(#ar)"/>
+        <text x="631" y="74" text-anchor="middle" font-size="10.5" font-family="JetBrains Mono,monospace" fill="var(--ink2)">Order</text>
+
+        <path d="M750,112 L750,150 L523,150 L523,114" fill="none" stroke="var(--ink3)" stroke-width="1.4" marker-end="url(#ar)"/>
+        <text x="637" y="165" text-anchor="middle" font-size="10.5" font-family="JetBrains Mono,monospace" fill="var(--ink2)">Fill — quantity, price after slippage, commission</text>
+
+        <text x="8" y="24" font-size="11.5" font-weight="600" fill="var(--ink3)">OUTER LOOP: TIME &nbsp;·&nbsp; INNER LOOP: CAUSALITY</text>
+        <line x1="8" y1="34" x2="932" y2="34" stroke="var(--line)" stroke-width="1"/>
+      </g>
+    </svg>
+  </div>
+
+  <div class="grid2">
+    <div>
+      <h3>Why the separation matters</h3>
+      <p>Strategies express <em>views</em>. The portfolio turns views into sized orders — this is where risk management lives. The execution handler models market frictions. In a real shop these are three systems owned by three teams, and the interfaces between them are exactly these four messages.</p>
+      <p>The engine itself is two nested loops. The outer loop is time. The inner loop is causality: one bar can cascade into a signal, an order and a fill, and all of it must settle before the bar's equity is stamped.</p>
+    </div>
+    <div>
+      <h3>Lookahead is prevented structurally, not by convention</h3>
+      <p><span class="mono">HistoricalDataHandler</span> keeps a cursor. <span class="mono">get_latest()</span> slices only up to that cursor, and <strong style="color:var(--ink)">there is no method on the class that returns unreleased data</strong>. The strategy is not trusted to avoid the future; it is not offered the future.</p>
+      <p>That's the difference between a convention and a guarantee — and it's worth saying that way in an interview.</p>
+    </div>
+  </div>
+
+  <div class="note blue">
+    <p><strong>The bug worth writing a test for.</strong> Getting <span class="mono">mark_to_market</span> on the wrong side of the inner loop makes your equity curve lag reality by exactly one bar — which looks plausible and is wrong. An engine that marks before fills still passes a final-value check but gets bar 1 wrong, so the test suite checks bar 1 to the cent specifically.</p>
+  </div>
+</div>
+</section>
+
+<section id="results">
+<div class="wrap">
+  <div class="eyebrow">Result</div>
+  <h2>Same code, same strategy, two very different numbers</h2>
+  <p class="lede">A 50/200 moving-average crossover, run first on a synthetic sine wave and then on ten years of SPY. The gap between the two Sharpe ratios is the entire lesson.</p>
+
+  <div class="cards">
+    <div class="card"><div class="k">Synthetic — MA cross</div><div class="v green" id="m-syn-sh">—</div><div class="s">Sharpe, 500 bars</div></div>
+    <div class="card"><div class="k">SPY — MA cross</div><div class="v" id="m-spy-sh">—</div><div class="s" id="m-spy-ret">—</div></div>
+    <div class="card"><div class="k">SPY — buy &amp; hold</div><div class="v" id="m-bh-sh">—</div><div class="s" id="m-bh-ret">—</div></div>
+    <div class="card"><div class="k">Underperformance</div><div class="v red" id="m-gap">—</div><div class="s">with a deeper drawdown</div></div>
+  </div>
+
+  <div class="grid2" style="margin-top:8px">
+    <div class="panel">
+      <h3>Synthetic sine wave</h3>
+      <div class="chart"><canvas id="c-syn"></canvas></div>
+      <p class="cap"><strong style="color:var(--ink)">This number is meaningless, and that is the point.</strong> The generator builds a drifting sine wave — cyclical by construction. A trend-following strategy on data that trends in clean regular arcs is being graded on an exam it wrote itself. Sharpe 4.10 is not evidence the strategy works; it's evidence the <em>engine</em> works, which is the only thing synthetic data can honestly tell you.</p>
+    </div>
+    <div class="panel">
+      <h3>SPY, 2015–2024</h3>
+      <div class="chart"><canvas id="c-spy"></canvas></div>
+      <p class="cap">Then you go to real prices and expect the number to collapse. It does: nine fills in ten years, 74% time in market, and a Sharpe of 0.75 against buy-and-hold's 0.77 — <em>with a deeper drawdown</em>. It took more pain for less money.</p>
+    </div>
+  </div>
+</div>
+</section>
+
+<section>
+<div class="wrap">
+  <div class="eyebrow">Attribution</div>
+  <h2>Where the money actually went</h2>
+  <p class="lede">Nine fills in ten years — four and a half round trips. Small enough to price out individually, which is the only way to know whether an explanation is real.</p>
+
+  <div class="grid2">
+    <div class="panel">
+      <h3>Every fill</h3>
+      <div class="scroll"><table id="t-trades"><thead><tr><th>Date</th><th>Action</th><th class="n">Price</th></tr></thead><tbody></tbody></table></div>
+    </div>
+    <div>
+      <h3>Costs are not the story</h3>
+      <p>Total transaction costs across the whole run: <strong style="color:var(--ink)">$102</strong> — $9 commission, $93 slippage — against $14,371 of underperformance. Anyone who blames the shortfall on frictions hasn't read the trade log.</p>
+      <p>That's an assertion until it's tested. Re-running at multiples of realistic costs answers "how wrong would the cost model have to be for this to be a cost problem":</p>
+      <div class="scroll"><table id="t-costs"><thead><tr><th>Cost multiple</th><th class="n">Sharpe</th><th class="n">Return</th><th class="n">Total cost</th></tr></thead><tbody></tbody></table></div>
+      <p class="cap">Even at <strong style="color:var(--ink)">100&times;</strong> realistic costs — 2% one-way slippage, $0.50/share commission, nothing a real broker charges — costs reach $10,189, still short of the gap. The trade list never changes, because the strategy decides <em>when</em> to trade from price alone.</p>
+    </div>
+  </div>
+
+  <div class="note">
+    <p><strong>The whipsaws are the story.</strong> Every sell-then-buy-higher pair, priced out: 2016 &minus;$3,956 · 2018–19 &minus;$3,318 · <strong>2020 COVID &minus;$11,150</strong> · 2022 bear <span class="pos">+$4,542</span> — net &minus;$13,882. Add $102 of costs and $486 of entry-timing drag and you have $14,470, essentially the entire $14,371 gap. <strong>The underperformance is fully explained by four decisions.</strong></p>
+    <p>The 2020 round trip alone is 78% of it: the 50-day crossed below the 200-day on March 31, <em>after</em> the crash, and crossed back on July 6, <em>after</em> the recovery. Sold near the bottom, bought back 24% higher. That is not bad luck — it is what a lagging indicator does to a V-shaped move, and it is structural. The 2022 trade is the counterexample that keeps this honest: a slow grinding bear market is exactly the regime a 50/200 crossover is built for, and there it made $4,542.</p>
+  </div>
+</div>
+</section>
+
+<section>
+<div class="wrap">
+  <div class="eyebrow">Robustness</div>
+  <h2>Is 50/200 special, or just lucky?</h2>
+  <p class="lede">The same strategy across every (short, long) window pair in a 5&times;5 grid — 23 valid combinations, same data, same costs, nothing else changed. This is not a fitting exercise: it does not pick the best cell and re-run with it, because that would be the data snooping the caveats warn about. It asks a narrower question.</p>
+
+  <div class="panel">
+    <div class="chart" style="height:300px"><canvas id="c-grid"></canvas></div>
+    <p class="cap">Each dot is one full backtest. The dashed line is buy-and-hold's Sharpe of 0.77. <span class="mono">50/200</span> is highlighted.</p>
+  </div>
+
+  <div class="cards" style="margin-top:20px">
+    <div class="card"><div class="k">50/200 rank by Sharpe</div><div class="v" id="m-rank">—</div><div class="s">middle of the pack</div></div>
+    <div class="card"><div class="k">Cells beating buy &amp; hold</div><div class="v" id="m-beat">—</div><div class="s">50/200 is not one of them</div></div>
+    <div class="card"><div class="k">Best cell in the grid</div><div class="v" id="m-best">—</div><div class="s" id="m-best-s">—</div></div>
+  </div>
+
+  <div class="note">
+    <p><strong>The answer is "unremarkable", which is the useful answer.</strong> 50/200 lands mid-pack — not cherry-picked, and not an outlier either way. More telling: only a handful of the 23 pairs beat buy-and-hold at all, and 50/200 isn't among them. The crossover is not a free lunch at any nearby setting, and picking a "better" pair after the fact would be curve-fitting this sample, not finding a better strategy.</p>
+  </div>
+</div>
+</section>
+
+<section>
+<div class="wrap">
+  <div class="eyebrow">Execution modeling</div>
+  <h2>What filling on the close you just saw is worth</h2>
+  <p class="lede">Every number above fills at the close of the bar the signal fired on. That's optimistic — you observed the close and then traded at it, which no real order can do. The honest alternative fills at the <em>next</em> bar's open, so the engine implements both and runs them head to head.</p>
+
+  <div class="grid2">
+    <div class="panel">
+      <div class="chart"><canvas id="c-fill"></canvas></div>
+    </div>
+    <div>
+      <div class="scroll"><table id="t-fill"><thead><tr><th>Fill model</th><th class="n">Final equity</th><th class="n">Return</th><th class="n">Sharpe</th></tr></thead><tbody></tbody></table></div>
+      <p style="margin-top:14px">Waiting the extra bar costs <strong style="color:var(--ink)" id="x-gap">—</strong> across the ten-year run — about $125 per fill, a few basis points of overnight gap each time. Real money, and directionally exactly what you'd expect: you can never fill on a stale price to your own advantage.</p>
+      <p>Small next to the $14,371 whipsaw gap, so nothing above changes. But small isn't zero — a strategy trading far more often, or sized much larger, compounds this into something that isn't small anymore.</p>
+    </div>
+  </div>
+</div>
+</section>
+
+<section>
+<div class="wrap">
+  <div class="eyebrow">Honesty</div>
+  <h2>What isn't modeled</h2>
+  <div class="grid2">
+    <div>
+      <ul>
+        <li>Fills are complete, instant, at any size, under either fill-timing model. <strong style="color:var(--ink)">No liquidity constraint.</strong></li>
+        <li>Slippage scales with price, not with order size relative to volume.</li>
+        <li>No borrow costs, margin, or taxes.</li>
+        <li>Daily bars only. Intraday, the crossover dates would move.</li>
+      </ul>
+    </div>
+    <div>
+      <ul>
+        <li>Floats throughout. Real accounting systems use integer cents, because <span class="mono">0.1 + 0.2 != 0.3</span>; the tests compare with tolerances instead.</li>
+        <li>One parameter pair (50/200) throughout. Not cherry-picked — see the grid — but also not fitted, and it shouldn't be.</li>
+        <li>Single asset class, one venue.</li>
+      </ul>
+    </div>
+  </div>
+  <p style="margin-top:6px">Stated plainly, because a backtester that hides its assumptions is worse than no backtester.</p>
+</div>
+</section>
+
+<footer>
+<div class="wrap">
+  <p style="margin-bottom:10px">Built by <a href="https://github.com/mihircoding">Mihir Konda</a> — every number on this page is generated by <span class="mono">docs/build_data.py</span> from the code in <a href="https://github.com/mihircoding/backtestingEngine">the repository</a>, not typed in by hand.</p>
+  <p style="margin:0;font-size:13px">Quant projects: <strong style="color:var(--ink2)">Backtesting Engine</strong> · <a href="https://mihircoding.github.io/limitOrderBook/">Order Book</a> · <a href="https://mihircoding.github.io/pairsTrading/">Pairs Trading</a> · <a href="https://mihircoding.github.io/options-pricer/">Options Pricer</a> · <a href="https://mihircoding.github.io/portfolioOptimization/">Portfolio Optimization</a></p>
+</div>
+</footer>
+
+<script src="data.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+const D = window.DATA;
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const C = () => ({ink:css('--ink'), ink2:css('--ink2'), ink3:css('--ink3'),
+                  line:css('--line'), blue:css('--blue'), green:css('--green'),
+                  red:css('--red'), amber:css('--amber')});
+
+Chart.defaults.font.family = "Inter, sans-serif";
+Chart.defaults.font.size = 11;
+Chart.defaults.animation = false;
+
+const pct = x => (x * 100).toFixed(2) + '%';
+const usd = x => '$' + Math.round(x).toLocaleString();
+
+function lineChart(id, labels, sets, opts = {}) {
+  const c = C();
+  return new Chart(document.getElementById(id), {
+    type: 'line',
+    data: {labels, datasets: sets.map(s => ({
+      label: s.label, data: s.data, borderColor: s.color, backgroundColor: s.color,
+      borderWidth: s.width || 1.6, pointRadius: 0, borderDash: s.dash || [], tension: 0
+    }))},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: {mode: 'index', intersect: false},
+      plugins: {
+        legend: {display: sets.length > 1, labels: {color: c.ink2, boxWidth: 10, boxHeight: 2,
+                 usePointStyle: false, padding: 14}},
+        tooltip: {callbacks: {label: ctx => `${ctx.dataset.label}: ${opts.fmt ? opts.fmt(ctx.parsed.y) : ctx.parsed.y}`}}
+      },
+      scales: {
+        x: {grid: {display: false}, ticks: {color: c.ink3, maxTicksLimit: 7, autoSkip: true}},
+        y: {grid: {color: c.line}, ticks: {color: c.ink3, callback: opts.ytick || (v => v)},
+            border: {display: false}}
+      }
+    }
+  });
+}
+
+// --- headline metrics ---
+const syn = D.synthetic, spy = D.spy;
+document.getElementById('m-syn-sh').textContent = syn.ma_stats.sharpe.toFixed(2);
+document.getElementById('m-spy-sh').textContent = spy.ma_stats.sharpe.toFixed(2);
+document.getElementById('m-spy-ret').textContent = pct(spy.ma_stats.total_return) + ' total return';
+document.getElementById('m-bh-sh').textContent = spy.bh_stats.sharpe.toFixed(2);
+document.getElementById('m-bh-ret').textContent = pct(spy.bh_stats.total_return) + ' total return';
+document.getElementById('m-gap').textContent =
+  '-' + usd(spy.bh_stats.final - spy.ma_stats.final);
+
+// --- equity charts ---
+lineChart('c-syn', syn.ma.map(p => p[0]),
+  [{label: 'MA cross 10/30', data: syn.ma.map(p => p[1]), color: C().blue},
+   {label: 'Buy & hold', data: syn.bh.map(p => p[1]), color: C().ink3, dash: [4, 3]}],
+  {fmt: usd, ytick: v => '$' + (v / 1000).toFixed(0) + 'k'});
+
+lineChart('c-spy', spy.ma.map(p => p[0]),
+  [{label: 'MA cross 50/200', data: spy.ma.map(p => p[1]), color: C().blue},
+   {label: 'Buy & hold', data: spy.bh.map(p => p[1]), color: C().ink3, dash: [4, 3]}],
+  {fmt: usd, ytick: v => '$' + (v / 1000).toFixed(0) + 'k'});
+
+// --- trade log ---
+document.querySelector('#t-trades tbody').innerHTML = spy.trades.map(t => `
+  <tr><td class="mono">${t.date}</td>
+      <td><span class="pill ${t.side === 'buy' ? '' : 'grey'}">${t.side === 'buy' ? 'BUY 200' : 'SELL 200'}</span></td>
+      <td class="n">${t.price.toFixed(2)}</td></tr>`).join('');
+
+// --- cost sensitivity ---
+document.querySelector('#t-costs tbody').innerHTML = D.costs.map(r => `
+  <tr><td><strong>${r.multiplier}&times;</strong></td>
+      <td class="n">${r.sharpe.toFixed(2)}</td>
+      <td class="n">${pct(r.total_return)}</td>
+      <td class="n">${usd(r.cost)}</td></tr>`).join('');
+
+// --- parameter grid ---
+const grid = [...D.grid].sort((a, b) => b.sharpe - a.sharpe);
+const bhSharpe = spy.bh_stats.sharpe;
+const isConv = r => r.short === 50 && r.long === 200;
+const rank = grid.findIndex(isConv) + 1;
+const beat = grid.filter(r => r.sharpe > bhSharpe).length;
+
+document.getElementById('m-rank').textContent = rank + ' of ' + grid.length;
+document.getElementById('m-beat').textContent = beat + ' of ' + grid.length;
+document.getElementById('m-best').textContent = grid[0].short + '/' + grid[0].long;
+document.getElementById('m-best-s').textContent =
+  'Sharpe ' + grid[0].sharpe.toFixed(2) + ' — and still not worth chasing';
+
+const c = C();
+new Chart(document.getElementById('c-grid'), {
+  type: 'scatter',
+  data: {datasets: [
+    {label: 'Window pair', data: grid.filter(r => !isConv(r)).map((r, i) => ({
+        x: grid.indexOf(r) + 1, y: r.sharpe, s: r.short, l: r.long})),
+     backgroundColor: c.ink3, pointRadius: 5},
+    {label: '50/200 (the convention)', data: grid.filter(isConv).map(r => ({
+        x: rank, y: r.sharpe, s: r.short, l: r.long})),
+     backgroundColor: c.blue, pointRadius: 8, pointStyle: 'rectRot'}
+  ]},
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: {
+      legend: {labels: {color: c.ink2, usePointStyle: true, padding: 14}},
+      tooltip: {callbacks: {label: ctx =>
+        `${ctx.raw.s}/${ctx.raw.l} — Sharpe ${ctx.parsed.y.toFixed(2)}`}},
+      annotation: false
+    },
+    scales: {
+      x: {title: {display: true, text: 'rank by Sharpe (best to worst)', color: c.ink3},
+          grid: {display: false}, ticks: {color: c.ink3, stepSize: 1}, min: 0, max: grid.length + 1},
+      y: {title: {display: true, text: 'Sharpe ratio', color: c.ink3},
+          grid: {color: c.line}, ticks: {color: c.ink3}, border: {display: false}}
+    }
+  },
+  plugins: [{
+    id: 'bhline',
+    afterDraw(chart) {
+      const {ctx, chartArea, scales} = chart;
+      const y = scales.y.getPixelForValue(bhSharpe);
+      ctx.save();
+      ctx.strokeStyle = C().red; ctx.setLineDash([5, 4]); ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(chartArea.left, y); ctx.lineTo(chartArea.right, y); ctx.stroke();
+      ctx.setLineDash([]); ctx.fillStyle = C().red; ctx.font = '600 11px Inter, sans-serif';
+      ctx.fillText('buy & hold  ' + bhSharpe.toFixed(2), chartArea.left + 6, y - 6);
+      ctx.restore();
+    }
+  }]
+});
+
+// --- fill timing ---
+lineChart('c-fill', spy.ma.map(p => p[0]),
+  [{label: 'Same-bar close', data: spy.ma.map(p => p[1]), color: C().blue},
+   {label: 'Next-bar open', data: spy.next_open.map(p => p[1]), color: C().amber}],
+  {fmt: usd, ytick: v => '$' + (v / 1000).toFixed(0) + 'k'});
+
+const fillRows = [
+  ['Same-bar close', spy.ma_stats],
+  ['Next-bar open', spy.nbo_stats]
+];
+document.querySelector('#t-fill tbody').innerHTML = fillRows.map(([name, s]) => `
+  <tr><td><strong>${name}</strong></td>
+      <td class="n">${usd(s.final)}</td>
+      <td class="n">${pct(s.total_return)}</td>
+      <td class="n">${s.sharpe.toFixed(2)}</td></tr>`).join('');
+document.getElementById('x-gap').textContent =
+  usd(spy.ma_stats.final - spy.nbo_stats.final);
+
+</script>
+</body>
+</html>
