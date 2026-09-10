@@ -78,6 +78,11 @@ def fetch_opens(symbol: str = "SPY", start: str = "2015-01-01",
     return pd.DataFrame({symbol: raw.squeeze()})
 
 
+def realized_vol(equity: pd.Series) -> float:
+    """Annualized standard deviation of the equity curve's daily returns."""
+    return equity.pct_change().dropna().std(ddof=1) * np.sqrt(TRADING_DAYS)
+
+
 def stats(equity: pd.Series) -> dict:
     """Total return, annualized Sharpe, max drawdown. Risk-free assumed 0."""
     daily = equity.pct_change().dropna()
@@ -93,20 +98,29 @@ def stats(equity: pd.Series) -> dict:
 
 def run(prices: pd.DataFrame, strategy_cls, trade_size: int, slippage_bps: float = 2.0,
        commission_per_share: float = 0.005, opens: pd.DataFrame | None = None,
-       execution_cls=SimulatedExecutionHandler, **kwargs) -> pd.Series:
+       execution_cls=SimulatedExecutionHandler, portfolio_kwargs: dict | None = None,
+       **kwargs) -> pd.Series:
     """One full backtest, fresh components each time (they carry state).
 
     opens / execution_cls: pass opens=<DataFrame> and
     execution_cls=NextBarOpenExecutionHandler to fill at the following bar's
     open instead of the same bar's close. See fill_timing_comparison() below
     for what that costs.
+
+    portfolio_kwargs: extra arguments for the Portfolio, e.g.
+    {"vol_target": 0.10}. Kept separate from **kwargs, which go to the
+    strategy — the two take different knobs and mixing them up is the kind
+    of bug that silently runs the wrong backtest.
     """
     data = HistoricalDataHandler(prices, opens=opens)
     strategy = strategy_cls(data, **kwargs)
-    portfolio = Portfolio(data, initial_cash=100_000.0, trade_size=trade_size)
+    portfolio = Portfolio(data, initial_cash=100_000.0, trade_size=trade_size,
+                          **(portfolio_kwargs or {}))
     execution = execution_cls(data, slippage_bps=slippage_bps,
                               commission_per_share=commission_per_share)
-    return Backtest(data, strategy, portfolio, execution).run()
+    equity = Backtest(data, strategy, portfolio, execution).run()
+    equity.attrs["n_fills"] = portfolio.n_fills
+    return equity
 
 
 def fill_timing_comparison(prices: pd.DataFrame, opens: pd.DataFrame, strategy_cls,
@@ -126,6 +140,35 @@ def fill_timing_comparison(prices: pd.DataFrame, opens: pd.DataFrame, strategy_c
         "same_bar_close": stats(same_bar),
         "next_bar_open": stats(next_open),
     }
+
+
+def vol_target_comparison(prices: pd.DataFrame, strategy_cls, trade_size: int,
+                          targets=(0.05, 0.10, 0.15, 0.20), **kwargs) -> list[dict]:
+    """Fixed share count vs volatility-targeted sizing, same signals throughout.
+
+    The strategy is untouched between runs — it emits the same LONG and EXIT
+    events on the same bars either way, because it reads prices and nothing
+    else. What changes is how many shares those events turn into, and whether
+    the size is revisited while the position is open.
+
+    Realized vol is reported next to the target because the target is a
+    forecast: it's set from a trailing 20-day estimate, and the future is not
+    obliged to look like the last 20 days. The gap between the two columns is
+    the honest measure of how well a rear-view estimate steers.
+    """
+    rows = []
+    fixed = run(prices, strategy_cls, trade_size, **kwargs)
+    rows.append({"label": f"fixed {trade_size} sh", "target": None,
+                 **stats(fixed), "realized_vol": realized_vol(fixed),
+                 "fills": fixed.attrs["n_fills"]})
+
+    for target in targets:
+        equity = run(prices, strategy_cls, trade_size,
+                     portfolio_kwargs={"vol_target": target}, **kwargs)
+        rows.append({"label": f"vol target {target:.0%}", "target": target,
+                     **stats(equity), "realized_vol": realized_vol(equity),
+                     "fills": equity.attrs["n_fills"]})
+    return rows
 
 
 def cost_sensitivity(prices: pd.DataFrame, strategy_cls, trade_size: int,
@@ -200,6 +243,8 @@ def main() -> None:
                         help="also run the (short, long) window grid on SPY and exit")
     parser.add_argument("--fill-timing", action="store_true",
                         help="compare same-bar-close vs next-bar-open fills on SPY and exit")
+    parser.add_argument("--vol-target", action="store_true",
+                        help="compare fixed sizing against volatility targeting on SPY and exit")
     args = parser.parse_args()
 
     print(f"{'run':<28} {'final equity':>12} {'return':>9} {'sharpe':>8} {'max dd':>9}")
@@ -246,6 +291,20 @@ def main() -> None:
                   f"{bh_sharpe:.2f}). 50/200 rank by Sharpe: "
                   f"{[i for i, r in enumerate(grid, 1) if (r['short'], r['long']) == (50, 200)][0]}"
                   f" of {len(grid)}.")
+            return
+
+        if args.vol_target:
+            print("\nPosition sizing - SPY MA cross, fixed share count vs "
+                  "volatility targeting:")
+            print(f"{'sizing':<18} {'target':>7} {'realized':>9} {'return':>9} "
+                  f"{'sharpe':>8} {'max dd':>9} {'fills':>7}")
+            for row in vol_target_comparison(spy, MovingAverageCrossStrategy,
+                                             trade_size=200, short_window=50,
+                                             long_window=200):
+                tgt = f"{row['target']:.0%}" if row["target"] is not None else "-"
+                print(f"{row['label']:<18} {tgt:>7} {row['realized_vol']:>9.2%} "
+                      f"{row['total_return']:>9.2%} {row['sharpe']:>8.2f} "
+                      f"{row['max_dd']:>9.2%} {row['fills']:>7}")
             return
 
         if args.fill_timing:

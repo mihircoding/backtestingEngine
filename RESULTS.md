@@ -1,6 +1,6 @@
 # Results
 
-All 18 tests pass (`python -m pytest -q`). Numbers below are the output of
+All 49 tests pass (`python -m pytest -q`). Numbers below are the output of
 `python run_backtest.py`, reproducible from a clean checkout.
 
 Setup: $100,000 starting cash, 2 bps slippage, $0.005/share commission, risk-free rate 0.
@@ -152,10 +152,73 @@ version: `run_backtest.py --fill-timing` runs the identical SPY MA-cross backtes
 handlers, same signals, same slippage and commission, changing only when the fill happens.
 
 ```
-FILL_TIMING_TABLE_PLACEHOLDER
+fill             final equity    return   sharpe    max dd
+same-bar close        167,347    67.35%     0.75   -17.33%
+next-bar open         166,226    66.23%     0.73   -17.26%
 ```
 
-FILL_TIMING_NARRATIVE_PLACEHOLDER
+Waiting one bar costs **$1,121** — 1.1 percentage points of return and 0.02 of Sharpe. That is
+smaller than it sounds and larger than it looks. Smaller, because this strategy trades nine
+times in ten years; an overnight gap is a coin flip, and nine coin flips average out to roughly
+nothing. There is no systematic edge being given up here, just noise that happened to cost money
+on this sample. Larger, because the *per-trade* number is what generalizes: $125 a round trip on
+a $35,000 position is about 35bps, seventeen times the 2bps slippage assumption, and it lands on
+every trade a strategy makes. Run something that trades daily instead of annually and the same
+gap compounds into the difference between a live strategy and a backtest.
+
+The number is also specific to a slow trend follower. A strategy whose signal comes *from* the
+close — a mean-reversion rule that buys weakness, say — is systematically buying at prices that
+gapped down, and next-bar-open fills would take a much bigger bite than a coin flip. The
+conclusion to carry away is not "$1,121"; it is that the size of this correction depends on what
+the signal is made of, so it has to be measured per strategy rather than assumed small.
+
+## Does position sizing matter more than the signal?
+
+Every number above uses a fixed 200 shares. That is a sizing rule, even though it looks like
+the absence of one, and it has a property worth noticing: 200 shares of SPY was $34,000 of
+exposure in 2015 and $92,000 in 2024. The book's risk quietly tripled over the sample without
+anyone deciding it should.
+
+Volatility targeting decides it on purpose. Size the position so that
+
+```
+shares x price x trailing_vol  =  equity x vol_target
+```
+
+and the position carries the same risk whether the market is calm or violent, in 2015 or 2024.
+`Portfolio(vol_target=...)` implements it, and `run_backtest.py --vol-target` runs the identical
+MA-cross signals at four targets:
+
+```
+sizing              target  realized    return   sharpe    max dd   fills
+fixed 200 sh             -     7.26%    67.35%     0.75   -17.33%       9
+vol target 5%           5%     5.11%    51.81%     0.85    -7.00%     165
+vol target 10%         10%    10.17%   124.18%     0.85   -13.95%     161
+vol target 15%         15%    15.06%   221.98%     0.85   -21.24%     155
+vol target 20%         20%    19.27%   340.81%     0.87   -24.73%     136
+```
+
+Three things in that table.
+
+**The targeting works.** Realized volatility lands within a fifth of a point of the target at
+every setting, off a trailing 20-day estimate. That is the whole mechanism validated on real
+data: a rear-view estimate of SPY's volatility is a good enough forecast to steer by.
+
+**Sharpe is flat across targets, and that is the correct answer.** 0.85, 0.85, 0.85, 0.87.
+Doubling the target doubles the return and doubles the volatility, so the ratio doesn't move —
+which is exactly what theory says leverage does. A sizing change that appeared to improve Sharpe
+as you turned it up would be evidence of a bug, not of alpha. What the knob actually chooses is
+where on that line you want to sit: 5% target gives up two thirds of the return to cut the
+drawdown from 17% to 7%.
+
+**Sharpe went from 0.75 to 0.85 anyway, and it is not free.** The improvement comes from holding
+constant risk instead of accidentally-increasing risk, not from better timing — the trade dates
+are identical. It costs 150 extra fills. At the base 2bps/$0.005 cost assumption those fills are
+already paid for in the table, but they are also 150 more chances for the liquidity assumptions
+in "What is not modeled" below to be wrong, and a rule that rebalances into a crash is exactly
+the rule that finds out the fills aren't free. The `rebalance_band` parameter exists for that
+reason: at 0.2 a position is only resized once it is 20% away from target, which is what keeps
+the fill count at 160 instead of 2,500.
 
 ## What is not modeled
 

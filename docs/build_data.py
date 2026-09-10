@@ -17,7 +17,8 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from run_backtest import (cost_sensitivity, fetch_opens, fetch_prices, make_opens,
-                          make_prices, param_grid, run, stats)
+                          make_prices, param_grid, realized_vol, run, stats,
+                          vol_target_comparison)
 from src.execution import NextBarOpenExecutionHandler
 from src.strategy import BuyAndHoldStrategy, MovingAverageCrossStrategy
 
@@ -53,6 +54,20 @@ def main():
 
     print("parameter grid (23 backtests)...")
     grid = param_grid(spy, trade_size=200)
+
+    print("position sizing (5 backtests)...")
+    sizing = vol_target_comparison(spy, MovingAverageCrossStrategy, trade_size=200,
+                                   short_window=50, long_window=200)
+    # one curve per sizing rule, for the chart
+    sizing_curves = {
+        "fixed": series(spy_ma, 3),
+        "vt10": series(run(spy, MovingAverageCrossStrategy, trade_size=200,
+                           portfolio_kwargs={"vol_target": 0.10},
+                           short_window=50, long_window=200), 3),
+        "vt5": series(run(spy, MovingAverageCrossStrategy, trade_size=200,
+                          portfolio_kwargs={"vol_target": 0.05},
+                          short_window=50, long_window=200), 3),
+    }
 
     # Trade log: the MA-cross strategy's fills, recovered by replaying the
     # signal rather than instrumenting the engine (the engine deliberately
@@ -96,6 +111,11 @@ def main():
                    for k, v in row.items()} for row in costs],
         "grid": [{k: (round(float(v), 4) if isinstance(v, float) else v)
                   for k, v in row.items()} for row in grid],
+        "sizing": {
+            "rows": [{k: (round(float(v), 4) if isinstance(v, float) else v)
+                      for k, v in row.items()} for row in sizing],
+            "curves": sizing_curves,
+        },
     }
 
     OUT.write_text("window.DATA = " + json.dumps(data, separators=(",", ":")) + ";\n",
@@ -105,6 +125,9 @@ def main():
           f"B&H {data['spy']['bh_stats']['sharpe']:.2f} | "
           f"next-open {data['spy']['nbo_stats']['sharpe']:.2f}")
     print(f"  {len(trades)} fills, {len(grid)} grid cells")
+    print("  sizing: " + " | ".join(
+        f"{r['label']} vol {r['realized_vol']:.1%} sharpe {r['sharpe']:.2f}"
+        for r in sizing))
 
 
 if __name__ == "__main__":

@@ -6,14 +6,15 @@ A backtester built the way production trading systems are built: components that
 other only through a queue of events, processing one timestamp at a time. No component can see
 the future, because the future hasn't been pushed onto the queue yet.
 
-Roughly 300 lines of source, 32 tests, and one uncomfortable result — see
+Roughly 350 lines of source, 49 tests, and one uncomfortable result — see
 [RESULTS.md](RESULTS.md). Interview notes are in [INTERVIEW.md](INTERVIEW.md).
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q               # 32 passed
+python -m pytest -q               # 49 passed
 python run_backtest.py            # synthetic + SPY, writes engine_backtest.png
 python run_backtest.py --fill-timing   # same-bar-close vs next-bar-open, SPY
+python run_backtest.py --vol-target    # fixed share count vs volatility targeting
 ```
 
 ![Synthetic and SPY backtests](engine_backtest.png)
@@ -55,7 +56,10 @@ DataHandler --MarketEvent--> Strategy --SignalEvent--> Portfolio
 | `FillEvent` | what actually executed: quantity, price after slippage, commission | ExecutionHandler |
 
 The separation is the design. Strategies express views. The portfolio turns views into sized
-orders — **this is where risk management lives**. The execution handler models market frictions.
+orders — **this is where risk management lives**. That claim is load-bearing rather than
+decorative: volatility targeting, which changes every position size in the book and takes the
+SPY run's Sharpe from 0.75 to 0.85, is implemented entirely inside `Portfolio`. Neither strategy
+knows it exists, and neither strategy needed a line changed. The execution handler models market frictions.
 In a real shop these are three systems owned by three teams, and the interfaces between them are
 exactly these four messages.
 
@@ -123,10 +127,10 @@ a close actually gets. `run_backtest.py --fill-timing` runs the identical SPY ba
 │   ├── events.py            # the four frozen event dataclasses
 │   ├── data_handler.py      # bar replay; enforces no-lookahead by construction
 │   ├── strategy.py          # buy-and-hold + MA crossover
-│   ├── portfolio.py         # sizing, cash/position accounting, equity curve
+│   ├── portfolio.py         # sizing (fixed or vol-targeted), accounting, equity
 │   ├── execution.py         # fills with slippage + commission
 │   └── engine.py            # the event loop
-└── tests/                   # 18 tests, incl. an end-to-end check to the cent
+└── tests/                   # 49 tests, incl. an end-to-end check to the cent
 ```
 
 Events are **frozen** dataclasses. Messages shouldn't mutate after they're sent; freezing them
@@ -149,6 +153,7 @@ Each of these is a small, well-contained change, which is the point of the archi
 - **Limit orders** — the execution handler needs a resting book (see the limit-order-book
   project) and fills become conditional on subsequent bars.
 - ~~Next-bar-open fills~~ — done, `NextBarOpenExecutionHandler` in `src/execution.py`.
+- ~~Volatility-targeted sizing~~ — done, `Portfolio(vol_target=...)`; see RESULTS.md.
 - **Position limits / stop losses** — pure portfolio-layer changes; no strategy edits.
 - **Multiple symbols** — already supported; the loop iterates `data.symbols`.
 - **Walk-forward parameter selection** — re-fit the MA windows on a rolling in-sample window.

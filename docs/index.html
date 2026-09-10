@@ -271,6 +271,31 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
 
 <section>
 <div class="wrap">
+  <div class="eyebrow">Risk management</div>
+  <h2>The sizing rule nobody notices they chose</h2>
+  <p class="lede">Every number above trades a fixed 200 shares. That is a decision, not the absence of one &mdash; 200 shares of SPY was $34k of exposure in 2015 and $92k in 2024, so the book's risk tripled over the sample without anyone deciding it should. Volatility targeting decides it on purpose: size the position so <span class="mono">shares &times; price &times; trailing&nbsp;vol = equity &times; target</span>, and re-check it while the position is open.</p>
+
+  <div class="grid2">
+    <div class="panel">
+      <div class="chart"><canvas id="c-sizing"></canvas></div>
+      <p class="cap">Identical signals in all three &mdash; same buy and sell dates, same costs. Only the share count differs.</p>
+    </div>
+    <div>
+      <div class="scroll"><table id="t-sizing"><thead><tr><th>Sizing rule</th><th class="n">Target vol</th><th class="n">Realized vol</th><th class="n">Return</th><th class="n">Sharpe</th><th class="n">Max DD</th><th class="n">Fills</th></tr></thead><tbody></tbody></table></div>
+      <p style="margin-top:14px"><strong style="color:var(--ink)">Realized volatility lands within a fifth of a point of the target at every setting</strong>, off nothing more than a trailing 20-day estimate. That is the mechanism validated on real data: the recent past is a good enough forecast of SPY's volatility to steer by.</p>
+    </div>
+  </div>
+
+  <div class="note blue">
+    <p><strong>Sharpe is flat across targets, and that is the correct answer.</strong> Doubling the target doubles the return and doubles the volatility, so the ratio doesn't move &mdash; exactly what leverage is supposed to do. A knob that appeared to improve Sharpe as you turned it up would be evidence of a bug, not of alpha. What it actually chooses is where on that line to sit: the 5% target gives up two thirds of the return to cut the worst drawdown from 17% to 7%.</p>
+  </div>
+
+  <p>Sharpe still went from <strong style="color:var(--ink)">0.75 to 0.85</strong>, and that part is real &mdash; it comes from holding constant risk instead of accidentally-rising risk, with the trade dates untouched. It is not free either: it costs about 150 extra fills, which is 150 more chances for the liquidity assumptions below to be wrong. The <span class="mono">rebalance_band</span> parameter only resizes a position once it is 20% away from target, which is what keeps that number at 150 instead of 2,500.</p>
+</div>
+</section>
+
+<section>
+<div class="wrap">
   <div class="eyebrow">Honesty</div>
   <h2>What isn't modeled</h2>
   <div class="grid2">
@@ -447,6 +472,23 @@ document.querySelector('#t-fill tbody').innerHTML = fillRows.map(([name, s]) => 
       <td class="n">${s.sharpe.toFixed(2)}</td></tr>`).join('');
 document.getElementById('x-gap').textContent =
   usd(spy.ma_stats.final - spy.nbo_stats.final);
+
+// --- position sizing ---
+const sz = D.sizing;
+lineChart('c-sizing', sz.curves.fixed.map(p => p[0]),
+  [{label: 'Fixed 200 shares', data: sz.curves.fixed.map(p => p[1]), color: C().ink3, dash: [4, 3]},
+   {label: 'Vol target 10%', data: sz.curves.vt10.map(p => p[1]), color: C().blue},
+   {label: 'Vol target 5%', data: sz.curves.vt5.map(p => p[1]), color: C().green}],
+  {fmt: usd, ytick: v => '$' + (v / 1000).toFixed(0) + 'k'});
+
+document.querySelector('#t-sizing tbody').innerHTML = sz.rows.map(r => `
+  <tr><td><strong>${r.label}</strong></td>
+      <td class="n">${r.target === null ? '&mdash;' : pct(r.target)}</td>
+      <td class="n">${pct(r.realized_vol)}</td>
+      <td class="n">${pct(r.total_return)}</td>
+      <td class="n">${r.sharpe.toFixed(2)}</td>
+      <td class="n">${pct(r.max_dd)}</td>
+      <td class="n">${r.fills}</td></tr>`).join('');
 
 </script>
 </body>
