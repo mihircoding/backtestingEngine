@@ -96,9 +96,9 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
 <div class="wrap">
   <div class="tagline">Sharpe 4.10 on one dataset, 0.75 on the other</div>
   <h1>Event-Driven Backtesting Engine</h1>
-  <p class="lede">A backtester built the way production trading systems are built: five components that talk to each other only through a queue of events, processing one timestamp at a time. <strong style="color:var(--ink)">No component can see the future, because the future hasn't been pushed onto the queue yet.</strong> Roughly 300 lines of source and 32 tests — and one uncomfortable result.</p>
+  <p class="lede">A backtester built the way production trading systems are built: five components that talk to each other only through a queue of events, processing one timestamp at a time. <strong style="color:var(--ink)">No component can see the future, because the future hasn't been pushed onto the queue yet.</strong> Roughly 300 lines of source and 32 tests.</p>
   <div class="links">
-    <a class="btn primary" href="#results">The uncomfortable result</a>
+    <a class="btn primary" href="#results">Results</a>
     <a class="btn" href="https://github.com/mihircoding/backtestingEngine">Source on GitHub</a>
     <a class="btn" href="https://github.com/mihircoding/backtestingEngine/blob/main/RESULTS.md">Full write-up</a>
   </div>
@@ -162,7 +162,7 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
     <div>
       <h3>Lookahead is prevented structurally, not by convention</h3>
       <p><span class="mono">HistoricalDataHandler</span> keeps a cursor. <span class="mono">get_latest()</span> slices only up to that cursor, and <strong style="color:var(--ink)">there is no method on the class that returns unreleased data</strong>. The strategy is not trusted to avoid the future; it is not offered the future.</p>
-      <p>That's the difference between a convention and a guarantee — and it's worth saying that way in an interview.</p>
+      <p>That's the difference between a convention and a guarantee.</p>
     </div>
   </div>
 
@@ -189,7 +189,7 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
     <div class="panel">
       <h3>Synthetic sine wave</h3>
       <div class="chart"><canvas id="c-syn"></canvas></div>
-      <p class="cap"><strong style="color:var(--ink)">This number is meaningless, and that is the point.</strong> The generator builds a drifting sine wave — cyclical by construction. A trend-following strategy on data that trends in clean regular arcs is being graded on an exam it wrote itself. Sharpe 4.10 is not evidence the strategy works; it's evidence the <em>engine</em> works, which is the only thing synthetic data can honestly tell you.</p>
+      <p class="cap"><strong style="color:var(--ink)">This number is meaningless.</strong> The generator builds a drifting sine wave — cyclical by construction. A trend-following strategy on data that trends in clean regular arcs is being graded on an exam it wrote itself. Sharpe 4.10 is not evidence the strategy works; it's evidence the <em>engine</em> works.</p>
     </div>
     <div class="panel">
       <h3>SPY, 2015–2024</h3>
@@ -222,7 +222,7 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
 
   <div class="note">
     <p><strong>The whipsaws are the story.</strong> Every sell-then-buy-higher pair, priced out: 2016 &minus;$3,956 · 2018–19 &minus;$3,318 · <strong>2020 COVID &minus;$11,150</strong> · 2022 bear <span class="pos">+$4,542</span> — net &minus;$13,882. Add $102 of costs and $486 of entry-timing drag and you have $14,470, essentially the entire $14,371 gap. <strong>The underperformance is fully explained by four decisions.</strong></p>
-    <p>The 2020 round trip alone is 78% of it: the 50-day crossed below the 200-day on March 31, <em>after</em> the crash, and crossed back on July 6, <em>after</em> the recovery. Sold near the bottom, bought back 24% higher. That is not bad luck — it is what a lagging indicator does to a V-shaped move, and it is structural. The 2022 trade is the counterexample that keeps this honest: a slow grinding bear market is exactly the regime a 50/200 crossover is built for, and there it made $4,542.</p>
+    <p>The 2020 round trip alone is 78% of it: the 50-day crossed below the 200-day on March 31, <em>after</em> the crash, and crossed back on July 6, <em>after</em> the recovery. Sold near the bottom, bought back 24% higher. That is what a lagging indicator does to a V-shaped move. The 2022 trade is the counterexample: a slow grinding bear market is exactly the regime a 50/200 crossover is built for, and there it made $4,542.</p>
   </div>
 </div>
 </section>
@@ -231,7 +231,7 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
 <div class="wrap">
   <div class="eyebrow">Robustness</div>
   <h2>Is 50/200 special, or just lucky?</h2>
-  <p class="lede">The same strategy across every (short, long) window pair in a 5&times;5 grid — 23 valid combinations, same data, same costs, nothing else changed. This is not a fitting exercise: it does not pick the best cell and re-run with it, because that would be the data snooping the caveats warn about. It asks a narrower question.</p>
+  <p class="lede">The same strategy across every (short, long) window pair in a 5&times;5 grid — 23 valid combinations, same data, same costs, nothing else changed. It does not pick the best cell and re-run with it, which would be data snooping. It asks a narrower question.</p>
 
   <div class="panel">
     <div class="chart" style="height:300px"><canvas id="c-grid"></canvas></div>
@@ -254,7 +254,7 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
 <div class="wrap">
   <div class="eyebrow">Execution modeling</div>
   <h2>What filling on the close you just saw is worth</h2>
-  <p class="lede">Every number above fills at the close of the bar the signal fired on. That's optimistic — you observed the close and then traded at it, which no real order can do. The honest alternative fills at the <em>next</em> bar's open, so the engine implements both and runs them head to head.</p>
+  <p class="lede">Every number above fills at the close of the bar the signal fired on. That's optimistic — you observed the close and then traded at it, which no real order can do. The conservative alternative fills at the <em>next</em> bar's open, so the engine implements both and runs them head to head.</p>
 
   <div class="grid2">
     <div class="panel">
@@ -296,7 +296,7 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
 
 <section>
 <div class="wrap">
-  <div class="eyebrow">Honesty</div>
+  <div class="eyebrow">Limitations</div>
   <h2>What isn't modeled</h2>
   <div class="grid2">
     <div>
@@ -315,13 +315,12 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
       </ul>
     </div>
   </div>
-  <p style="margin-top:6px">Stated plainly, because a backtester that hides its assumptions is worse than no backtester.</p>
 </div>
 </section>
 
 <footer>
 <div class="wrap">
-  <p style="margin-bottom:10px">Built by <a href="https://github.com/mihircoding">Mihir Konda</a> — every number on this page is generated by <span class="mono">docs/build_data.py</span> from the code in <a href="https://github.com/mihircoding/backtestingEngine">the repository</a>, not typed in by hand.</p>
+  <p style="margin-bottom:10px">Built by <a href="https://github.com/mihircoding">Mihir Konda</a> — every number on this page is generated by <span class="mono">docs/build_data.py</span> from the code in <a href="https://github.com/mihircoding/backtestingEngine">the repository</a>.</p>
   <p style="margin:0;font-size:13px">Quant projects: <strong style="color:var(--ink2)">Backtesting Engine</strong> · <a href="https://mihircoding.github.io/limitOrderBook/">Order Book</a> · <a href="https://mihircoding.github.io/pairsTrading/">Pairs Trading</a> · <a href="https://mihircoding.github.io/options-pricer/">Options Pricer</a> · <a href="https://mihircoding.github.io/portfolioOptimization/">Portfolio Optimization</a></p>
 </div>
 </footer>
