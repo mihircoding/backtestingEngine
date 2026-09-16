@@ -1,6 +1,6 @@
 # Results
 
-All 49 tests pass (`python -m pytest -q`). Numbers below are the output of
+All 59 tests pass (`python -m pytest -q`). Numbers below are the output of
 `python run_backtest.py`, reproducible from a clean checkout.
 
 Setup: $100,000 starting cash, 2 bps slippage, $0.005/share commission, risk-free rate 0.
@@ -143,6 +143,61 @@ is not a free lunch at any nearby setting, and picking a "better" pair after the
 been curve-fitting the 2015-2024 sample, not finding a better strategy. Full grid, and the flag
 to reproduce it, in `run_backtest.py`.
 
+## What if you did fit the windows, honestly?
+
+The section above is careful to say it fits nothing. That leaves the obvious question unanswered,
+and it is the question a trader actually faces: you have a grid, you have history, why not use
+it? `run_backtest.py --walk-forward` does exactly that, under the one rule that makes it a fair
+test — every choice is made from data that already existed when the choice was made.
+
+Each January, score all 23 pairs on the trailing three years, take the best by Sharpe, and trade
+that pair for the next twelve months. No revisions mid-year. Then chain the out-of-sample years
+into a single curve.
+
+```
+  year     picked  train sharpe  that year OOS
+  2018     75/250          1.66         -2.20%
+  2019      20/50          1.22          4.84%
+  2020      20/50          1.01          9.20%
+  2021     10/100          1.04         16.12%
+  2022     10/100          1.40        -12.74%
+  2023     75/150          1.01         10.74%
+  2024      10/50          0.78          8.69%
+
+curve                           return   sharpe    max dd
+walk-forward selected           36.56%     0.62   -16.64%
+fixed 50/200                    53.80%     0.77   -17.33%
+buy & hold                      68.48%     0.76   -18.17%
+best pair, whole sample              -     0.86         -  <- hindsight only, 10/100
+```
+
+**Fitting the windows made it worse.** 0.62 against 0.77 for the convention nobody fitted, on
+the same seven years, with the same costs. It also finished behind buy-and-hold by 32 percentage
+points of return. The selection was given a real edge — a 23-cell menu and three years of
+evidence — and turned it into a handicap.
+
+**The training Sharpes are the tell.** They average 1.16. The realized number is 0.62. That gap
+is not bad luck in one year; it is present in every fold, and it is what an in-sample optimum
+is: the pair that best fit three years of noise, reported as if it were a property of the
+strategy. Anyone showing a backtest with a tuned parameter and no walk-forward is showing the
+1.16 column.
+
+**It changed its mind at 4 of 6 handovers**, twice swinging between the fastest pair on the menu
+(10/50) and the slowest (75/250). A parameter that genuinely mattered would be stable, because
+the thing it measures — how long SPY trends for — does not reinvent itself every January. The
+instability says the grid is mostly ranking noise, which is also why the winner doesn't repeat.
+
+**The hindsight row is the ceiling, and it is a fiction.** 10/100 at 0.86 is the number a grid
+search reports when nobody asks which data it used. Nothing in the walk-forward ever picked it
+in 2018, when it would have mattered. The distance from 0.86 to 0.62 is the part of a tuned
+backtest that does not survive an unseen year, measured rather than argued about.
+
+The sober reading is not "walk-forward selection doesn't work." It is that walk-forward selection
+cannot manufacture an edge that the parameter never had, and that this particular parameter never
+had one — which the grid section already suspected and this section makes it possible to say with
+a number attached. The cost of finding that out honestly was one extra function and 10 tests;
+the cost of not finding it out is a resume line that a first interview question dismantles.
+
 ## Is same-bar-close as optimistic as the README claims?
 
 Every result above fills at the close of the bar the signal fired on — the README calls that
@@ -229,5 +284,6 @@ the fill count at 160 instead of 2,500.
 - No borrow costs, margin, or taxes.
 - Daily bars only. Intraday, the crossover dates would move.
 - One parameter pair (50/200) is used throughout. It is not cherry-picked (see the grid above),
-  but it is also not fitted, and it shouldn't be — fitting the windows on this same 2015-2024
-  sample would launder curve-fitting as insight, not find a better strategy.
+  and it is not fitted — fitting the windows on this same 2015-2024 sample would launder
+  curve-fitting as insight. Fitting them honestly, on trailing data only, is the walk-forward
+  section, and it does worse than leaving them alone.

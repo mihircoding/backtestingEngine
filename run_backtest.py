@@ -228,6 +228,113 @@ def param_grid(prices: pd.DataFrame, trade_size: int,
     return rows
 
 
+WF_TRAIN_YEARS = 3
+
+
+def _walk_forward_windows(prices: pd.DataFrame, train_years: int):
+    """Yield (test_year, train_slice, train_plus_test_slice) for each fold.
+
+    The third slice exists because the engine replays from the first bar it
+    is handed, and a 200-day moving average needs 200 bars before it says
+    anything. Handing the test year on its own would spend most of it in
+    warmup. Handing it the training years as a prefix and then keeping only
+    the test year's segment of the equity curve gives the strategy its
+    warmup without letting any of the training period into the score.
+    """
+    years = sorted({ts.year for ts in prices.index})
+    for test_year in years[train_years:]:
+        train = prices.loc[str(test_year - train_years):str(test_year - 1)]
+        through_test = prices.loc[str(test_year - train_years):str(test_year)]
+        yield test_year, train, through_test
+
+
+def _chain(segments: list[pd.Series]) -> pd.Series:
+    """Glue per-year equity segments into one curve starting at 1.0.
+
+    Each segment is rebased to its own first bar before chaining, so a year's
+    contribution is its return and nothing else. Without rebasing, a year that
+    started with more capital than the last one ended with would quietly
+    inject money into the curve.
+    """
+    out, level = [], 1.0
+    for seg in segments:
+        rebased = seg / seg.iloc[0] * level
+        out.append(rebased)
+        level = rebased.iloc[-1]
+    return pd.concat(out)
+
+
+def walk_forward_selection(prices: pd.DataFrame, trade_size: int,
+                           train_years: int = WF_TRAIN_YEARS,
+                           short_windows=(10, 20, 30, 50, 75),
+                           long_windows=(50, 100, 150, 200, 250),
+                           **kwargs) -> dict:
+    """Refit the MA windows every year on trailing data, trade them the next.
+
+    param_grid() answers "is 50/200 unremarkable among nearby choices" and is
+    careful to say it fits nothing. This is the other half of that question,
+    and the one a trader actually faces: if you *did* fit the windows, using
+    only data you had at the time, would you be better off?
+
+    Every year, score all 23 (short, long) pairs on the trailing `train_years`
+    of data, take the best by Sharpe, and trade exactly that pair for the next
+    twelve months. No peeking: the choice for 2021 is made from 2018-2020 and
+    is never revised once 2021 starts. Then chain the out-of-sample years into
+    one curve and compare it to three things:
+
+      - fixed 50/200, the convention, over the same out-of-sample span
+      - buy and hold over the same span
+      - the single best pair over the WHOLE sample, chosen with hindsight
+
+    That last one is not a strategy anyone could trade. It is the ceiling: the
+    number a grid search reports when nobody asks which data it used. The
+    distance between it and the walk-forward curve is the part of a tuned
+    backtest that does not survive contact with an unseen year.
+    """
+    pairs = [(s, l) for s in short_windows for l in long_windows if s < l]
+    picks, segments = [], []
+
+    for test_year, train, through_test in _walk_forward_windows(prices, train_years):
+        scored = []
+        for short, long in pairs:
+            equity = run(train, MovingAverageCrossStrategy, trade_size,
+                         short_window=short, long_window=long, **kwargs)
+            scored.append((stats(equity)["sharpe"], short, long))
+        in_sample_sharpe, short, long = max(scored)
+
+        full = run(through_test, MovingAverageCrossStrategy, trade_size,
+                   short_window=short, long_window=long, **kwargs)
+        segment = full.loc[str(test_year)]
+        segments.append(segment)
+        picks.append({
+            "year": test_year, "short": short, "long": long,
+            "train_sharpe": in_sample_sharpe,
+            "test_return": segment.iloc[-1] / segment.iloc[0] - 1,
+        })
+
+    first_test = picks[0]["year"]
+    oos = prices.loc[str(first_test):]
+    fixed = run(prices.loc[str(first_test - train_years):],
+                MovingAverageCrossStrategy, trade_size,
+                short_window=50, long_window=200, **kwargs).loc[str(first_test):]
+    bh = run(oos, BuyAndHoldStrategy, trade_size, **kwargs)
+
+    hindsight = max(
+        ((stats(run(prices, MovingAverageCrossStrategy, trade_size,
+                    short_window=s, long_window=l, **kwargs))["sharpe"], s, l)
+         for s, l in pairs))
+
+    return {
+        "picks": picks,
+        "walk_forward": _chain(segments),
+        "fixed_50_200": fixed / fixed.iloc[0],
+        "buy_and_hold": bh / bh.iloc[0],
+        "hindsight_best": {"sharpe": hindsight[0], "short": hindsight[1],
+                           "long": hindsight[2]},
+        "n_pairs": len(pairs),
+    }
+
+
 def report(label: str, equity: pd.Series) -> dict:
     s = stats(equity)
     print(f"{label:<28} {s['final']:>12,.0f} {s['total_return']:>9.2%} "
@@ -245,6 +352,9 @@ def main() -> None:
                         help="compare same-bar-close vs next-bar-open fills on SPY and exit")
     parser.add_argument("--vol-target", action="store_true",
                         help="compare fixed sizing against volatility targeting on SPY and exit")
+    parser.add_argument("--walk-forward", action="store_true",
+                        help="refit the MA windows yearly on trailing data and trade them "
+                             "out of sample on SPY, then exit")
     args = parser.parse_args()
 
     print(f"{'run':<28} {'final equity':>12} {'return':>9} {'sharpe':>8} {'max dd':>9}")
@@ -305,6 +415,38 @@ def main() -> None:
                 print(f"{row['label']:<18} {tgt:>7} {row['realized_vol']:>9.2%} "
                       f"{row['total_return']:>9.2%} {row['sharpe']:>8.2f} "
                       f"{row['max_dd']:>9.2%} {row['fills']:>7}")
+            return
+
+        if args.walk_forward:
+            wf = walk_forward_selection(spy, trade_size=200)
+            print(f"\nWalk-forward parameter selection - SPY, best of {wf['n_pairs']} "
+                  f"(short, long) pairs by Sharpe on the trailing {WF_TRAIN_YEARS} "
+                  f"years, traded the next one:")
+            print(f"{'year':>6} {'picked':>10} {'train sharpe':>13} {'that year OOS':>14}")
+            for p in wf["picks"]:
+                pair = f"{p['short']}/{p['long']}"
+                print(f"{p['year']:>6} {pair:>10} {p['train_sharpe']:>13.2f} "
+                      f"{p['test_return']:>14.2%}")
+
+            print(f"\n{'curve':<28} {'return':>9} {'sharpe':>8} {'max dd':>9}")
+            for label, key in [("walk-forward selected", "walk_forward"),
+                               ("fixed 50/200", "fixed_50_200"),
+                               ("buy & hold", "buy_and_hold")]:
+                s = stats(wf[key])
+                print(f"{label:<28} {s['total_return']:>9.2%} {s['sharpe']:>8.2f} "
+                      f"{s['max_dd']:>9.2%}")
+            hb = wf["hindsight_best"]
+            print(f"{'best pair, whole sample':<28} {'-':>9} {hb['sharpe']:>8.2f} "
+                  f"{'-':>9}  <- hindsight only, {hb['short']}/{hb['long']}")
+
+            picks = wf["picks"]
+            mean_train = sum(p["train_sharpe"] for p in picks) / len(picks)
+            changes = sum(1 for a, b in zip(picks, picks[1:])
+                          if (a["short"], a["long"]) != (b["short"], b["long"]))
+            print(f"\nThe selection averaged {mean_train:.2f} Sharpe on the data it was "
+                  f"chosen on and delivered")
+            print(f"{stats(wf['walk_forward'])['sharpe']:.2f} on the data it was not. It "
+                  f"changed its pick at {changes} of {len(picks) - 1} handovers.")
             return
 
         if args.fill_timing:

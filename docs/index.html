@@ -252,6 +252,37 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
 
 <section>
 <div class="wrap">
+  <div class="eyebrow">Overfitting</div>
+  <h2>What happens if you do fit the windows</h2>
+  <p class="lede">The grid above is careful to fit nothing, which leaves the obvious question open: you have a menu of 23 pairs and ten years of history, why not use them? Every January, score all 23 on the trailing three years, take the best by Sharpe, trade it for the next twelve months, never revise mid-year. That is a fair test — every choice is made from data that existed when the choice was made — and it loses.</p>
+
+  <div class="grid2">
+    <div class="panel">
+      <div class="chart"><canvas id="c-wf"></canvas></div>
+      <p class="cap">Out-of-sample years only, each chained on the one before, all three rebased to 1.00.</p>
+    </div>
+    <div>
+      <div class="scroll"><table id="t-wf"><thead><tr><th>Year</th><th>Picked</th><th class="n">Sharpe on training</th><th class="n">That year, out of sample</th></tr></thead><tbody></tbody></table></div>
+      <p style="margin-top:14px">The two right-hand columns are the whole story. The selection averaged <strong style="color:var(--ink)" id="x-wf-train">&mdash;</strong> Sharpe on the three years it was chosen from and delivered <strong style="color:var(--ink)" id="x-wf-oos">&mdash;</strong> on the year it had not seen.</p>
+    </div>
+  </div>
+
+  <div class="cards" style="margin-top:20px">
+    <div class="card"><div class="k">Walk-forward selected</div><div class="v" id="m-wf-sel">&mdash;</div><div class="s">fitted yearly, traded blind</div></div>
+    <div class="card"><div class="k">Fixed 50/200</div><div class="v" id="m-wf-fix">&mdash;</div><div class="s">the convention, never fitted</div></div>
+    <div class="card"><div class="k">Best pair, whole sample</div><div class="v" id="m-wf-hind">&mdash;</div><div class="s" id="m-wf-hind-s">hindsight only</div></div>
+  </div>
+
+  <div class="note">
+    <p><strong>Fitting the windows made it worse.</strong> Same seven years, same costs, and the tuned version finishes behind the pair nobody tuned. The training column is the tell: an in-sample optimum is the pair that best fit three years of noise, reported as though it were a property of the strategy. It also <strong style="color:var(--ink)" id="x-wf-changes">&mdash;</strong>, twice swinging between the fastest pair on the menu and the slowest — a parameter that genuinely mattered would be stable, because how long SPY trends for does not reinvent itself every January.</p>
+  </div>
+
+  <p>The hindsight card is the ceiling and it is a fiction: it is the number a grid search reports when nobody asks which data it used, and nothing in the walk-forward ever picked that pair in 2018, when picking it would have mattered. The distance between that card and the first one is the part of a tuned backtest that does not survive an unseen year — measured here rather than argued about.</p>
+</div>
+</section>
+
+<section>
+<div class="wrap">
   <div class="eyebrow">Execution modeling</div>
   <h2>What filling on the close you just saw is worth</h2>
   <p class="lede">Every number above fills at the close of the bar the signal fired on. That's optimistic — you observed the close and then traded at it, which no real order can do. The conservative alternative fills at the <em>next</em> bar's open, so the engine implements both and runs them head to head.</p>
@@ -399,6 +430,33 @@ document.querySelector('#t-costs tbody').innerHTML = D.costs.map(r => `
       <td class="n">${r.sharpe.toFixed(2)}</td>
       <td class="n">${pct(r.total_return)}</td>
       <td class="n">${usd(r.cost)}</td></tr>`).join('');
+
+// --- walk-forward selection ---
+const wf = D.walk_forward;
+lineChart('c-wf', wf.curves.selected.map(p => p[0]),
+  [{label: 'Walk-forward selected', data: wf.curves.selected.map(p => p[1]), color: C().red},
+   {label: 'Fixed 50/200', data: wf.curves.fixed.map(p => p[1]), color: C().blue},
+   {label: 'Buy & hold', data: wf.curves.bh.map(p => p[1]), color: C().ink3, dash: [4, 3]}],
+  {fmt: v => v.toFixed(3), ytick: v => v.toFixed(2)});
+
+document.querySelector('#t-wf tbody').innerHTML = wf.picks.map(p => `
+  <tr><td class="mono">${p.year}</td>
+      <td class="mono">${p.short}/${p.long}</td>
+      <td class="n">${p.train_sharpe.toFixed(2)}</td>
+      <td class="n">${pct(p.test_return)}</td></tr>`).join('');
+
+const meanTrain = wf.picks.reduce((a, p) => a + p.train_sharpe, 0) / wf.picks.length;
+const changes = wf.picks.slice(1).filter((p, i) =>
+  p.short !== wf.picks[i].short || p.long !== wf.picks[i].long).length;
+document.getElementById('x-wf-train').textContent = meanTrain.toFixed(2);
+document.getElementById('x-wf-oos').textContent = wf.stats.selected.sharpe.toFixed(2);
+document.getElementById('x-wf-changes').textContent =
+  `changed its pick at ${changes} of ${wf.picks.length - 1} handovers`;
+document.getElementById('m-wf-sel').textContent = wf.stats.selected.sharpe.toFixed(2);
+document.getElementById('m-wf-fix').textContent = wf.stats.fixed.sharpe.toFixed(2);
+document.getElementById('m-wf-hind').textContent = wf.hindsight.sharpe.toFixed(2);
+document.getElementById('m-wf-hind-s').textContent =
+  `${wf.hindsight.short}/${wf.hindsight.long}, chosen after the fact`;
 
 // --- parameter grid ---
 const grid = [...D.grid].sort((a, b) => b.sharpe - a.sharpe);

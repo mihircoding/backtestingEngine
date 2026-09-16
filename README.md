@@ -6,15 +6,16 @@ A backtester built the way production trading systems are built: components that
 other only through a queue of events, processing one timestamp at a time. No component can see
 the future, because the future hasn't been pushed onto the queue yet.
 
-Roughly 350 lines of source, 49 tests, and one uncomfortable result — see
+Roughly 350 lines of source, 59 tests, and one uncomfortable result — see
 [RESULTS.md](RESULTS.md). Interview notes are in [INTERVIEW.md](INTERVIEW.md).
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q               # 49 passed
+python -m pytest -q               # 59 passed
 python run_backtest.py            # synthetic + SPY, writes engine_backtest.png
 python run_backtest.py --fill-timing   # same-bar-close vs next-bar-open, SPY
 python run_backtest.py --vol-target    # fixed share count vs volatility targeting
+python run_backtest.py --walk-forward  # refit the MA windows yearly, trade them out of sample
 ```
 
 ![Synthetic and SPY backtests](engine_backtest.png)
@@ -156,7 +157,8 @@ Each of these is a small, well-contained change, which is the point of the archi
 - ~~Volatility-targeted sizing~~ — done, `Portfolio(vol_target=...)`; see RESULTS.md.
 - **Position limits / stop losses** — pure portfolio-layer changes; no strategy edits.
 - **Multiple symbols** — already supported; the loop iterates `data.symbols`.
-- **Walk-forward parameter selection** — re-fit the MA windows on a rolling in-sample window.
+- ~~Walk-forward parameter selection~~ — done, `--walk-forward`. It loses to the unfitted
+  convention by 0.15 of Sharpe; RESULTS.md is about why that is the expected answer.
 
 ## Known simplifications
 

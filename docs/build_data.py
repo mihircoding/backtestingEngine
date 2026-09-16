@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from run_backtest import (cost_sensitivity, fetch_opens, fetch_prices, make_opens,
                           make_prices, param_grid, realized_vol, run, stats,
-                          vol_target_comparison)
+                          vol_target_comparison, walk_forward_selection)
 from src.execution import NextBarOpenExecutionHandler
 from src.strategy import BuyAndHoldStrategy, MovingAverageCrossStrategy
 
@@ -54,6 +54,9 @@ def main():
 
     print("parameter grid (23 backtests)...")
     grid = param_grid(spy, trade_size=200)
+
+    print("walk-forward selection (~170 backtests, this is the slow one)...")
+    wf = walk_forward_selection(spy, trade_size=200)
 
     print("position sizing (5 backtests)...")
     sizing = vol_target_comparison(spy, MovingAverageCrossStrategy, trade_size=200,
@@ -116,6 +119,23 @@ def main():
                       for k, v in row.items()} for row in sizing],
             "curves": sizing_curves,
         },
+        "walk_forward": {
+            "train_years": 3,
+            "n_pairs": wf["n_pairs"],
+            "picks": [{k: (round(float(v), 4) if isinstance(v, float) else v)
+                       for k, v in p.items()} for p in wf["picks"]],
+            "curves": {
+                "selected": series(wf["walk_forward"], 3),
+                "fixed": series(wf["fixed_50_200"], 3),
+                "bh": series(wf["buy_and_hold"], 3),
+            },
+            "stats": {name: {k: round(float(v), 4) for k, v in stats(wf[key]).items()}
+                      for name, key in [("selected", "walk_forward"),
+                                        ("fixed", "fixed_50_200"),
+                                        ("bh", "buy_and_hold")]},
+            "hindsight": {k: (round(float(v), 4) if isinstance(v, float) else v)
+                          for k, v in wf["hindsight_best"].items()},
+        },
     }
 
     OUT.write_text("window.DATA = " + json.dumps(data, separators=(",", ":")) + ";\n",
@@ -128,6 +148,11 @@ def main():
     print("  sizing: " + " | ".join(
         f"{r['label']} vol {r['realized_vol']:.1%} sharpe {r['sharpe']:.2f}"
         for r in sizing))
+    wfs = data["walk_forward"]["stats"]
+    print(f"  walk-forward: selected {wfs['selected']['sharpe']:.2f} | "
+          f"fixed 50/200 {wfs['fixed']['sharpe']:.2f} | "
+          f"buy & hold {wfs['bh']['sharpe']:.2f} | "
+          f"hindsight {data['walk_forward']['hindsight']['sharpe']:.2f}")
 
 
 if __name__ == "__main__":
