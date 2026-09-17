@@ -6,16 +6,17 @@ A backtester built the way production trading systems are built: components that
 other only through a queue of events, processing one timestamp at a time. No component can see
 the future, because the future hasn't been pushed onto the queue yet.
 
-Roughly 350 lines of source, 59 tests, and one uncomfortable result — see
+Roughly 400 lines of source, 72 tests, and one uncomfortable result — see
 [RESULTS.md](RESULTS.md). Interview notes are in [INTERVIEW.md](INTERVIEW.md).
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q               # 59 passed
+python -m pytest -q               # 72 passed
 python run_backtest.py            # synthetic + SPY, writes engine_backtest.png
 python run_backtest.py --fill-timing   # same-bar-close vs next-bar-open, SPY
 python run_backtest.py --vol-target    # fixed share count vs volatility targeting
 python run_backtest.py --walk-forward  # refit the MA windows yearly, trade them out of sample
+python run_backtest.py --capacity      # how much money the strategy holds, at 10% of volume
 ```
 
 ![Synthetic and SPY backtests](engine_backtest.png)
@@ -118,6 +119,16 @@ order instead and fills it at the *following* bar's open, which is what a real o
 a close actually gets. `run_backtest.py --fill-timing` runs the identical SPY backtest both ways;
 [RESULTS.md](RESULTS.md) has the numbers.
 
+Both of those handlers will still fill any order at any size for the same price, which quietly
+quotes every result in this repo at zero assets under management.
+`ParticipationLimitedExecutionHandler` is the version that won't: fills are capped at a share of
+each bar's volume, the remainder stays working into the following bars, and each slice pays
+square-root impact — `impact_coef x trailing daily vol x sqrt(slice / bar volume)`, the
+Almgren form with the calibration constant exposed rather than hidden. `--capacity` sweeps the
+strategy across rising AUM. The short version: the 50/200 crossover gives up 0.04 of Sharpe at
+$20 billion and the 10/50 version gives up 0.16 at a quarter of that, because impact is a toll
+paid per trade and one of them trades seven times as often.
+
 ---
 
 ## Layout
@@ -129,9 +140,9 @@ a close actually gets. `run_backtest.py --fill-timing` runs the identical SPY ba
 │   ├── data_handler.py      # bar replay; enforces no-lookahead by construction
 │   ├── strategy.py          # buy-and-hold + MA crossover
 │   ├── portfolio.py         # sizing (fixed or vol-targeted), accounting, equity
-│   ├── execution.py         # fills with slippage + commission
+│   ├── execution.py         # fills: same-bar, next-bar-open, participation-limited
 │   └── engine.py            # the event loop
-└── tests/                   # 49 tests, incl. an end-to-end check to the cent
+└── tests/                   # 72 tests, incl. an end-to-end check to the cent
 ```
 
 Events are **frozen** dataclasses. Messages shouldn't mutate after they're sent; freezing them
@@ -155,6 +166,8 @@ Each of these is a small, well-contained change, which is the point of the archi
   project) and fills become conditional on subsequent bars.
 - ~~Next-bar-open fills~~ — done, `NextBarOpenExecutionHandler` in `src/execution.py`.
 - ~~Volatility-targeted sizing~~ — done, `Portfolio(vol_target=...)`; see RESULTS.md.
+- ~~Volume participation limits and size-dependent impact~~ — done,
+  `ParticipationLimitedExecutionHandler`; `--capacity` is the AUM sweep.
 - **Position limits / stop losses** — pure portfolio-layer changes; no strategy edits.
 - **Multiple symbols** — already supported; the loop iterates `data.symbols`.
 - ~~Walk-forward parameter selection~~ — done, `--walk-forward`. It loses to the unfitted
@@ -164,9 +177,17 @@ Each of these is a small, well-contained change, which is the point of the archi
 
 Stated plainly, because a backtester that hides its assumptions is worse than no backtester.
 
-- Fills are always complete, at any size — no liquidity constraint, under either execution
-  handler. `NextBarOpenExecutionHandler` fixes the *timing* of the fill, not this.
-- Slippage is proportional to price, not to order size relative to volume.
+- ~~Fills are always complete, at any size~~ — `ParticipationLimitedExecutionHandler` is the
+  one that isn't, and `--capacity` is what it's for. The two simpler handlers still fill
+  everything instantly, and every number in RESULTS.md outside the capacity section uses one of
+  them, so read those as an upper bound.
+- The impact model's leading constant is a documented default of 1.0, not a calibration. Getting
+  it right needs a firm's own fill data; what the model gives you without that is the right
+  *shape* of the cost curve, which is enough to compare strategies against each other and not
+  enough to quote a dollar figure to a risk committee.
+- Volume is assumed unaffected by your own trading, and the participation cap is a constant.
+  Neither is true: a real day's volume partly *is* other people reacting to you, and liquidity
+  is worst exactly when you most want to trade.
 - No borrow costs, no margin, no dividends beyond what `auto_adjust` bakes into the prices.
 - Floats throughout. Real accounting systems use integer cents (`0.1 + 0.2 != 0.3`); the tests
   compare with tolerances instead.

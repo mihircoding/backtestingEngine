@@ -25,6 +25,22 @@ def make_handler_with_opens(closes_dict, opens_dict):
                                   opens=pd.DataFrame(opens_dict, index=idx))
 
 
+def make_handler_with_volumes(closes_dict, opens_dict, volumes_dict):
+    """Closes, opens and per-bar share volume, for the participation-limited
+    execution handler. It needs all three: opens to price a fill, closes to
+    estimate the volatility its impact model scales with, and volumes to know
+    how much of a bar an order is allowed to take."""
+    lengths = ({len(v) for v in closes_dict.values()}
+               | {len(v) for v in opens_dict.values()}
+               | {len(v) for v in volumes_dict.values()})
+    assert len(lengths) == 1, "all price lists must be equal length"
+    n = lengths.pop()
+    idx = pd.bdate_range("2023-01-02", periods=n)
+    return HistoricalDataHandler(pd.DataFrame(closes_dict, index=idx),
+                                  opens=pd.DataFrame(opens_dict, index=idx),
+                                  volumes=pd.DataFrame(volumes_dict, index=idx))
+
+
 @pytest.fixture
 def trending_handler():
     """One symbol, price rising 100 -> 129 by $1/day."""

@@ -1,6 +1,6 @@
 # Results
 
-All 59 tests pass (`python -m pytest -q`). Numbers below are the output of
+All 72 tests pass (`python -m pytest -q`). Numbers below are the output of
 `python run_backtest.py`, reproducible from a clean checkout.
 
 Setup: $100,000 starting cash, 2 bps slippage, $0.005/share commission, risk-free rate 0.
@@ -275,12 +275,107 @@ the rule that finds out the fills aren't free. The `rebalance_band` parameter ex
 reason: at 0.2 a position is only resized once it is 20% away from target, which is what keeps
 the fill count at 160 instead of 2,500.
 
+## How much money does this hold?
+
+Every result above this line is quoted at an implicit zero assets under management. Fills are
+instant, complete, and priced identically whether the order is a hundred shares or ten million —
+the README's own list of simplifications says so in its first line. That makes every Sharpe in
+this file an upper bound, and the first question anyone asks about a strategy is how much money
+it runs.
+
+`ParticipationLimitedExecutionHandler` (`src/execution.py`) answers it by refusing to do two
+things. It will not fill more than a set share of a bar's volume — 10% throughout below, which is
+roughly what a trader working a large order will admit to — and it charges square-root market
+impact on every slice:
+
+```
+impact (bps) = impact_coef x trailing daily volatility (bps) x sqrt(slice / bar volume)
+```
+
+That functional form is standard (Almgren et al. 2005); the constant in front is the part every
+firm calibrates on its own fills and nobody publishes, so it is a named parameter with a
+documented default of 1.0 rather than a number buried in the code. Volatility is the trailing
+estimate the handler reads from the data, which means impact rises automatically in the markets
+where liquidity is worst.
+
+The remainder of an order stays working and continues on the next bar, at the next bar's price.
+That delay, not the commission, is the real cost: you do not get the price you saw when you
+decided. Anything still working when the data runs out is counted, not dropped — `stranded` below
+— because a partially filled position is one the strategy believes it has and does not.
+
+`run_backtest.py --capacity` sizes the book to a given amount of capital and runs the sweep. Note
+that every row here is *fully invested when long*, which is more aggressive than the 200 shares
+used everywhere else in this file; a book that leaves 60% of itself in cash has no capacity
+problem to study, and that is why the return and drawdown columns differ from the tables above.
+The first row is the same fully-invested backtest with the unconstrained next-bar-open handler,
+which is AUM-independent by construction.
+
+```
+50/200 crossover                 (SPY median daily dollar volume: $22.6bn)
+AUM                   days of volume    return   sharpe  vs base    max dd  slices   slowest
+no liquidity limit                 -   195.14%     0.72        -   -38.19%       -         -
+$0.1B                           0.00   193.49%     0.72    -0.01   -38.30%       9        1d
+$1.0B                           0.04   189.90%     0.70    -0.02   -38.53%       9        1d
+$5.0B                           0.22   188.96%     0.69    -0.03   -39.13%      30        5d
+$20.0B                          0.88   190.34%     0.68    -0.04   -40.80%     111       21d
+$100.0B                         4.42   192.01%     0.72    -0.00   -39.21%     520       90d
+
+10/50 crossover
+AUM                   days of volume    return   sharpe  vs base    max dd  slices   slowest
+no liquidity limit                 -   142.55%     0.73        -   -18.62%       -         -
+$0.1B                           0.00   133.53%     0.69    -0.04   -19.44%      61        1d
+$1.0B                           0.04   114.73%     0.60    -0.13   -21.50%      69        2d
+$5.0B                           0.22   106.22%     0.57    -0.16   -25.93%     227        7d
+$20.0B                          0.88   120.04%     0.63    -0.10   -35.49%     652       36d
+$100.0B                         4.42   145.88%     0.66    -0.07   -31.64%    1418      144d
+```
+
+**Capacity is a property of turnover, not of size.** Both tables hold the same instrument at the
+same AUM under the same cap. The 50/200 strategy gives up 0.04 of Sharpe at $20 billion; the
+10/50 strategy gives up 0.16 at a quarter of that. The difference is not the position — it is
+that one of them trades nine times in ten years and the other trades sixty-one. Impact is a toll
+paid per trade, so the capacity of a strategy is roughly its edge divided by its turnover, and
+the AUM number on its own is close to meaningless.
+
+**The second table is the more interesting one, and not because of Sharpe.** Look at the
+drawdown column: −18.62% unconstrained, −35.49% at $20 billion. The 10/50 crossover's whole
+appeal over the slower version is that it gets out of trouble faster, and a participation limit
+takes that away first. It is not that the strategy gets worse at making money; it stops being the
+thing it was. A liquidity constraint does not scale a strategy down uniformly, it removes
+whichever property depended on trading quickly, and for a trend follower that property is the
+exit.
+
+**Both tables recover at $100 billion, which is a warning, not a result.** Sharpe is
+non-monotone in AUM here because nine trades — or sixty-one — is not a sample. A fill delay is a
+coin flip on each trade: sometimes the price you get while working the order for 90 days is
+better than the one you saw. With this few trades those coin flips do not average out, and the
+drop from 0.73 to 0.57 in the second table is a real effect measured with error bars wide enough
+to include the bounce at the bottom. Reading the $100B row as "capacity improves above $20
+billion" would be exactly the sort of noise-mining the walk-forward section above exists to warn
+about.
+
+The `slowest` column is what actually rules those bottom rows out. At $100 billion the 10/50
+strategy's worst single order took **144 trading days** to complete — seven months to establish
+a position held on a signal that flips every few weeks. The Sharpe is beside the point; the
+strategy is not implementable, and no cost model is needed to say so. The honest ceiling for this
+strategy on this instrument sits between $5 and $20 billion, set by fill delay rather than by
+impact cost.
+
+One more thing the sweep makes concrete: SPY is about the most liquid instrument in the world, at
+a $22.6 billion median day. A $5 billion book is a fifth of a day's volume there. The same
+strategy on a mid-cap name trading $50 million a day would hit the same wall at about $11
+million — four hundred and fifty times sooner. Capacity results do not transfer between
+instruments, and a capacity number quoted without the instrument's volume beside it is not a
+number.
+
 ## What is not modeled
 
-- Fills are complete, instant, at any size, under either fill-timing model. No liquidity
-  constraint — `NextBarOpenExecutionHandler` changes *when* the fill happens, not that it's
-  always instant and complete.
-- Slippage scales with price, not with order size relative to volume.
+- ~~Fills are complete, instant, at any size~~ — `ParticipationLimitedExecutionHandler` caps
+  fills at a share of each bar's volume and charges square-root impact on every slice; see the
+  capacity section above for what that costs. The two older handlers still fill everything
+  instantly, and every number in this file outside that section uses one of them.
+- ~~Slippage scales with price, not with order size relative to volume~~ — true of the default
+  handler, and the reason the participation-limited one exists.
 - No borrow costs, margin, or taxes.
 - Daily bars only. Intraday, the crossover dates would move.
 - One parameter pair (50/200) is used throughout. It is not cherry-picked (see the grid above),

@@ -21,7 +21,9 @@ import pandas as pd
 
 from src.data_handler import HistoricalDataHandler
 from src.engine import Backtest
-from src.execution import NextBarOpenExecutionHandler, SimulatedExecutionHandler
+from src.execution import (NextBarOpenExecutionHandler,
+                           ParticipationLimitedExecutionHandler,
+                           SimulatedExecutionHandler)
 from src.portfolio import Portfolio
 from src.strategy import BuyAndHoldStrategy, MovingAverageCrossStrategy
 
@@ -78,6 +80,24 @@ def fetch_opens(symbol: str = "SPY", start: str = "2015-01-01",
     return pd.DataFrame({symbol: raw.squeeze()})
 
 
+def fetch_volumes(symbol: str = "SPY", start: str = "2015-01-01",
+                  end: str = "2024-12-31") -> pd.DataFrame:
+    """Shares traded per bar — what ParticipationLimitedExecutionHandler needs
+    to know whether an order is small or is the whole day's liquidity.
+
+    Note auto_adjust=True does not touch volume, so these are raw share counts
+    while the prices beside them are split- and dividend-adjusted. For SPY over
+    this window there were no splits, so the two are consistent; on a name that
+    split, the volume series would need the same adjustment and this function
+    would be wrong. Stated here because it is exactly the kind of mismatch that
+    produces a capacity number nobody can reproduce."""
+    import yfinance as yf
+
+    raw = yf.download(symbol, start=start, end=end, auto_adjust=True,
+                      progress=False)["Volume"].dropna()
+    return pd.DataFrame({symbol: raw.squeeze()})
+
+
 def realized_vol(equity: pd.Series) -> float:
     """Annualized standard deviation of the equity curve's daily returns."""
     return equity.pct_change().dropna().std(ddof=1) * np.sqrt(TRADING_DAYS)
@@ -98,8 +118,9 @@ def stats(equity: pd.Series) -> dict:
 
 def run(prices: pd.DataFrame, strategy_cls, trade_size: int, slippage_bps: float = 2.0,
        commission_per_share: float = 0.005, opens: pd.DataFrame | None = None,
+       volumes: pd.DataFrame | None = None, initial_cash: float = 100_000.0,
        execution_cls=SimulatedExecutionHandler, portfolio_kwargs: dict | None = None,
-       **kwargs) -> pd.Series:
+       execution_kwargs: dict | None = None, **kwargs) -> pd.Series:
     """One full backtest, fresh components each time (they carry state).
 
     opens / execution_cls: pass opens=<DataFrame> and
@@ -112,14 +133,22 @@ def run(prices: pd.DataFrame, strategy_cls, trade_size: int, slippage_bps: float
     strategy — the two take different knobs and mixing them up is the kind
     of bug that silently runs the wrong backtest.
     """
-    data = HistoricalDataHandler(prices, opens=opens)
+    data = HistoricalDataHandler(prices, opens=opens, volumes=volumes)
     strategy = strategy_cls(data, **kwargs)
-    portfolio = Portfolio(data, initial_cash=100_000.0, trade_size=trade_size,
-                          **(portfolio_kwargs or {}))
     execution = execution_cls(data, slippage_bps=slippage_bps,
-                              commission_per_share=commission_per_share)
+                              commission_per_share=commission_per_share,
+                              **(execution_kwargs or {}))
+    # The portfolio needs to see what is still working at the broker, or it
+    # re-sends shares that are already in flight. Only the participation
+    # handler ever has any, and it is the only one that offers the hook.
+    pending = getattr(execution, "working_quantity", None)
+    portfolio = Portfolio(data, initial_cash=initial_cash, trade_size=trade_size,
+                          pending=pending, **(portfolio_kwargs or {}))
     equity = Backtest(data, strategy, portfolio, execution).run()
+    if hasattr(execution, "finalize"):
+        execution.finalize()
     equity.attrs["n_fills"] = portfolio.n_fills
+    equity.attrs["execution"] = execution
     return equity
 
 
@@ -196,6 +225,84 @@ def cost_sensitivity(prices: pd.DataFrame, strategy_cls, trade_size: int,
                     "total_return": s["total_return"],
                     "cost": zero_cost_final - equity.iloc[-1]})
     return rows
+
+
+def capacity_sweep(prices: pd.DataFrame, opens: pd.DataFrame, volumes: pd.DataFrame,
+                   strategy_cls, aums=(1e8, 1e9, 5e9, 2e10, 1e11),
+                   participation: float = 0.10, **kwargs) -> list[dict]:
+    """The same strategy at rising assets under management.
+
+    Everything else in this repo quotes results at an implicit zero AUM: fills
+    are instant, complete, and priced identically whether you trade a hundred
+    shares or ten million. That makes every Sharpe in RESULTS.md an upper
+    bound, and how tight a bound is a question with an answer.
+
+    So: size the position to a given amount of capital, cap fills at
+    `participation` of each bar's volume, charge square-root impact on every
+    slice, and find where the strategy stops working. Every row is fully
+    invested when long, which is a more aggressive configuration than the 200
+    shares used elsewhere in this file - capacity is a question about a real
+    book, and a book that leaves 60% of itself in cash has no capacity problem
+    to study.
+
+    The first row is the same fully-invested backtest with the unconstrained
+    next-bar-open handler. It is AUM-independent by construction, so it is the
+    zero-impact reference every other row is measured against.
+
+    Returns one record per AUM level, with the execution diagnostics attached.
+    A capacity claim without the fill delay beside it is not checkable.
+    """
+    first_price = float(prices.iloc[0, 0])
+    median_notional = float((volumes.iloc[:, 0] * prices.iloc[:, 0]).median())
+
+    def fully_invested(aum: float) -> int:
+        return max(int(aum / first_price), 1)
+
+    baseline = run(prices, strategy_cls, trade_size=fully_invested(1e6),
+                   initial_cash=1e6, opens=opens,
+                   execution_cls=NextBarOpenExecutionHandler, **kwargs)
+    rows = [{"aum": None, "label": "no liquidity limit", **stats(baseline),
+             "slices": None, "max_delay": None, "stranded": 0.0,
+             "position_in_days": 0.0}]
+
+    for aum in aums:
+        equity = run(prices, strategy_cls, trade_size=fully_invested(aum),
+                     initial_cash=aum, opens=opens, volumes=volumes,
+                     execution_cls=ParticipationLimitedExecutionHandler,
+                     execution_kwargs={"participation": participation}, **kwargs)
+        ex = equity.attrs["execution"]
+        rows.append({
+            "aum": aum,
+            "label": f"${aum / 1e9:,.1f}B",
+            **stats(equity),
+            "slices": ex.slices,
+            "max_delay": ex.max_delay_bars,
+            "stranded": ex.unfilled_shares * float(prices.iloc[-1, 0]),
+            # The position as a multiple of a median day's dollar volume. This
+            # is the number that decides every other number in the row: "$20
+            # billion" means nothing on its own, "0.9 days of volume" means
+            # the whole position takes nine days to trade at a 10% cap.
+            "position_in_days": aum / median_notional,
+        })
+    return rows
+
+
+def print_capacity(rows: list[dict], header: str) -> None:
+    base = rows[0]
+    print(f"\n{header}")
+    print(f"{'AUM':<20} {'days of volume':>15} {'return':>9} {'sharpe':>8} "
+          f"{'vs base':>8} {'max dd':>9} {'slices':>7} {'slowest':>9} {'stranded':>11}")
+    for row in rows:
+        if row["aum"] is None:
+            print(f"{row['label']:<20} {'-':>15} {row['total_return']:>9.2%} "
+                  f"{row['sharpe']:>8.2f} {'-':>8} {row['max_dd']:>9.2%} "
+                  f"{'-':>7} {'-':>9} {'-':>11}")
+            continue
+        drop = row["sharpe"] - base["sharpe"]
+        print(f"{row['label']:<20} {row['position_in_days']:>15.2f} "
+              f"{row['total_return']:>9.2%} {row['sharpe']:>8.2f} {drop:>+8.2f} "
+              f"{row['max_dd']:>9.2%} {row['slices']:>7} "
+              f"{row['max_delay']:>8}d {row['stranded'] / 1e6:>10.1f}M")
 
 
 def param_grid(prices: pd.DataFrame, trade_size: int,
@@ -352,6 +459,9 @@ def main() -> None:
                         help="compare same-bar-close vs next-bar-open fills on SPY and exit")
     parser.add_argument("--vol-target", action="store_true",
                         help="compare fixed sizing against volatility targeting on SPY and exit")
+    parser.add_argument("--capacity", action="store_true",
+                        help="run the same strategy at rising AUM with a volume "
+                             "participation limit on SPY, then exit")
     parser.add_argument("--walk-forward", action="store_true",
                         help="refit the MA windows yearly on trailing data and trade them "
                              "out of sample on SPY, then exit")
@@ -401,6 +511,25 @@ def main() -> None:
                   f"{bh_sharpe:.2f}). 50/200 rank by Sharpe: "
                   f"{[i for i, r in enumerate(grid, 1) if (r['short'], r['long']) == (50, 200)][0]}"
                   f" of {len(grid)}.")
+            return
+
+        if args.capacity:
+            opens, volumes = fetch_opens(), fetch_volumes()
+            print("\nCapacity - SPY, fills capped at 10% of each bar's volume,")
+            print("square-root impact on every slice. Fully invested when long.")
+            for short, long in ((50, 200), (10, 50)):
+                rows = capacity_sweep(spy, opens, volumes,
+                                      MovingAverageCrossStrategy,
+                                      short_window=short, long_window=long)
+                print_capacity(rows, f"{short}/{long} crossover "
+                                     f"({rows[-1]['slices']} slices at the top size):")
+            print("\n'days of volume' is the whole position divided by SPY's median daily")
+            print("dollar volume, so at a 10% cap it is a tenth of the trading days one")
+            print("full entry or exit takes. 'slowest' is the longest a single order")
+            print("actually took; 'stranded' is notional still working when data ran out.")
+            print("\nCapacity is a property of turnover, not of size. Compare the two")
+            print("tables at the same AUM: the strategy that trades five times as often")
+            print("pays the impact bill five times as often for the same position.")
             return
 
         if args.vol_target:

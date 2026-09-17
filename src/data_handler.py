@@ -20,11 +20,19 @@ class HistoricalDataHandler:
     default) and current_open() raises rather than silently returning a
     close, so a caller can't accidentally price a "next bar open" fill off
     the wrong number without noticing.
+
+    volumes is optional in the same way, and for the same reason: shares
+    traded per bar, needed only by ParticipationLimitedExecutionHandler.
+    Without it there is no way to know whether an order is a rounding error
+    or a third of the day's liquidity, so current_volume() raises rather
+    than inventing a number.
     """
 
-    def __init__(self, prices: pd.DataFrame, opens: pd.DataFrame | None = None):
+    def __init__(self, prices: pd.DataFrame, opens: pd.DataFrame | None = None,
+                 volumes: pd.DataFrame | None = None):
         self.prices = prices
         self.opens = opens
+        self.volumes = volumes
         self.symbols = list(prices.columns)
         self._cursor = 0  # number of bars released so far
 
@@ -67,6 +75,20 @@ class HistoricalDataHandler:
                 "opens=... to the constructor to use next-bar-open fills"
             )
         return float(self.opens[symbol].iloc[self._cursor - 1])
+
+    def current_volume(self, symbol: str) -> float:
+        """Shares traded on the most recently released bar.
+
+        Same hard failure as current_open() when the data wasn't supplied. A
+        participation limit computed against a defaulted volume is worse than
+        no participation limit, because it looks like it is doing something.
+        """
+        if self.volumes is None:
+            raise ValueError(
+                "this HistoricalDataHandler has no volume data — pass "
+                "volumes=... to the constructor to use participation limits"
+            )
+        return float(self.volumes[symbol].iloc[self._cursor - 1])
 
     def current_time(self) -> pd.Timestamp:
         return self.prices.index[self._cursor - 1]

@@ -40,12 +40,20 @@ class Portfolio:
         fraction of the target, before it gets resized. Zero would resize
         every bar and pay commission for a one-share correction; 0.2 means
         "only when it's 20% wrong."
+    pending: optional callable symbol -> signed shares still working at the
+        execution handler. Both execution handlers that fill instantly leave
+        nothing working, so the default of None (treated as zero) is right for
+        them. ParticipationLimitedExecutionHandler does not: an order can take
+        days to complete, and a portfolio that sizes against its *filled*
+        position while a partial fill is still working will order the same
+        shares twice, then twice again the next bar. Position plus open orders
+        is what a real order management system tracks, and this is that.
     """
 
     def __init__(self, data: HistoricalDataHandler, initial_cash: float = 100_000.0,
                  trade_size: int = 100, vol_target: float | None = None,
                  vol_window: int = 20, max_leverage: float = 3.0,
-                 rebalance_band: float = 0.2):
+                 rebalance_band: float = 0.2, pending=None):
         self.data = data
         self.initial_cash = initial_cash
         self.trade_size = trade_size
@@ -53,6 +61,7 @@ class Portfolio:
         self.vol_window = vol_window
         self.max_leverage = max_leverage
         self.rebalance_band = rebalance_band
+        self.pending = pending
         self.cash = initial_cash
         self.positions: dict[str, int] = {}
         self.equity_history: list[tuple] = []
@@ -113,6 +122,19 @@ class Portfolio:
         cap = self.max_leverage * equity / price
         return int(min(shares, cap))
 
+    def _effective_position(self, symbol: str) -> int:
+        """Filled position plus anything still working at the broker.
+
+        Sizing against the filled position alone is correct only when fills are
+        instant. When they are not, the shares in flight have already been
+        committed and must count toward the target, or the same trade gets sent
+        repeatedly while it is being worked.
+        """
+        current = self.positions.get(symbol, 0)
+        if self.pending is None:
+            return current
+        return current + self.pending(symbol)
+
     def on_signal(self, signal: SignalEvent) -> OrderEvent | None:
         """Turn an opinion into a sized order (or None).
 
@@ -120,7 +142,7 @@ class Portfolio:
         a SHORT signal while long correctly emits a double-size sell.
         """
         target = self._TARGETS[signal.signal] * self._size_for(signal.symbol)
-        current = self.positions.get(signal.symbol, 0)
+        current = self._effective_position(signal.symbol)
         delta = target - current
 
         if delta == 0:
@@ -154,7 +176,7 @@ class Portfolio:
             if target == 0:
                 continue
 
-            delta = target - shares
+            delta = target - self._effective_position(symbol)
             if abs(delta) <= self.rebalance_band * abs(target):
                 continue  # close enough; not worth the commission
 
