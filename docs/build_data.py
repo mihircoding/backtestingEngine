@@ -6,8 +6,20 @@ runs and dumping the output. Re-run this after changing the engine and the
 site updates with it:
 
     python docs/build_data.py
+
+or rebuild one section and leave the rest of data.js alone:
+
+    python docs/build_data.py --only capacity
+
+The second form exists because yfinance re-adjusts the whole price history
+every time SPY pays a dividend. A full rebuild months later scales every
+2015-2024 price by the same small factor (0.25% as of September 2026), and since the
+backtests trade a fixed share count with a per-share commission, every dollar
+figure on the page moves with it while the copy quoting them doesn't.
+Returns are unaffected; the dollars are not.
 """
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -16,9 +28,10 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from run_backtest import (cost_sensitivity, fetch_opens, fetch_prices, make_opens,
-                          make_prices, param_grid, realized_vol, run, stats,
-                          vol_target_comparison, walk_forward_selection)
+from run_backtest import (capacity_sweep, cost_sensitivity, fetch_opens, fetch_prices,
+                          fetch_volumes, make_opens, make_prices, param_grid,
+                          realized_vol, run, stats, vol_target_comparison,
+                          walk_forward_selection)
 from src.execution import NextBarOpenExecutionHandler
 from src.strategy import BuyAndHoldStrategy, MovingAverageCrossStrategy
 
@@ -29,6 +42,28 @@ def series(equity, every=1):
     """(date, value) pairs, thinned, rounded - the chart can't resolve more."""
     eq = equity.iloc[::every]
     return [[d.strftime("%Y-%m-%d"), round(float(v), 2)] for d, v in eq.items()]
+
+
+def rounded(row):
+    return {k: (round(float(v), 4) if isinstance(v, float) else v)
+            for k, v in row.items()}
+
+
+def capacity(spy=None):
+    """Both crossovers at rising AUM, fills capped at 10% of volume - the
+    same sweep as `run_backtest.py --capacity`."""
+    print("capacity (12 backtests)...")
+    spy = fetch_prices() if spy is None else spy
+    opens, volumes = fetch_opens(), fetch_volumes()
+    out = {"participation": 0.10,
+           "median_dollar_volume": round(float(
+               (volumes["SPY"] * spy["SPY"]).median()), 0)}
+    for key, short, long in (("slow", 50, 200), ("fast", 10, 50)):
+        rows = capacity_sweep(spy, opens, volumes, MovingAverageCrossStrategy,
+                              short_window=short, long_window=long)
+        out[key] = {"short": short, "long": long,
+                    "rows": [rounded(r) for r in rows]}
+    return out
 
 
 def main():
@@ -136,10 +171,10 @@ def main():
             "hindsight": {k: (round(float(v), 4) if isinstance(v, float) else v)
                           for k, v in wf["hindsight_best"].items()},
         },
+        "capacity": capacity(spy),
     }
 
-    OUT.write_text("window.DATA = " + json.dumps(data, separators=(",", ":")) + ";\n",
-                   encoding="utf-8")
+    write(data)
     print(f"wrote {OUT} ({OUT.stat().st_size / 1024:.0f} KB)")
     print(f"  SPY MA sharpe {data['spy']['ma_stats']['sharpe']:.2f} | "
           f"B&H {data['spy']['bh_stats']['sharpe']:.2f} | "
@@ -153,7 +188,38 @@ def main():
           f"fixed 50/200 {wfs['fixed']['sharpe']:.2f} | "
           f"buy & hold {wfs['bh']['sharpe']:.2f} | "
           f"hindsight {data['walk_forward']['hindsight']['sharpe']:.2f}")
+    report_capacity(data["capacity"])
+
+
+def write(data):
+    OUT.write_text("window.DATA = " + json.dumps(data, separators=(",", ":")) + ";\n",
+                   encoding="utf-8")
+
+
+def report_capacity(cap):
+    for key in ("slow", "fast"):
+        c = cap[key]
+        print(f"  capacity {c['short']}/{c['long']}: " + " | ".join(
+            f"{r['label']} sharpe {r['sharpe']:.2f} dd {r['max_dd']:.1%}"
+            for r in c["rows"]))
+
+
+SECTIONS = {"capacity": capacity}
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--only", choices=sorted(SECTIONS),
+                        help="rebuild one section and keep the rest of data.js as is")
+    args = parser.parse_args()
+    if args.only:
+        text = OUT.read_text(encoding="utf-8")
+        data = json.loads(text[text.index("=") + 1:].strip().rstrip(";"))
+        data[args.only] = SECTIONS[args.only]()
+        write(data)
+        print(f"wrote {OUT} ({OUT.stat().st_size / 1024:.0f} KB), "
+              f"replaced '{args.only}' only")
+        if args.only == "capacity":
+            report_capacity(data["capacity"])
+    else:
+        main()

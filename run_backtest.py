@@ -528,8 +528,8 @@ def main() -> None:
             print("full entry or exit takes. 'slowest' is the longest a single order")
             print("actually took; 'stranded' is notional still working when data ran out.")
             print("\nCapacity is a property of turnover, not of size. Compare the two")
-            print("tables at the same AUM: the strategy that trades five times as often")
-            print("pays the impact bill five times as often for the same position.")
+            print("tables at the same AUM: the strategy that trades seven times as often")
+            print("pays the impact bill seven times as often for the same position.")
             return
 
         if args.vol_target:

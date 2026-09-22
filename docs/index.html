@@ -52,6 +52,7 @@ header{padding:60px 0 46px}
 .card .s{font-size:12.5px;color:var(--ink3);margin-top:5px}
 .v.red{color:var(--red)} .v.green{color:var(--green)}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:26px}
+.grid2>*{min-width:0}
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px}
 .chart{position:relative;height:210px;margin-top:4px}
 .cap{font-size:13px;color:var(--ink3);line-height:1.6;margin-top:10px}
@@ -96,7 +97,7 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
 <div class="wrap">
   <div class="tagline">Sharpe 4.10 on one dataset, 0.75 on the other</div>
   <h1>Event-Driven Backtesting Engine</h1>
-  <p class="lede">A backtester built the way production trading systems are built: five components that talk to each other only through a queue of events, processing one timestamp at a time. <strong style="color:var(--ink)">No component can see the future, because the future hasn't been pushed onto the queue yet.</strong> Roughly 300 lines of source and 32 tests.</p>
+  <p class="lede">A backtester built the way production trading systems are built: five components that talk to each other only through a queue of events, processing one timestamp at a time. <strong style="color:var(--ink)">No component can see the future, because the future hasn't been pushed onto the queue yet.</strong> Roughly 300 lines of source and 72 tests.</p>
   <div class="links">
     <a class="btn primary" href="#results">Results</a>
     <a class="btn" href="https://github.com/mihircoding/backtestingEngine">Source on GitHub</a>
@@ -294,7 +295,7 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
     <div>
       <div class="scroll"><table id="t-fill"><thead><tr><th>Fill model</th><th class="n">Final equity</th><th class="n">Return</th><th class="n">Sharpe</th></tr></thead><tbody></tbody></table></div>
       <p style="margin-top:14px">Waiting the extra bar costs <strong style="color:var(--ink)" id="x-gap">—</strong> across the ten-year run — about $125 per fill, a few basis points of overnight gap each time. Real money, and directionally exactly what you'd expect: you can never fill on a stale price to your own advantage.</p>
-      <p>Small next to the $14,371 whipsaw gap, so nothing above changes. But small isn't zero — a strategy trading far more often, or sized much larger, compounds this into something that isn't small anymore.</p>
+      <p>Small next to the $14,371 whipsaw gap, so nothing above changes. But small isn't zero — a strategy trading far more often, or sized much larger, compounds this into something that isn't small anymore. <a href="#capacity">The capacity study</a> below puts numbers on both.</p>
     </div>
   </div>
 </div>
@@ -325,6 +326,59 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
 </div>
 </section>
 
+<section id="capacity">
+<div class="wrap">
+  <div class="eyebrow">Capacity</div>
+  <h2>How much money it holds</h2>
+  <p class="lede">Every number above is quoted at zero assets under management. Both fill models fill any order at any size for the same price, so a hundred shares and ten million get identical treatment. A third execution handler stops doing that: it fills at most <span id="x-cap-part">&mdash;</span> of a bar's volume, leaves the rest working into later bars at later prices, and charges square-root impact on every slice.</p>
+
+  <div class="grid2">
+    <div class="panel">
+      <h3>Sharpe by AUM</h3>
+      <div class="chart"><canvas id="c-cap-sharpe"></canvas></div>
+    </div>
+    <div class="panel">
+      <h3>Max drawdown by AUM</h3>
+      <div class="chart"><canvas id="c-cap-dd"></canvas></div>
+    </div>
+  </div>
+  <p class="cap">SPY 2015&ndash;2024, fills capped at 10% of each day's volume. &ldquo;No limit&rdquo; is the same backtest through the unconstrained next-bar-open handler. It doesn't depend on AUM, so it is the zero-impact reference for every other point.</p>
+
+  <p style="margin-top:18px">Impact per slice is <span class="mono">impact_coef &times; trailing daily vol &times; sqrt(slice / bar volume)</span>. The square-root form is Almgren's; the constant in front is the part every firm calibrates on its own fills and nobody publishes, so it is a named parameter with a documented default of 1.0 instead of a number buried in the code. Anything still working when the data runs out is counted, not dropped.</p>
+  <p>One difference from the rest of the page: every row here is fully invested when long, not 200 shares. A book that keeps 60% of itself in cash has no capacity problem to study, and that is why the return and drawdown columns don't match the tables above.</p>
+
+  <div style="margin-top:8px">
+    <div style="margin-bottom:22px">
+      <h3>50/200 crossover</h3>
+      <div class="scroll"><table id="t-cap-slow"><thead><tr><th>AUM</th><th class="n">Days of volume</th><th class="n">Return</th><th class="n">Sharpe</th><th class="n">vs no limit</th><th class="n">Max DD</th><th class="n">Slices</th><th class="n">Slowest</th></tr></thead><tbody></tbody></table></div>
+    </div>
+    <div>
+      <h3>10/50 crossover</h3>
+      <div class="scroll"><table id="t-cap-fast"><thead><tr><th>AUM</th><th class="n">Days of volume</th><th class="n">Return</th><th class="n">Sharpe</th><th class="n">vs no limit</th><th class="n">Max DD</th><th class="n">Slices</th><th class="n">Slowest</th></tr></thead><tbody></tbody></table></div>
+    </div>
+  </div>
+  <p class="cap">Days of volume is the whole position divided by SPY's median daily dollar volume of <span id="x-cap-adv">&mdash;</span>. Slices is how many pieces the orders were filled in; slowest is the longest a single order took to complete, in trading days.</p>
+
+  <div class="cards" style="margin-top:20px">
+    <div class="card"><div class="k">50/200 at $20B</div><div class="v" id="m-cap-slow">&mdash;</div><div class="s">Sharpe given up</div></div>
+    <div class="card"><div class="k">10/50 at $5B</div><div class="v red" id="m-cap-fast">&mdash;</div><div class="s">Sharpe given up, at a quarter of the size</div></div>
+    <div class="card"><div class="k">10/50 max drawdown at $20B</div><div class="v red" id="m-cap-dd">&mdash;</div><div class="s" id="m-cap-dd-s">&mdash;</div></div>
+    <div class="card"><div class="k">Slowest order, 10/50 at $100B</div><div class="v" id="m-cap-delay">&mdash;</div><div class="s">trading days to fill</div></div>
+  </div>
+
+  <div class="note">
+    <p><strong>Capacity is a property of turnover, not of size.</strong> Same instrument, same cap, same AUM. The difference between the two tables isn't the position, it's that one strategy trades <span id="x-cap-n-slow">&mdash;</span> times in ten years and the other <span id="x-cap-n-fast">&mdash;</span>. Impact is a toll paid per trade, so the AUM number on its own says very little.</p>
+    <p><strong>The drawdown column matters more than the Sharpe column.</strong> The fast crossover's only advantage over the slow one is that it gets out of trouble sooner, and a participation cap takes that away first. It doesn't get uniformly worse at making money; it stops being the strategy it was.</p>
+  </div>
+
+  <div class="note blue">
+    <p><strong>Both curves recover at $100 billion, and that is noise, not a result.</strong> Nine trades, or sixty-one, isn't a sample, and a fill delay is a coin flip on each one: sometimes the price you get while working an order for months beats the one you saw. What rules those rows out isn't Sharpe, it's the slowest column. Seven months to build a position on a signal that flips every few weeks is not a strategy anyone can run, and no cost model is needed to say so.</p>
+  </div>
+
+  <p>So the ceiling for this strategy on this instrument sits between $5 and $20 billion, set by fill delay rather than by impact cost. That ceiling belongs to SPY, which is about as liquid as anything trades. The same strategy on a name doing $50 million a day would hit the same wall around <strong style="color:var(--ink)" id="x-cap-mid">&mdash;</strong>, roughly <span id="x-cap-ratio">&mdash;</span> times sooner. A capacity number quoted without the instrument's volume next to it isn't a number.</p>
+</div>
+</section>
+
 <section>
 <div class="wrap">
   <div class="eyebrow">Limitations</div>
@@ -332,8 +386,9 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
   <div class="grid2">
     <div>
       <ul>
-        <li>Fills are complete, instant, at any size, under either fill-timing model. <strong style="color:var(--ink)">No liquidity constraint.</strong></li>
-        <li>Slippage scales with price, not with order size relative to volume.</li>
+        <li>Outside the capacity section, fills are complete and instant at any size. <strong style="color:var(--ink)">Read those numbers as an upper bound.</strong></li>
+        <li>The impact constant is a default of 1.0, not a calibration. It gives the right shape of cost curve, which is enough to compare two strategies and not enough to quote a dollar figure.</li>
+        <li>Volume is assumed unaffected by your own trading, and the 10% cap is a constant. Real liquidity is worst exactly when you most want to trade.</li>
         <li>No borrow costs, margin, or taxes.</li>
         <li>Daily bars only. Intraday, the crossover dates would move.</li>
       </ul>
@@ -378,7 +433,7 @@ function lineChart(id, labels, sets, opts = {}) {
     type: 'line',
     data: {labels, datasets: sets.map(s => ({
       label: s.label, data: s.data, borderColor: s.color, backgroundColor: s.color,
-      borderWidth: s.width || 1.6, pointRadius: 0, borderDash: s.dash || [], tension: 0
+      borderWidth: s.width || 1.6, pointRadius: s.points || 0, borderDash: s.dash || [], tension: 0
     }))},
     options: {
       responsive: true, maintainAspectRatio: false,
@@ -546,6 +601,51 @@ document.querySelector('#t-sizing tbody').innerHTML = sz.rows.map(r => `
       <td class="n">${r.sharpe.toFixed(2)}</td>
       <td class="n">${pct(r.max_dd)}</td>
       <td class="n">${r.fills}</td></tr>`).join('');
+
+// --- capacity ---
+const cap = D.capacity;
+const aumLabel = r => r.aum === null ? 'No limit' : '$' + (r.aum / 1e9) + 'B';
+const pct1 = x => (x * 100).toFixed(1) + '%';
+lineChart('c-cap-sharpe', cap.slow.rows.map(aumLabel),
+  [{label: '50/200', data: cap.slow.rows.map(r => r.sharpe), color: C().blue, points: 3},
+   {label: '10/50', data: cap.fast.rows.map(r => r.sharpe), color: C().amber, points: 3}],
+  {fmt: v => v.toFixed(2), ytick: v => v.toFixed(2)});
+lineChart('c-cap-dd', cap.slow.rows.map(aumLabel),
+  [{label: '50/200', data: cap.slow.rows.map(r => r.max_dd), color: C().blue, points: 3},
+   {label: '10/50', data: cap.fast.rows.map(r => r.max_dd), color: C().amber, points: 3}],
+  {fmt: pct, ytick: v => (v * 100).toFixed(0) + '%'});
+
+const capRows = rows => rows.map(r => {
+  const base = r.aum === null, drop = r.sharpe - rows[0].sharpe;
+  return `
+  <tr><td><strong>${aumLabel(r)}</strong></td>
+      <td class="n">${base ? '&mdash;' : r.position_in_days.toFixed(2)}</td>
+      <td class="n">${pct(r.total_return)}</td>
+      <td class="n">${r.sharpe.toFixed(2)}</td>
+      <td class="n">${base ? '&mdash;' : (drop < 0 ? '&minus;' : '') + Math.abs(drop).toFixed(2)}</td>
+      <td class="n">${pct(r.max_dd)}</td>
+      <td class="n">${base ? '&mdash;' : r.slices}</td>
+      <td class="n">${base ? '&mdash;' : r.max_delay + 'd'}</td></tr>`;
+}).join('');
+document.querySelector('#t-cap-slow tbody').innerHTML = capRows(cap.slow.rows);
+document.querySelector('#t-cap-fast tbody').innerHTML = capRows(cap.fast.rows);
+
+const atAum = (rows, aum) => rows.find(r => r.aum === aum);
+const sharpeDrop = (rows, aum) => atAum(rows, aum).sharpe - rows[0].sharpe;
+const adv = cap.median_dollar_volume;
+document.getElementById('x-cap-part').textContent = (cap.participation * 100).toFixed(0) + '%';
+document.getElementById('x-cap-adv').textContent = '$' + (adv / 1e9).toFixed(1) + ' billion';
+document.getElementById('m-cap-slow').textContent = sharpeDrop(cap.slow.rows, 2e10).toFixed(2);
+document.getElementById('m-cap-fast').textContent = sharpeDrop(cap.fast.rows, 5e9).toFixed(2);
+document.getElementById('m-cap-dd').textContent = pct1(atAum(cap.fast.rows, 2e10).max_dd);
+document.getElementById('m-cap-dd-s').textContent = 'from ' + pct1(cap.fast.rows[0].max_dd) + ' with no limit';
+document.getElementById('m-cap-delay').textContent = atAum(cap.fast.rows, 1e11).max_delay;
+document.getElementById('x-cap-n-slow').textContent = atAum(cap.slow.rows, 1e8).slices;
+document.getElementById('x-cap-n-fast').textContent = atAum(cap.fast.rows, 1e8).slices;
+// The same wall on a thinner name: a $5B book is this many days of SPY's
+// volume, so it is the same number of days of a $50M/day stock's.
+document.getElementById('x-cap-mid').textContent = '$' + Math.round(5e9 * 50e6 / adv / 1e6) + ' million';
+document.getElementById('x-cap-ratio').textContent = Math.round(adv / 50e6 / 10) * 10;
 
 </script>
 </body>
