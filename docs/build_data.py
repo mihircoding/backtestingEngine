@@ -30,8 +30,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from run_backtest import (capacity_sweep, cost_sensitivity, fetch_opens, fetch_prices,
                           fetch_volumes, make_opens, make_prices, param_grid,
-                          realized_vol, run, stats, vol_target_comparison,
-                          walk_forward_selection)
+                          realized_vol, run, significance_report, stats,
+                          vol_target_comparison, walk_forward_selection)
 from src.execution import NextBarOpenExecutionHandler
 from src.strategy import BuyAndHoldStrategy, MovingAverageCrossStrategy
 
@@ -64,6 +64,45 @@ def capacity(spy=None):
         out[key] = {"short": short, "long": long,
                     "rows": [rounded(r) for r in rows]}
     return out
+
+
+def histogram(values, bins=40):
+    """Bin a bootstrap distribution for the chart, so the page ships 40
+    numbers instead of 5,000."""
+    counts, edges = np.histogram(np.asarray(values, dtype=float), bins=bins)
+    centres = (edges[:-1] + edges[1:]) / 2
+    return {"x": [round(float(c), 4) for c in centres],
+            "y": [int(n) for n in counts]}
+
+
+def significance(spy=None):
+    """Bootstrap intervals and the deflated Sharpe - `--significance`."""
+    print("significance (23 backtests + 5,000 resamples)...")
+    spy = fetch_prices() if spy is None else spy
+    rep = significance_report(spy, trade_size=200)
+    conv, best = rep["convention"], rep["deflated_best"]
+    return {
+        "pairs": rep["pairs"],
+        "effective_pairs": round(float(rep["effective_pairs"]), 2),
+        "sharpe_spread": round(float(rep["sharpe_spread"]), 4),
+        "best_pair": f"{rep['best']['pair'][0]}/{rep['best']['pair'][1]}",
+        "buy_and_hold_sharpe": round(float(rep["buy_and_hold_sharpe"]), 4),
+        "convention": {k: round(float(conv[k]), 4)
+                       for k in ("sharpe", "lo", "hi", "p_le_zero")},
+        "distribution": histogram(conv["draws"]),
+        "vs_buy_and_hold": {k: round(float(rep["vs_buy_and_hold"][k]), 4)
+                            for k in ("diff", "lo", "hi", "p_le_zero")},
+        "best_vs_buy_and_hold": {k: round(float(rep["best_vs_buy_and_hold"][k]), 4)
+                                 for k in ("diff", "lo", "hi", "p_le_zero")},
+        "deflated": {
+            "sharpe": round(float(best["sharpe"]), 4),
+            "threshold": round(float(best["threshold"]), 4),
+            "psr_vs_zero": round(float(best["psr_vs_zero"]), 4),
+            "dsr": round(float(best["dsr"]), 4),
+            "dsr_vs_bh": round(float(rep["deflated_vs_bh"]["dsr"]), 4),
+            "bar_vs_bh": round(float(rep["deflated_vs_bh"]["bar"]), 4),
+        },
+    }
 
 
 def main():
@@ -172,6 +211,7 @@ def main():
                           for k, v in wf["hindsight_best"].items()},
         },
         "capacity": capacity(spy),
+        "significance": significance(spy),
     }
 
     write(data)
@@ -189,6 +229,7 @@ def main():
           f"buy & hold {wfs['bh']['sharpe']:.2f} | "
           f"hindsight {data['walk_forward']['hindsight']['sharpe']:.2f}")
     report_capacity(data["capacity"])
+    report_significance(data["significance"])
 
 
 def write(data):
@@ -204,7 +245,15 @@ def report_capacity(cap):
             for r in c["rows"]))
 
 
-SECTIONS = {"capacity": capacity}
+def report_significance(sig):
+    c = sig["convention"]
+    print(f"  significance: 50/200 sharpe {c['sharpe']:.2f} "
+          f"[{c['lo']:.2f}, {c['hi']:.2f}] | best {sig['best_pair']} "
+          f"dsr {sig['deflated']['dsr']:.1%} vs zero, "
+          f"{sig['deflated']['dsr_vs_bh']:.1%} vs buy & hold")
+
+
+SECTIONS = {"capacity": capacity, "significance": significance}
 
 
 if __name__ == "__main__":
@@ -221,5 +270,7 @@ if __name__ == "__main__":
               f"replaced '{args.only}' only")
         if args.only == "capacity":
             report_capacity(data["capacity"])
+        elif args.only == "significance":
+            report_significance(data["significance"])
     else:
         main()

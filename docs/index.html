@@ -97,9 +97,10 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
 <div class="wrap">
   <div class="tagline">Sharpe 4.10 on one dataset, 0.75 on the other</div>
   <h1>Event-Driven Backtesting Engine</h1>
-  <p class="lede">A backtester built the way production trading systems are built: five components that talk to each other only through a queue of events, processing one timestamp at a time. <strong style="color:var(--ink)">No component can see the future, because the future hasn't been pushed onto the queue yet.</strong> Roughly 300 lines of source and 72 tests.</p>
+  <p class="lede">A backtester built the way production trading systems are built: five components that talk to each other only through a queue of events, processing one timestamp at a time. <strong style="color:var(--ink)">No component can see the future, because the future hasn't been pushed onto the queue yet.</strong> Roughly 300 lines of source and 87 tests.</p>
   <div class="links">
     <a class="btn primary" href="#results">Results</a>
+    <a class="btn" href="#significance">How much is luck?</a>
     <a class="btn" href="https://github.com/mihircoding/backtestingEngine">Source on GitHub</a>
     <a class="btn" href="https://github.com/mihircoding/backtestingEngine/blob/main/RESULTS.md">Full write-up</a>
   </div>
@@ -247,6 +248,43 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
 
   <div class="note">
     <p><strong>The answer is "unremarkable", which is the useful answer.</strong> 50/200 lands mid-pack — not cherry-picked, and not an outlier either way. More telling: only a handful of the 23 pairs beat buy-and-hold at all, and 50/200 isn't among them. The crossover is not a free lunch at any nearby setting, and picking a "better" pair after the fact would be curve-fitting this sample, not finding a better strategy.</p>
+  </div>
+</div>
+</section>
+
+<section id="significance">
+<div class="wrap">
+  <div class="eyebrow">Uncertainty</div>
+  <h2>How much of this is luck?</h2>
+  <p class="lede">Every Sharpe on this page is one estimate from one index over ten years, quoted to two decimals. That invites more confidence than 2,500 daily returns can support. Two corrections: an error bar that respects the fact that a trend rule holds the same position for weeks, and a penalty for having tried 23 parameter pairs before reporting the best one.</p>
+
+  <div class="panel">
+    <div class="chart" style="height:300px"><canvas id="c-boot"></canvas></div>
+    <p class="cap">5,000 stationary-bootstrap resamples of the 50/200 strategy's daily returns, in blocks averaging a month. Blue is the Sharpe actually observed; the shaded range is the middle 95%.</p>
+  </div>
+
+  <div class="cards" style="margin-top:20px">
+    <div class="card"><div class="k">50/200 Sharpe</div><div class="v" id="m-sig-sharpe">—</div><div class="s" id="m-sig-ci">—</div></div>
+    <div class="card"><div class="k">Chance it is really negative</div><div class="v" id="m-sig-p">—</div><div class="s">not worthless — just not measured precisely</div></div>
+    <div class="card"><div class="k">Gap to buy &amp; hold</div><div class="v" id="m-sig-diff">—</div><div class="s" id="m-sig-diff-ci">—</div></div>
+  </div>
+
+  <div class="note">
+    <p><strong>The interval is a full point of Sharpe wide.</strong> Ten years is not a lot of data. Resampling single days instead of month-long blocks would make it look much tighter, and would be wrong: the position doesn't change from one day to the next, so consecutive days are not independent draws. The strategy is clearly not worthless, and just as clearly not distinguishable from buying the index — the same conclusion the headline table reaches, now with the uncertainty attached.</p>
+  </div>
+
+  <h3 style="margin:34px 0 8px">The best cell, after paying for the search</h3>
+  <p class="lede" style="margin-bottom:18px"><span class="mono" id="m-sig-best">—</span> scores the highest of the 23. Reporting that number is the oldest mistake in backtesting: it is the maximum of 23 noisy estimates, and the maximum of 23 coin flips looks like skill too. The deflated Sharpe ratio sets the bar at what a search over that many worthless variants reaches by chance.</p>
+
+  <div class="cards">
+    <div class="card"><div class="k">P(real edge) vs zero</div><div class="v" id="m-sig-psr">—</div><div class="s">what a backtest reports</div></div>
+    <div class="card"><div class="k">vs zero, search charged</div><div class="v" id="m-sig-dsr">—</div><div class="s" id="m-sig-bar">—</div></div>
+    <div class="card"><div class="k">vs buy &amp; hold, search charged</div><div class="v" id="m-sig-dsrbh">—</div><div class="s">the one that counts</div></div>
+  </div>
+
+  <div class="note">
+    <p><strong>Beating zero is the wrong test for anything long-only.</strong> A crossover rule on SPY is in the market most of the time, so it inherits the market's Sharpe before it does anything clever. Measured against buy &amp; hold plus the cost of the search, the grid's best cell comes out at a coin flip.</p>
+    <p style="margin-top:10px">One honest footnote: the deflation barely bites against a zero benchmark, and not because the search was disciplined. The 23 pairs are long the same index on most of the same days — they behave like <span class="mono" id="m-sig-eff">—</span> independent strategies, their Sharpes are packed within <span class="mono" id="m-sig-spread">—</span> of each other, and a search that narrow can't generate much luck. That is a property of this grid, not a clean bill of health.</p>
   </div>
 </div>
 </section>
@@ -566,6 +604,67 @@ new Chart(document.getElementById('c-grid'), {
     }
   }]
 });
+
+// --- significance ---
+const sig = D.significance, sgc = sig.convention, sgd = sig.deflated;
+const pc1 = x => (x * 100).toFixed(1) + '%';
+document.getElementById('m-sig-sharpe').textContent = sgc.sharpe.toFixed(2);
+document.getElementById('m-sig-ci').textContent =
+  '95% interval ' + sgc.lo.toFixed(2) + ' to ' + sgc.hi.toFixed(2);
+document.getElementById('m-sig-p').textContent = pc1(sgc.p_le_zero);
+document.getElementById('m-sig-diff').textContent =
+  (sig.vs_buy_and_hold.diff >= 0 ? '+' : '') + sig.vs_buy_and_hold.diff.toFixed(2);
+document.getElementById('m-sig-diff-ci').textContent =
+  'interval ' + sig.vs_buy_and_hold.lo.toFixed(2) + ' to ' +
+  (sig.vs_buy_and_hold.hi >= 0 ? '+' : '') + sig.vs_buy_and_hold.hi.toFixed(2) +
+  ' — straddles zero';
+document.getElementById('m-sig-best').textContent =
+  sig.best_pair + ' (Sharpe ' + sgd.sharpe.toFixed(2) + ')';
+document.getElementById('m-sig-psr').textContent = pc1(sgd.psr_vs_zero);
+document.getElementById('m-sig-dsr').textContent = pc1(sgd.dsr);
+document.getElementById('m-sig-bar').textContent =
+  'bar raised to ' + sgd.threshold.toFixed(2);
+document.getElementById('m-sig-dsrbh').textContent = pc1(sgd.dsr_vs_bh);
+document.getElementById('m-sig-eff').textContent = sig.effective_pairs.toFixed(1);
+document.getElementById('m-sig-spread').textContent = sig.sharpe_spread.toFixed(2);
+
+{
+  const c = C(), h = sig.distribution;
+  new Chart(document.getElementById('c-boot'), {
+    type: 'bar',
+    data: {labels: h.x.map(v => v.toFixed(2)),
+           datasets: [{data: h.y,
+             backgroundColor: h.x.map(v =>
+               v >= sgc.lo && v <= sgc.hi ? c.blue + '55' : c.ink3 + '33'),
+             borderWidth: 0, barPercentage: 1, categoryPercentage: 1}]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {legend: {display: false},
+                tooltip: {callbacks: {title: i => 'Sharpe ' + i[0].label,
+                                      label: ctx => ctx.parsed.y + ' of 5,000 resamples'}}},
+      scales: {
+        x: {title: {display: true, text: 'Sharpe of a resampled ten years', color: c.ink3},
+            grid: {display: false}, ticks: {color: c.ink3, maxTicksLimit: 9}},
+        y: {grid: {color: c.line}, ticks: {color: c.ink3}, border: {display: false}}
+      }
+    },
+    plugins: [{
+      id: 'observed',
+      afterDraw(chart) {
+        const {ctx, chartArea, scales} = chart;
+        const i = h.x.reduce((best, v, j) =>
+          Math.abs(v - sgc.sharpe) < Math.abs(h.x[best] - sgc.sharpe) ? j : best, 0);
+        const x = scales.x.getPixelForValue(i);
+        ctx.save();
+        ctx.strokeStyle = C().blue; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(x, chartArea.top); ctx.lineTo(x, chartArea.bottom); ctx.stroke();
+        ctx.fillStyle = C().blue; ctx.font = '600 11px Inter, sans-serif';
+        ctx.fillText('observed ' + sgc.sharpe.toFixed(2), x + 6, chartArea.top + 12);
+        ctx.restore();
+      }
+    }]
+  });
+}
 
 // --- fill timing ---
 lineChart('c-fill', spy.ma.map(p => p[0]),
