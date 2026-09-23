@@ -26,6 +26,7 @@ from src.execution import (NextBarOpenExecutionHandler,
                            SimulatedExecutionHandler)
 from src.portfolio import Portfolio
 from src.strategy import BuyAndHoldStrategy, MovingAverageCrossStrategy
+import significance as sig
 
 TRADING_DAYS = 252
 
@@ -335,6 +336,92 @@ def param_grid(prices: pd.DataFrame, trade_size: int,
     return rows
 
 
+def significance_report(prices: pd.DataFrame, trade_size: int,
+                        short_windows=(10, 20, 30, 50, 75),
+                        long_windows=(50, 100, 150, 200, 250),
+                        n_boot: int = 5000, **kwargs) -> dict:
+    """Error bars for the convention, and a luck correction for the grid.
+
+    param_grid() shows 50/200 is unremarkable among its neighbours and the
+    walk-forward shows fitting the windows does not pay. Both leave the same
+    question open: the numbers in either table are single estimates from ten
+    years of one index, so how much of any of it is noise?
+
+    Two answers here. A stationary bootstrap puts an interval around the
+    50/200 Sharpe and around its gap to buy & hold, resampling both on the
+    same dates. And the best cell of the grid gets deflated: measured not
+    against zero but against the Sharpe a search over 23 equally worthless
+    variants would have produced by chance, estimated from how far apart the
+    23 cells actually are.
+    """
+    pairs = [(s, l) for s in short_windows for l in long_windows if s < l]
+    curves = {}
+    for short, long in pairs:
+        equity = run(prices, MovingAverageCrossStrategy, trade_size,
+                     short_window=short, long_window=long, **kwargs)
+        curves[(short, long)] = equity.pct_change().dropna().values
+
+    sharpes = {p: sig.sharpe(r) for p, r in curves.items()}
+    best = max(sharpes, key=sharpes.get)
+    spread = float(np.std(list(sharpes.values()), ddof=1))
+    n_eff = sig.effective_trials(np.vstack(list(curves.values())))
+
+    bh = run(prices, BuyAndHoldStrategy, trade_size, **kwargs).pct_change().dropna().values
+    bh_sharpe = sig.sharpe(bh)
+    convention = curves[(50, 200)]
+
+    return {
+        "pairs": len(pairs),
+        "effective_pairs": n_eff,
+        "sharpe_spread": spread,
+        "best": {"pair": best, "sharpe": sharpes[best]},
+        "convention": sig.sharpe_interval(convention, n_boot=n_boot),
+        "vs_buy_and_hold": sig.paired_difference(convention, bh, n_boot=n_boot),
+        "best_vs_buy_and_hold": sig.paired_difference(curves[best], bh, n_boot=n_boot),
+        "buy_and_hold_sharpe": bh_sharpe,
+        "deflated_best": sig.deflated_sharpe(curves[best], len(pairs), spread),
+        "deflated_vs_bh": sig.deflated_sharpe(curves[best], len(pairs), spread,
+                                              benchmark=bh_sharpe),
+    }
+
+
+def print_significance(rep: dict) -> None:
+    c, d = rep["convention"], rep["deflated_best"]
+    print(f"\n50/200 Sharpe {c['sharpe']:.2f}, 95% bootstrap interval "
+          f"[{c['lo']:.2f}, {c['hi']:.2f}]")
+    print(f"  P(Sharpe <= 0) = {c['p_le_zero']:.1%} - resampling in ~1 month blocks, "
+          f"so a position\n  held for weeks is resampled as a block instead of as "
+          "independent days.")
+
+    g = rep["vs_buy_and_hold"]
+    print(f"\nAgainst buy & hold (Sharpe {rep['buy_and_hold_sharpe']:.2f}), same "
+          f"resampled dates:\n  difference {g['diff']:+.2f}, 95% interval "
+          f"[{g['lo']:+.2f}, {g['hi']:+.2f}], P(no better) = {g['p_le_zero']:.1%}")
+
+    print(f"\nGrid of {rep['pairs']} window pairs: Sharpes vary by "
+          f"{rep['sharpe_spread']:.2f} (sd). The curves are")
+    print(f"so alike that they amount to {rep['effective_pairs']:.1f} independent "
+          f"strategies, which is\nwhy that spread - and so the luck bar below - is small.")
+    print(f"  best cell {d['sharpe']:.2f} at {rep['best']['pair'][0]}/"
+          f"{rep['best']['pair'][1]}")
+    print(f"  best of {rep['pairs']} worthless variants this alike reaches "
+          f"{d['threshold']:.2f} by itself")
+    v = rep["deflated_vs_bh"]
+    g = rep["best_vs_buy_and_hold"]
+    for label, value, note in (
+            ("P(true Sharpe > 0)", d["psr_vs_zero"], ""),
+            (f"P(true Sharpe > luck bar {d['bar']:.2f})", d["dsr"], ""),
+            (f"P(true Sharpe > buy & hold + luck, {v['bar']:.2f})", v["dsr"],
+             "   <- the one that counts")):
+        print(f"  {label:<42} {value:>5.1%}{note}")
+    print(f"  best cell minus buy & hold: {g['diff']:+.2f}, 95% interval "
+          f"[{g['lo']:+.2f}, {g['hi']:+.2f}]")
+    print("\nBeating zero is not the achievement it looks like for a rule that is long")
+    print("the index most of the time - it inherits the index's Sharpe. Measured")
+    print("against buy & hold instead, with the search paid for, the grid's best cell")
+    print("is not distinguishable from doing nothing.")
+
+
 WF_TRAIN_YEARS = 3
 
 
@@ -462,6 +549,9 @@ def main() -> None:
     parser.add_argument("--capacity", action="store_true",
                         help="run the same strategy at rising AUM with a volume "
                              "participation limit on SPY, then exit")
+    parser.add_argument("--significance", action="store_true",
+                        help="bootstrap error bars and deflate the grid's best "
+                             "cell on SPY, then exit")
     parser.add_argument("--walk-forward", action="store_true",
                         help="refit the MA windows yearly on trailing data and trade them "
                              "out of sample on SPY, then exit")
@@ -511,6 +601,11 @@ def main() -> None:
                   f"{bh_sharpe:.2f}). 50/200 rank by Sharpe: "
                   f"{[i for i, r in enumerate(grid, 1) if (r['short'], r['long']) == (50, 200)][0]}"
                   f" of {len(grid)}.")
+            return
+
+        if args.significance:
+            print("\nHow much of this is luck? SPY 2015-2024, 5,000 bootstrap resamples.")
+            print_significance(significance_report(spy, trade_size=200))
             return
 
         if args.capacity:

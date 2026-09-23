@@ -6,7 +6,7 @@ A backtester built the way production trading systems are built: components that
 other only through a queue of events, processing one timestamp at a time. No component can see
 the future, because the future hasn't been pushed onto the queue yet.
 
-Roughly 400 lines of source, 72 tests, and one uncomfortable result — see
+Roughly 400 lines of source, 87 tests, and one uncomfortable result — see
 [RESULTS.md](RESULTS.md). Interview notes are in [INTERVIEW.md](INTERVIEW.md).
 
 ```bash
@@ -17,6 +17,7 @@ python run_backtest.py --fill-timing   # same-bar-close vs next-bar-open, SPY
 python run_backtest.py --vol-target    # fixed share count vs volatility targeting
 python run_backtest.py --walk-forward  # refit the MA windows yearly, trade them out of sample
 python run_backtest.py --capacity      # how much money the strategy holds, at 10% of volume
+python run_backtest.py --significance  # bootstrap error bars, and deflate the grid's best cell
 ```
 
 ![Synthetic and SPY backtests](engine_backtest.png)
@@ -142,7 +143,8 @@ paid per trade and one of them trades seven times as often.
 │   ├── portfolio.py         # sizing (fixed or vol-targeted), accounting, equity
 │   ├── execution.py         # fills: same-bar, next-bar-open, participation-limited
 │   └── engine.py            # the event loop
-└── tests/                   # 72 tests, incl. an end-to-end check to the cent
+├── significance.py          # bootstrap intervals and the deflated Sharpe ratio
+└── tests/                   # 87 tests, incl. an end-to-end check to the cent
 ```
 
 Events are **frozen** dataclasses. Messages shouldn't mutate after they're sent; freezing them

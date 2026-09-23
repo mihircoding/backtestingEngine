@@ -143,6 +143,60 @@ is not a free lunch at any nearby setting, and picking a "better" pair after the
 been curve-fitting the 2015-2024 sample, not finding a better strategy. Full grid, and the flag
 to reproduce it, in `run_backtest.py`.
 
+## Put an error bar on it
+
+Everything above is a point estimate from one index over ten years, and a Sharpe read to two
+decimals invites more confidence than 2,500 daily returns can support. `run_backtest.py
+--significance` resamples them 5,000 times with a stationary bootstrap — blocks of random
+length averaging a month, so a position held for weeks is resampled as a block instead of as
+independent days, which is what makes the usual error bar too narrow for a trend rule.
+
+```
+50/200 Sharpe 0.75, 95% bootstrap interval [0.14, 1.45]
+  P(Sharpe <= 0) = 0.8%
+
+Against buy & hold (Sharpe 0.77), same resampled dates:
+  difference -0.02, 95% interval [-0.36, +0.38], P(no better) = 54.7%
+```
+
+**The interval is a full point of Sharpe wide.** Ten years is not a lot of data. The strategy is
+clearly not worthless — 0.8% of resamples put it at or below zero — and just as clearly not
+distinguishable from buying the index, which is the same conclusion the headline table reaches,
+now with the uncertainty attached. Both series are resampled on the *same* dates, so the
+comparison keeps the fact that they saw the same market on the same day.
+
+### The grid's best cell, after paying for the search
+
+10/100 scores 0.86, the best of the 23. Reporting that number is the oldest mistake in
+backtesting: it is the maximum of 23 noisy estimates, and the maximum of 23 coin flips looks
+like skill too. The deflated Sharpe ratio (Bailey & López de Prado) sets the bar where it
+belongs — at the Sharpe a search over that many equally worthless variants reaches by chance,
+inferred from how far apart the 23 cells actually are.
+
+```
+Sharpes across the grid vary by 0.07 (sd); the curves are so alike
+they amount to 1.4 independent strategies, not 23
+  best cell 0.86 at 10/100
+  best of 23 worthless variants this alike reaches 0.14 by itself
+  P(true Sharpe > 0)                         99.6%
+  P(true Sharpe > luck bar 0.14)             98.7%
+  P(true Sharpe > buy & hold + luck, 0.91)   43.5%
+  best cell minus buy & hold: +0.09, 95% interval [-0.35, +0.51]
+```
+
+Two things worth saying out loud. First, the deflation barely bites against a zero benchmark
+(99.6% → 98.7%), and the reason is *not* that the search was honest — it is that 23 moving-average
+pairs on one index are effectively one strategy tried 23 times. They are long the same market on
+most of the same days, their Sharpes are packed within 0.07 of each other, and a search that
+narrow cannot produce much luck. That is a property of this grid, not a clean bill of health;
+a grid spanning genuinely different ideas would have a far higher bar.
+
+Second, **beating zero is the wrong test for anything long-only.** A crossover rule on SPY is in
+the market most of the time, so it inherits the market's Sharpe before it does anything clever.
+Measured against buy & hold plus the search cost, the best cell of the grid comes out at 43.5% —
+a coin flip. The +0.09 Sharpe edge it appears to have over the index has a 95% interval from
+−0.35 to +0.51 around it.
+
 ## What if you did fit the windows, honestly?
 
 The section above is careful to say it fits nothing. That leaves the obvious question unanswered,
