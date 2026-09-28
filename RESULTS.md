@@ -367,12 +367,101 @@ widen its quote rather than keep paying, which this study's fixed one-tick edge 
   is deliberate: it isolates latency from information. In a real market the fast participant
   usually has both.
 
+## 7. The auction, where the rules are different
+
+Sections 1-6 all happen in the continuous book: orders arrive one at a time, every trade has its
+own price, priority is price then time. The opening and closing crosses run on none of that, and
+they are where a large share of real volume trades. `src/auction.py` is the mechanism;
+`auction_study.py` is what it costs.
+
+In an auction nothing trades while orders accumulate, then the book is crossed once. Every
+execution prints at the **same** price, and that price is chosen by maximising executable volume
+rather than by anyone's quote. Volume ties — frequent, because a tick grid makes a whole range of
+prices trade the same number of shares — are broken by the smaller imbalance, then by the side of
+the imbalance, then by a reference price. Time priority never decides the price; it only decides
+who is unlucky at the margin.
+
+### Uniform pricing costs the taker money
+
+Give both mechanisms the same resting offers and send the same buy order into each. Order sizes
+are expressed as a share of the liquidity on the offer so the table is about the mechanism rather
+than about how many shares this simulator happened to leave lying around.
+
+```
+   order  % depth  sweep vwap    bps    cross    bps  buyer pays  breakeven
+   6,318      5%    100.0295    2.4   100.03    2.5          $3      27.0x
+  12,637     10%    100.0347    3.0   100.04    3.5         $68       2.0x
+  31,594     25%    100.0391    3.4   100.05    4.5        $344       4.9x
+  63,188     50%    100.0467    4.2   100.06    5.5        $842       2.3x
+  94,782     75%    100.0534    4.8   100.07    6.5      $1,576       1.9x
+ 120,058     95%    100.0596    5.5   100.10    9.5      $4,855       2.4x
+```
+
+**The cross is more expensive for the aggressor every single time, and it has to be.** Sweeping
+the book pays the *average* of every price walked through; the cross pays the *last* one. The
+average of a rising ladder is below its last rung, so the gap is arithmetic, not a market
+condition. What the buyer loses is not burned — it goes to the sellers who were resting at the
+better prices and now print at the clearing price instead of at their own. A uniform-price
+clearing pays inframarginal suppliers the marginal price, which is the textbook reason passive
+size shows up for it.
+
+**So why does anyone send size to the close?** Because the comparison above holds liquidity
+fixed, and that is exactly what an auction does not do. The `breakeven` column prices the real
+trade-off: how many times deeper the auction book has to be before one clearing price beats the
+walk. Past about 10% of visible depth the answer is **roughly two times**, and a real closing
+cross is far past two — the whole day's participants arrive in the same instant instead of
+leaving a few hundred shares on the screen at a time. The 27x in the first row is a tick-grid
+artefact and worth reading correctly: at that size the cross is only 0.1bps worse, and it takes
+an enormous amount of extra depth to win a whole tick.
+
+The one-line version for an interview: *the auction is not cheaper per share of displayed
+liquidity, it is cheaper because it concentrates the liquidity, and it needs roughly a 2x
+concentration to break even.*
+
+### What the pre-open feed publishes
+
+```
+ market buy  indicative  move bps  imbalance  side  reason
+          0           -         -          -   BUY  no overlap
+     18,956      100.04      +3.5      8,733  SELL  smallest imbalance
+     37,913      100.05      +4.5     11,892  SELL  smallest imbalance
+     56,869      100.06      +5.5     16,473  SELL  smallest imbalance
+     75,826      100.07      +6.5     22,354  SELL  smallest imbalance
+     94,782      100.07      +6.5      3,398  SELL  smallest imbalance
+    113,739      100.09      +8.5      4,910  SELL  smallest imbalance
+```
+
+The first row is the useful one. With no market order the two limit books do not overlap — there
+is a spread, which is what a spread means — and the auction has nothing to cross. **An auction
+still needs someone willing to pay the other side's price.** What it changes is what that person
+pays, not whether they are required.
+
+Note also that "smallest imbalance" decides almost every row. The maximum-volume rule, which is
+the one everybody quotes, is ambiguous most of the time on a real tick grid; the tie-breaks are
+not footnotes, they are what actually sets the print.
+
+### What this does not model
+
+- **No auction order types.** Real crosses have market-on-open, limit-on-close, imbalance-only
+  and on-close-only orders, each with its own eligibility window and its own priority tier. The
+  allocation here is one tier, filled in arrival order.
+- **Nobody responds to the imbalance.** Publishing it is the whole point of publishing it — a
+  large buy imbalance is a standing invitation, and on a real venue the imbalance usually shrinks
+  before the cross. Nothing here reacts, so the indicative path above is the number a responder
+  would be reading, not what would happen after they read it.
+- **The depth is the zero-intelligence simulator's.** The relative story — the sign of the gap,
+  the shape of the breakeven — is the mechanism. The magnitudes in basis points inherit the same
+  caveat as everywhere else in this file: ZI agents build a book that is far too deep near the
+  mid, so all of these impacts are too small.
+
 ## What isn't modeled
 
 - One symbol, one venue. No routing, no NBBO, no Reg NMS.
 - Limit, market, IOC and FOK orders — no stops, icebergs, pegged, or auction orders.
-- No opening/closing auction, which is where a large share of real volume actually trades, under
-  entirely different rules.
+- ~~No opening/closing auction~~ — `src/auction.py` crosses a book at a single price under the
+  maximum-volume rule and its tie-break ladder, and section 7 measures what that costs an
+  aggressive order against sweeping the same liquidity. It is a separate mechanism, not wired
+  into the continuous simulator: sections 1-6 still run a book that never opens or closes.
 - ~~No latency~~ — `src/latency.py` puts messages on the wire and the book serves them in
   arrival order; section 6 measures what a 15µs disadvantage does to a market maker. The
   simulator in sections 1-5 still runs with no latency at all, so every number in those sections
