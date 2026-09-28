@@ -422,6 +422,96 @@ million — four hundred and fifty times sooner. Capacity results do not transfe
 instruments, and a capacity number quoted without the instrument's volume beside it is not a
 number.
 
+## Is the rule bad, or is SPY a bad place to run it?
+
+Everything above is a statement about SPY. The grid says 50/200 is unremarkable among its
+neighbours, the bootstrap says its Sharpe is 0.75 give or take most of a point, and the
+walk-forward says fitting the windows makes it worse. All three answer "is this parameter pair
+special?" None of them answers the question underneath: the rule was tested in one place.
+
+That matters because trend following did not come from equity indices. It came from futures
+books — commodities, rates, currencies — where the argument for it is that those markets trend
+for reasons (carry, hedging pressure, slow-moving macro) a large-cap equity index does not
+share. Testing a trend rule only on SPY and concluding trend following does not work is like
+testing a rain jacket indoors.
+
+`cross_section.py` runs the identical engine, costs, windows and ten years across 24 liquid ETFs
+spanning equities, rates, credit, commodities, FX and real estate. Each one is scored against
+its own buy & hold, on the same resampled dates, with the same stationary bootstrap from
+`significance.py`. Position sizes are equalized by dollars rather than by share count — 200
+shares of SPY and 200 of SLV are not the same experiment.
+
+```
+       asset                rule   hold     gap      95% interval  trades
+  IEF  7-10y Treasuries     0.26   0.10   +0.16 [ -0.38,  +0.63]      13
+  TLT  20y Treasuries       0.09  -0.04   +0.13 [ -0.34,  +0.56]      20
+  QQQ  US tech              0.92   0.82   +0.10 [ -0.22,  +0.49]       9
+  DBC  Commodities          0.29   0.20   +0.08 [ -0.31,  +0.51]      12
+  FXE  Euro                -0.13  -0.21   +0.07 [ -0.47,  +0.63]      16
+  XLE  Energy               0.28   0.25   +0.03 [ -0.42,  +0.48]      13
+  USO  Crude oil           -0.20  -0.22   +0.02 [ -0.53,  +0.58]      18
+  TIP  Inflation linked     0.36   0.34   +0.02 [ -0.37,  +0.46]      13
+  XLK  Technology           0.86   0.84   +0.02 [ -0.26,  +0.37]       9
+  SPY  US large cap         0.75   0.77   -0.02 [ -0.36,  +0.39]       9
+  UUP  US dollar            0.47   0.50   -0.02 [ -0.39,  +0.35]      11
+  EEM  Emerging markets     0.14   0.19   -0.05 [ -0.47,  +0.49]      11
+  XLU  Utilities            0.37   0.46   -0.09 [ -0.34,  +0.22]      11
+  XLF  Financials           0.45   0.58   -0.13 [ -0.49,  +0.29]      15
+  EFA  Developed ex-US      0.21   0.34   -0.13 [ -0.55,  +0.39]      12
+  LQD  IG credit            0.13   0.27   -0.14 [ -0.62,  +0.31]      15
+  GLD  Gold                 0.41   0.58   -0.17 [ -0.53,  +0.17]      15
+  HYG  High yield           0.30   0.49   -0.19 [ -0.74,  +0.50]       9
+  SLV  Silver               0.06   0.27   -0.20 [ -0.57,  +0.14]      15
+  IWM  US small cap         0.12   0.39   -0.26 [ -0.65,  +0.14]      13
+  XLI  Industrials          0.33   0.61   -0.28 [ -0.66,  +0.15]      15
+  XLP  Staples              0.27   0.55   -0.28 [ -0.56,  +0.03]      15
+  VNQ  REITs               -0.09   0.27   -0.36 [ -0.78,  +0.10]      15
+  XLV  Health care          0.18   0.55   -0.38 [ -0.70,  -0.09]      20
+
+beat buy & hold on 9 of 24; 0 clear of zero, 1 clearly worse
+mean gap -0.09, median -0.07
+```
+
+**SPY was not an unlucky draw. It was a median one**, and slightly better than median at that —
+fourteen of the twenty-four assets did worse. So the answer to "is the rule bad or is SPY a bad
+place for it" is: the rule, on this evidence, and SPY was if anything flattering it.
+
+**The honest aggregate is a loss.** Holding the rule on all 24 equally, against holding all 24
+equally, is a Sharpe of **−0.38 with a 95% interval of [−0.96, +0.20]** — the only version of
+this experiment a person could actually have traded, and it is negative with about a 90% chance
+of being no better than doing nothing.
+
+**9 of 24 is not 9 of 24.** These are not independent tests. SPY, QQQ and XLK are close to the
+same bet, and the same `effective_trials()` calculation the parameter grid uses says the
+twenty-four per-asset difference curves behave like **6.8 independent opinions**. Nine wins out
+of an effective seven tests is the kind of score you get by flipping coins, which is the point of
+computing it rather than quoting the raw count.
+
+Where it does separate is by asset class, and that part is worth the run on its own:
+
+```
+group                  n  mean rule  mean hold  mean gap   won
+Equity                13       0.37       0.51     -0.14   3/13
+Rates and credit       5       0.23       0.23     -0.00   3/5
+Commodities and FX     6       0.15       0.19     -0.04   3/6
+```
+
+**The damage is concentrated in equities.** The rule costs 0.14 of Sharpe per equity ETF and
+essentially nothing outside them — and inside equities it is losing to a benchmark with a 0.51
+Sharpe, which is the part people skip. A long-only trend rule on an index is a bet against an
+asset that drifts up; every day it sits in cash it is paying the equity risk premium for the
+privilege of avoiding a drawdown it cannot forecast. Outside equities, where the benchmark has
+no such drift, sitting out costs nothing and the rule breaks even.
+
+That is as far as the evidence goes, and it is worth being explicit about what it does not
+reach. This is a **long-only** rule on **cash ETFs** at **one speed**. Real trend following is
+long *and short*, on futures, at several horizons, across a hundred markets rather than
+twenty-four, and the short leg is where the diversification against equities actually comes
+from. The result here — flat outside equities, negative inside them — is consistent both with
+"trend following needs the short leg" and with "trend following does not work", and this
+cross-section cannot separate those two. What it does settle is the narrower question it was
+built for: SPY was not the problem.
+
 ## What is not modeled
 
 - ~~Fills are complete, instant, at any size~~ — `ParticipationLimitedExecutionHandler` caps
@@ -432,6 +522,9 @@ number.
   handler, and the reason the participation-limited one exists.
 - No borrow costs, margin, or taxes.
 - Daily bars only. Intraday, the crossover dates would move.
+- ~~One asset~~ — `cross_section.py` runs the same rule across 24 ETFs; see the cross-section
+  above. Every other number in this file is still SPY alone, and the cross-section is long-only
+  cash ETFs rather than the long/short futures book trend following is normally run as.
 - One parameter pair (50/200) is used throughout. It is not cherry-picked (see the grid above),
   and it is not fitted — fitting the windows on this same 2015-2024 sample would launder
   curve-fitting as insight. Fitting them honestly, on trailing data only, is the walk-forward
