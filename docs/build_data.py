@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from benchmark import (EagerCancelBook, ScanBook, latency_percentiles,
                        time_quotes, time_simulation, tombstone_census)
+import auction_study
 import latency_study
 from run_simulation import N_EVENTS, SEED
 from src.fees import MAKER_TAKER, SCHEDULES, breakeven_maker_rate
@@ -30,6 +31,30 @@ BENCH_DEPTHS = (10, 50, 100, 500, 1000)
 BENCH_EVENTS = 20_000   # smaller than benchmark.py's 50k so the page build stays quick
 
 OUT = Path(__file__).resolve().parent / "data.js"
+
+
+def auction_section():
+    """The cross against the sweep, on the same resting liquidity.
+
+    Rebuilt from auction_study.py rather than retyped, same as everything
+    else on the page. The warm book is its own 20,000-event run with its own
+    seed, so it does not disturb the 50,000-event numbers above.
+    """
+    book = auction_study.warm_book()
+    mid = book.mid_price()
+    asks = book.depth(Side.SELL, levels=auction_study.N_LEVELS)
+    rows = auction_study.compare(book)
+    path = auction_study.imbalance_path(book)
+    return {
+        "mid": round(float(mid), 4),
+        "spread": round(float(book.spread()), 4),
+        "resting": int(sum(q for _, q in asks)),
+        "rows": [{k: (round(float(v), 4) if isinstance(v, float) else v)
+                  for k, v in r.items()} for r in rows],
+        "path": [{k: (round(float(v), 4) if isinstance(v, float) else v)
+                  for k, v in r.items() if v is not None} for r in path],
+        "ladder": [[round(float(p), 4), int(q)] for p, q in asks[:40]],
+    }
 
 
 def main():
@@ -126,6 +151,9 @@ def main():
                       for s in SCHEDULES],
     }
 
+    print("auction study...")
+    auction = auction_section()
+
     data = {
         "meta": {"events": N_EVENTS, "seed": SEED,
                  "trades": result["n_trades"], "volume": result["volume"]},
@@ -144,6 +172,7 @@ def main():
                      "acf1": round(acf1, 4)},
         "perf": perf,
         "latency": latency,
+        "auction": auction,
     }
 
     OUT.write_text("window.DATA = " + json.dumps(data, separators=(",", ":")) + ";\n",

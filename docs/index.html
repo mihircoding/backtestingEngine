@@ -121,6 +121,7 @@ input[type=number]{padding:7px 10px;border:1px solid var(--line2);border-radius:
   <div class="links">
     <a class="btn primary" href="#demo">Trade against the book</a>
     <a class="btn" href="#fees">What the venue charges</a>
+    <a class="btn" href="#auction">The cross</a>
     <a class="btn" href="https://github.com/mihircoding/limitOrderBook">Source on GitHub</a>
     <a class="btn" href="https://github.com/mihircoding/limitOrderBook/blob/main/RESULTS.md">Full write-up</a>
   </div>
@@ -393,6 +394,51 @@ input[type=number]{padding:7px 10px;border:1px solid var(--line2);border-radius:
   </div>
 
   <p style="font-size:13.5px;color:var(--ink3)">Real rate cards are tiered by monthly volume and run to several pages; these are top-line numbers, not a quote. And a maker facing an inverted venue's fee would widen its quote rather than keep paying it &mdash; the fixed one-tick edge here doesn't let it.</p>
+</div>
+</section>
+
+<section id="auction">
+<div class="wrap">
+  <div class="eyebrow">A different mechanism</div>
+  <h2>The cross, where almost none of this applies</h2>
+  <p class="lede">Everything above is the continuous book: orders arrive one at a time, every trade prints at its own price, priority is price then time. The opening and closing auctions run on none of that, and a large share of real volume goes through them. <span class="mono">src/auction.py</span> is the mechanism &mdash; orders accumulate, nothing trades, then the book is crossed <em>once</em> and everybody gets the <em>same</em> price.</p>
+
+  <p>That price is chosen by maximising executable volume, not by anyone's quote. Volume ties are frequent, because a tick grid makes a whole range of prices trade the same number of shares, so the tie-breaks do most of the real work: smallest imbalance, then the side the imbalance is on, then a reference price. Time priority never picks the price. It only decides who is unlucky at the margin.</p>
+
+  <div class="cards">
+    <div class="card"><div class="k">The cross costs the buyer</div><div class="v red" id="a-worst">&mdash;</div><div class="s">more than sweeping, at 95% of depth</div></div>
+    <div class="card"><div class="k">Breakeven depth multiple</div><div class="v" id="a-be">&mdash;</div><div class="s">past 10% of displayed depth</div></div>
+    <div class="card"><div class="k">Resting on the offer</div><div class="v" id="a-rest">&mdash;</div><div class="s" id="a-mid">&mdash;</div></div>
+    <div class="card"><div class="k">Times the cross is cheaper</div><div class="v" id="a-never">0 of 6</div><div class="s">at equal liquidity, by arithmetic</div></div>
+  </div>
+
+  <div class="grid2" style="margin-top:26px">
+    <div class="panel">
+      <h3>Same offers, same buyer, two mechanisms</h3>
+      <div class="chart"><canvas id="c-auc-cost"></canvas></div>
+      <p class="cap">Cost in basis points over the mid, by order size as a share of the liquidity resting on the offer. The cross is above the sweep at every size.</p>
+    </div>
+    <div class="panel">
+      <h3>How much deeper the cross has to be</h3>
+      <div class="chart"><canvas id="c-auc-be"></canvas></div>
+      <p class="cap">The depth multiple at which one clearing price beats walking the book, for orders of 10% of displayed depth and up. The smallest size is off the chart at <span class="mono" id="a-be-small">&mdash;</span>, which is a tick-grid artefact rather than a finding: the cross is only 0.1bps worse there, so winning a whole tick takes an absurd amount of extra depth.</p>
+    </div>
+  </div>
+
+  <div class="note">
+    <p><strong>The cross is more expensive for the aggressor every time, and it has to be.</strong> Sweeping the book pays the <em>average</em> of every price walked through; the cross pays the <em>last</em> one. The average of a rising ladder is below its last rung, so the gap is arithmetic, not a market condition.</p>
+    <p style="margin-top:10px">What the buyer loses is not burned. It goes to the sellers who were resting at the better prices and now print at the clearing price instead of their own. A uniform-price clearing pays inframarginal suppliers the marginal price, which is the textbook reason passive size turns up for it.</p>
+    <p style="margin-top:10px"><strong>So why does anyone send size to the close?</strong> Because that comparison holds liquidity fixed, and that is exactly what an auction does not do. Past about 10% of visible depth the cross needs roughly <span class="mono" id="a-be2">&mdash;</span> the depth to break even &mdash; and a real closing cross is far past that, because the whole day's participants arrive in the same instant instead of leaving a few hundred shares on the screen at a time. <strong style="color:var(--ink)">The auction is not cheaper per share of displayed liquidity. It is cheaper because it concentrates the liquidity.</strong></p>
+  </div>
+
+  <div class="panel" style="margin-top:26px">
+    <h3>What the pre-open feed publishes</h3>
+    <div class="scroll"><table id="t-auc-path"><thead><tr><th class="n">Market buy</th><th class="n">Indicative</th><th class="n">Move</th><th class="n">Imbalance</th><th>Side</th><th>Decided by</th></tr></thead><tbody></tbody></table></div>
+    <p style="margin-top:14px">The first row is the useful one. With no market order the two limit books do not overlap &mdash; there is a spread, which is what a spread means &mdash; and the auction has nothing to cross. <strong style="color:var(--ink)">An auction still needs someone willing to pay the other side's price.</strong> What it changes is what that person pays, not whether they are required.</p>
+    <p>Note also that &ldquo;smallest imbalance&rdquo; decides almost every row. The maximum-volume rule everyone quotes is ambiguous most of the time on a real tick grid; the tie-breaks are not footnotes, they are what sets the print.</p>
+  </div>
+
+  <p style="font-size:13.5px;color:var(--ink3);margin-top:20px">Not modelled: auction order types (market-on-open, limit-on-close, imbalance-only), each with its own eligibility window and priority tier &mdash; the allocation here is one tier, filled in arrival order. And nobody responds to the published imbalance, which on a real venue is the entire point of publishing it. The depth is the zero-intelligence simulator's, so the basis-point magnitudes inherit the same caveat as everywhere else on this page: these impacts are far too small.</p>
 </div>
 </section>
 
@@ -907,6 +953,73 @@ if (L) {
         <td class="n">${pct(r.slow.toxic_share)}</td>
         <td class="n">${r.fast.active_volume.toLocaleString()}</td></tr>`).join('');
 }
+
+
+/* ---------- the auction (src/auction.py, auction_study.py) ---------- */
+(function () {
+  const A = D.auction;
+  if (!A) return;
+  const el = id => document.getElementById(id);
+  const c = C();
+  const rows = A.rows;
+  const worst = rows[rows.length - 1];
+  const big = rows.filter(r => r.share >= 0.10);
+  const typical = big.reduce((m, r) => Math.min(m, r.breakeven), Infinity);
+
+  el('a-worst').textContent = '$' + Math.round(worst.extra).toLocaleString();
+  el('a-be').textContent = '~' + typical.toFixed(1) + '×';
+  el('a-be2').textContent = typical.toFixed(1) + '×';
+  el('a-rest').textContent = A.resting.toLocaleString();
+  el('a-mid').textContent = 'mid ' + A.mid.toFixed(4) + ', spread ' + A.spread.toFixed(4);
+  el('a-never').textContent = rows.filter(r => r.auc_bps < r.cont_bps).length +
+                              ' of ' + rows.length;
+  el('a-be-small').textContent = rows[0].breakeven.toFixed(0) + '\u00d7';
+
+  new Chart(document.getElementById('c-auc-cost'), {type:'bar', data:{
+    labels: rows.map(r => (r.share * 100).toFixed(0) + '%'),
+    datasets:[
+      {label:'sweep the book (VWAP)', data: rows.map(r => r.cont_bps),
+       backgroundColor: c.blue, borderRadius:2},
+      {label:'the cross (one price)', data: rows.map(r => r.auc_bps),
+       backgroundColor: c.red, borderRadius:2}
+    ]},
+    options:{responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{labels:{boxWidth:10, boxHeight:10, padding:12}},
+        tooltip:{callbacks:{
+          title:i => rows[i[0].dataIndex].size.toLocaleString() + ' shares (' +
+                     (rows[i[0].dataIndex].share * 100).toFixed(0) + '% of depth)',
+          label:i => i.dataset.label + ': ' + i.parsed.y.toFixed(1) + ' bps'}}},
+      scales:{x:{title:{display:true, text:'order size, as a share of resting offers'},
+                 grid:{display:false}},
+              y:{title:{display:true, text:'cost over mid (bps)'}, grid:{color:c.line}}}}});
+
+  new Chart(document.getElementById('c-auc-be'), {type:'bar', data:{
+    labels: rows.map(r => (r.share * 100).toFixed(0) + '%'),
+    datasets:[{data: rows.map(r => r.breakeven),
+               backgroundColor: rows.map(r => r.share < 0.10 ? c.ink3 : c.green),
+               borderRadius:2}]},
+    options:{responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{display:false},
+        tooltip:{callbacks:{
+          title:i => rows[i[0].dataIndex].size.toLocaleString() + ' shares',
+          label:i => 'needs ' + i.parsed.y.toFixed(1) + 'x the depth to break even'}}},
+      scales:{x:{title:{display:true, text:'order size, as a share of resting offers'},
+                 grid:{display:false}},
+              y:{title:{display:true, text:'depth multiple to break even'},
+                 grid:{color:c.line}, ticks:{callback:v => v + '×'}}}}});
+
+  document.querySelector('#t-auc-path tbody').innerHTML = A.path.map(r => {
+    const price = r.price !== undefined ? r.price.toFixed(2) : '&mdash;';
+    const move = r.move_bps !== undefined
+      ? (r.move_bps >= 0 ? '+' : '−') + Math.abs(r.move_bps).toFixed(1) + ' bps'
+      : '&mdash;';
+    const imb = r.price !== undefined ? r.imbalance.toLocaleString() : '&mdash;';
+    return `<tr><td class="n">${r.market_buy.toLocaleString()}</td>` +
+           `<td class="n mono">${price}</td><td class="n">${move}</td>` +
+           `<td class="n">${imb}</td><td>${r.side || '&mdash;'}</td>` +
+           `<td>${r.reason}</td></tr>`;
+  }).join('');
+})();
 
 </script>
 </body>
