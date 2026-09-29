@@ -454,6 +454,97 @@ not footnotes, they are what actually sets the print.
   caveat as everywhere else in this file: ZI agents build a book that is far too deep near the
   mid, so all of these impacts are too small.
 
+## 8. Time priority, priced
+
+The book has enforced price-then-time priority since the first commit and nothing measured what
+that priority is worth to the person holding it. `src/queue_position.py` is the experiment,
+`queue_study.py` runs it: warm the book with the same zero-intelligence flow as sections 1-5, rest
+one 100-share bid with a chosen number of shares in front of it, give it 1,000 events to fill, and
+record what happened to that one order. 225 orders across 45 books.
+
+`LimitOrderBook.queue_ahead(order_id)` is the new primitive — live shares resting in front of one
+order at its own level, skipping the tombstones the lazy cancel leaves behind. It is O(orders at
+the level) and the matching loop does not call it; measurement does.
+
+| shares ahead   |   n | fills | events |  edge | markout | adverse |
+|----------------|-----|-------|--------|-------|---------|---------|
+| 0-200          |  18 |  100% |     10 | +0.56 |   +0.44 |   -0.11 |
+| 200-1,000      |  52 |   94% |     52 | +1.01 |   +0.76 |   -0.26 |
+| 1,000-5,000    |  51 |   92% |    204 | +1.13 |   +1.03 |   -0.10 |
+| 5,000-20,000   |  57 |   60% |    610 | +1.13 |   +1.71 |   +0.57 |
+| 20,000+        |  47 |    0% |  never |     - |       - |       - |
+
+`edge` is the mid minus our price at the instant we filled, in ticks — the half-spread a maker is
+nominally paid. `markout` is the same quantity 250 events later, which is what the position was
+actually worth. `adverse` is the difference.
+
+Two of the three columns say what anyone would expect. Time to fill rises roughly in proportion to
+the queue: 10 events from the front, 610 from 5,000 shares back, and from 20,000 back the order
+never traded at all inside the window. Fill rate follows it down.
+
+### The markout came out backwards, and that is the finding
+
+The standard account of why queue position is valuable has three parts, and the third is that
+back-of-queue fills are *worse* fills: you only trade when something large comes through, and
+something large moves the price against you. In this book that is false. The markout from 5,000 to
+20,000 shares back is the best in the table, and the adverse-selection column is **positive** there
+— the mid kept moving in the buyer's favour after the fill.
+
+The mechanism is in section 4. This book's mid is sub-diffusive, H below 0.5, because there is no
+information in it to make a price move permanent. So the large sell that had to arrive to reach
+5,000 shares down the queue pushes the mid down, fills us, and then the mid comes back. Deep-queue
+fills are selected for large trades, and in a book of coin-flippers a large trade is a large
+*uninformed* trade.
+
+That settles something rather than measuring it. Adverse selection is not a mechanical consequence
+of queueing — the mechanics alone produce the opposite sign. It requires the flow to know
+something, and the real market's version of this table is two effects pointing opposite ways with
+the informed one large enough to flip the sign. That is a considerably stronger claim than "the
+back of the queue is worse", and it is the one the numbers support.
+
+### The decision this turns into
+
+A maker facing a long queue at the touch has a choice: join the back of it, or pay a tick and stand
+alone at the front of a new level. Improving costs a full tick with certainty and buys first place.
+So there is one number to find — how long does the queue have to be before the tick is worth
+paying?
+
+| shares ahead | fills |  value |
+|--------------|-------|--------|
+|          303 |  86% |  +1.14 |
+|          803 |  86% |  +1.22 |
+|        2,303 |  83% |  +1.23 |
+|        8,303 |  59% |  +1.15 |
+|       30,303 |   0% |  +0.00 |
+| 0 (improved) | 100% |  +0.67 |
+
+`value` is expected ticks per quote: markout plus the maker rebate from `src/fees.py`, weighted by
+how much of the order filled. Per *quote* rather than per fill, because an order that never trades
+is worth zero and the two choices do not fill equally often — which is the entire subject. Paired
+by seed: the improved quote only exists where the spread was wider than one tick, so only the
+29 books that left room to improve are counted, or the comparison would be measuring
+the spread instead of the decision.
+
+**Break-even queue: about 17,600 shares.** Behind more than that, paying the tick to be
+first is the better quote; in front of it, the tick costs more than the priority is worth. For
+scale, the touch in this book holds anywhere from tens of shares to eight thousand, so the honest
+reading is that queue position is worth *less than a tick* almost all of the time here — and the
+reason is the one above. Without informed flow, being late in the queue is not being adversely
+selected, it is just being late.
+
+### What this does not model
+
+- **The queue is held still.** The shares in front are protected from the random cancel stream
+  (`protected_ids` in `simulate()`), so they never melt. Real queues shrink because the people
+  ahead of you cancel, which is a large part of why front-of-queue is worth having, so every fill
+  probability here is a lower bound.
+- **The padding is liquidity that was not there.** Building a long queue means adding depth at the
+  touch, which feeds back into the flow. The natural queue length is reported alongside the padding
+  so the two are never confused.
+- **One order, no inventory, no requoting.** A real maker facing a 610-event wait would cancel and
+  re-post. This measures what happens to an order left alone, which is the cleaner experiment and
+  not the strategy.
+
 ## What isn't modeled
 
 - One symbol, one venue. No routing, no NBBO, no Reg NMS.
@@ -472,5 +563,10 @@ not footnotes, they are what actually sets the print.
   order type - see README's Design notes and `tests/test_stp.py`), but no other risk checks
   (position limits, fat-finger checks). The zero-intelligence simulator in sections 1-5 still doesn't
   assign participant identities to its agents, so none of the numbers above exercise it.
+- ~~No queue position study~~ — `src/queue_position.py` rests one order at a chosen place in the
+  queue and follows it, and section 8 prices time priority at about a tick per 17,600 shares
+  ahead. It also finds the adverse-selection sign REVERSED against the textbook account, for a
+  reason that is a property of this null model rather than of queueing.
 - Agents have no memory, no inventory, and no information — which is exactly what makes it a
-  valid null model, and exactly what makes the depth magnitudes wrong.
+  valid null model, exactly what makes the depth magnitudes wrong, and, per section 8, exactly
+  why adverse selection comes out with the wrong sign here.

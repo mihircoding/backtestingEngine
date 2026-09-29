@@ -39,14 +39,30 @@ def seed_book(book: LimitOrderBook, mid: float = 100.0, levels: int = 5,
         book.add_limit_order(Side.SELL, to_tick(mid + TICK * i), qty)
 
 
-def simulate(book: LimitOrderBook, n_events: int = 5000, seed: int = 0) -> dict:
+def simulate(book: LimitOrderBook, n_events: int = 5000, seed: int = 0,
+             hook=None, protected_ids=()) -> dict:
     """Push random events through the book and record what happens.
 
     Returns {'mids', 'spreads', 'n_trades', 'volume', 'impacts'} where `impacts`
     holds (market order size, absolute mid move) pairs — enough to measure price
     impact against order size afterwards.
+
+    hook, if given, is called as hook(event_index, book, trades) after every
+    event, trades being whatever that event printed. It exists so an experiment
+    can watch one specific order's fate without a second copy of the event
+    generator living somewhere else in the repo — the flow these numbers
+    describe has to be the same flow, or the comparison is to a different
+    market. queue_position.py is the caller.
+
+    protected_ids are order ids the random cancel stream will not touch. A
+    participant studying its own resting order does not want that order pulled
+    out from under it by an agent that picked an id at random; real cancels come
+    from the order's own owner. Note what this does NOT model: a real queue also
+    shrinks because people ahead of you cancel, and holding those in place makes
+    every fill probability measured this way a lower bound.
     """
     rng = np.random.default_rng(seed)
+    protected = set(protected_ids)
 
     mids: list[float] = []
     spreads: list[float] = []
@@ -54,10 +70,10 @@ def simulate(book: LimitOrderBook, n_events: int = 5000, seed: int = 0) -> dict:
     n_trades = 0
     volume = 0
 
-    live_ids: list[int] = list(book._by_id)
+    live_ids: list[int] = [i for i in book._by_id if i not in protected]
     last_mid = book.mid_price() or 100.0
 
-    for _ in range(n_events):
+    for _i in range(n_events):
         roll = rng.random()
         mid = book.mid_price() or last_mid
 
@@ -107,6 +123,9 @@ def simulate(book: LimitOrderBook, n_events: int = 5000, seed: int = 0) -> dict:
             mids.append(current_mid)
             spreads.append(current_spread)
             last_mid = current_mid
+
+        if hook is not None:
+            hook(_i, book, trades)
 
     return {"mids": mids, "spreads": spreads, "n_trades": n_trades,
             "volume": volume, "impacts": impacts}

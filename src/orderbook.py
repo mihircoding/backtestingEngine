@@ -440,3 +440,39 @@ class LimitOrderBook:
         if bb is None or ba is None:
             return None
         return ba - bb
+
+    def queue_ahead(self, order_id: int) -> int | None:
+        """Live shares resting in front of `order_id` at its own price level.
+
+        None if the order is unknown, already filled or already cancelled.
+        Zero means the order is at the front of the queue and the next trade at
+        that price is its own.
+
+        This is the number time priority is actually about. Every other public
+        method reports size at a level; a participant's economics depend on how
+        much of that size is ahead of *them*, because a queue is served front to
+        back and the back of a long one may never be reached at all.
+
+        Cost is O(orders at the level), because a deque has no random access and
+        the tombstones left by the lazy cancel in cancel() have to be skipped.
+        That is fine for measurement - queue_study.py calls it once per
+        experiment - and is exactly why the matching loop does not call it. If
+        anything hot ever needs this number, it wants a running offset
+        maintained in _rest(), not this walk.
+        """
+        order = self._by_id.get(order_id)
+        if order is None or not order.active:
+            return None
+
+        book = self.bids if order.side is Side.BUY else self.asks
+        queue = book.get(order.price)
+        if queue is None:
+            return None
+
+        ahead = 0
+        for resting in queue:
+            if resting.order_id == order_id:
+                return ahead
+            if resting.active:
+                ahead += resting.quantity
+        return None
