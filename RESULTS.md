@@ -512,6 +512,82 @@ from. The result here — flat outside equities, negative inside them — is con
 cross-section cannot separate those two. What it does settle is the narrower question it was
 built for: SPY was not the problem.
 
+**Answered in the next section.** The short leg was added and it makes the result worse, not
+better, so the missing half was not the explanation.
+
+## Does the short leg rescue it?
+
+The cross-section ended by naming the one thing it could not settle. The 50/200 rule lost to buy &
+hold across 24 assets, the whole loss was in equities, and that is consistent with two very
+different explanations: the rule does not work, or the rule was only half built. A **long-only**
+trend rule on something with an upward drift is penalised for being in cash rather than for being
+wrong — every day it sits out it forgoes the risk premium, whatever the signal was worth. Trend
+following as practised is long *and* short, and the short leg removes exactly that asymmetry.
+
+`MovingAverageCrossLongShortStrategy` is the same crossing rule with SHORT where the long-only
+version emitted EXIT. Nothing else changes: same windows, same crossing-not-state discipline, same
+signals-only contract with the portfolio. `long_short.py` runs it against the identical 24 assets,
+ten years and costs, and `Portfolio` gains `short_borrow_bps` so the short leg pays to borrow stock
+— charged per **bar** held rather than per trade, because that is how borrow works, and defaulting
+to zero so nothing already in this file moves.
+
+```
+Equal-weight across everything, rule minus hold:
+  long only    Sharpe  -0.38  95% [-0.96, +0.20]
+  long/short   Sharpe  -0.40  95% [-0.98, +0.19]
+```
+
+**The answer is no, and it is not close.** Long-only beat buy & hold on 9 of the 24 assets;
+long/short managed 4. Adding the short leg *improved* only 4 of 24 and made 20 of them worse. Two
+assets — XLP and XLV — now lose to buy & hold with a 95% interval that excludes zero, which
+long-only never did anywhere.
+
+### Where the short leg's money goes
+
+Attributing that to the strategy's total P&L would be the wrong test: adding a second leg can raise
+a Sharpe while the leg itself loses money, because it changes the correlation to the first leg. So
+the leg gets asked directly — on the days this rule was short, what did the asset do?
+
+```
+group                  n  long gap   l/s gap   won  asset ann. when short
+Equity                13     -0.14     -0.39   0/13                 20.4%
+Rates and credit       5     -0.00     -0.15   2/5                  3.1%
+Commodities and FX     6     -0.04     -0.15   2/6                  5.8%
+```
+
+US equities returned **+20.4% annualized on the days the rule was short them**. That is the whole
+result in one number. A 50/200 down-cross on an equity index does not identify a downtrend, it
+identifies a drawdown inside a secular bull market, and shorting it is betting against something
+that goes up. The long-only version merely declined to participate; the long/short version takes
+the other side, and gets paid accordingly. Outside equities, where the benchmark has no drift, the
+number is small and so is the damage — which is the same pattern the long-only cross-section found,
+now with a mechanism attached.
+
+### And it is not the borrow
+
+```
+ borrow (bp/yr)   pooled l/s Sharpe
+              0               -0.38
+             25               -0.39
+             75               -0.40
+            150               -0.42
+            400               -0.47
+```
+
+Same signals throughout; only the financing assumption changes. Free borrow gets long/short to
+−0.38, which is where long-only already was. The short leg is not being killed by carry, it is
+being killed by being wrong, and charging a realistic 75bp adds 0.02 to a gap of 0.40. Worth
+knowing which of the two it was before blaming the more convenient one.
+
+### What this still does not settle
+
+The cross-section's caveat has narrowed but not gone. This is now long *and* short, but still on
+cash ETFs, at one speed, on twenty-four markets. Real trend following runs on futures at several
+horizons across a hundred markets, where the short leg's job is commodities and rates in a
+dislocation rather than equity indices in a dip. What is settled: on liquid ETFs over 2015-2024,
+the long-only result was not caused by the missing short leg, because adding it makes things worse
+and the reason it makes things worse is visible in the table above.
+
 ## What is not modeled
 
 - ~~Fills are complete, instant, at any size~~ — `ParticipationLimitedExecutionHandler` caps
@@ -520,11 +596,16 @@ built for: SPY was not the problem.
   instantly, and every number in this file outside that section uses one of them.
 - ~~Slippage scales with price, not with order size relative to volume~~ — true of the default
   handler, and the reason the participation-limited one exists.
-- No borrow costs, margin, or taxes.
+- ~~No borrow costs~~ — `Portfolio(short_borrow_bps=...)` charges carry on short positions per bar
+  held, and the long/short section prices the whole result at 0 to 400bp a year. It defaults
+  to zero, which is correct for every long-only number in this file. No margin or taxes.
 - Daily bars only. Intraday, the crossover dates would move.
 - ~~One asset~~ — `cross_section.py` runs the same rule across 24 ETFs; see the cross-section
-  above. Every other number in this file is still SPY alone, and the cross-section is long-only
-  cash ETFs rather than the long/short futures book trend following is normally run as.
+  above. Every other number in this file is still SPY alone.
+- ~~Long-only~~ — `MovingAverageCrossLongShortStrategy` shorts on the down-cross and the
+  long/short section runs it across the same 24 assets. It does worse, and the reason is that a
+  down-cross on an equity index is a drawdown rather than a downtrend. Still cash ETFs at one
+  speed rather than the multi-horizon futures book trend following is normally run as.
 - One parameter pair (50/200) is used throughout. It is not cherry-picked (see the grid above),
   and it is not fitted — fitting the windows on this same 2015-2024 sample would launder
   curve-fitting as insight. Fitting them honestly, on trailing data only, is the walk-forward

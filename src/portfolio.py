@@ -40,6 +40,17 @@ class Portfolio:
         fraction of the target, before it gets resized. Zero would resize
         every bar and pay commission for a one-share correction; 0.2 means
         "only when it's 20% wrong."
+    short_borrow_bps: annualized cost, in basis points of notional, of holding
+        a short position. Charged daily against cash for every negative
+        position, pro rata at bps/10,000/252 per bar. Zero (the default) is
+        free shorting, which is what every existing number in RESULTS.md was
+        run with and is fine for a long-only rule that never has a negative
+        position to charge. It is NOT fine for a long/short rule: borrowing
+        stock costs money, the cost is charged for every day the short is on
+        rather than per trade, and a long/short backtest that leaves it out
+        has quietly awarded itself a free income stream. General collateral
+        on a liquid ETF is roughly 25-75bp a year; a hard-to-borrow name is
+        a different order of magnitude.
     pending: optional callable symbol -> signed shares still working at the
         execution handler. Both execution handlers that fill instantly leave
         nothing working, so the default of None (treated as zero) is right for
@@ -53,7 +64,8 @@ class Portfolio:
     def __init__(self, data: HistoricalDataHandler, initial_cash: float = 100_000.0,
                  trade_size: int = 100, vol_target: float | None = None,
                  vol_window: int = 20, max_leverage: float = 3.0,
-                 rebalance_band: float = 0.2, pending=None):
+                 rebalance_band: float = 0.2, short_borrow_bps: float = 0.0,
+                 pending=None):
         self.data = data
         self.initial_cash = initial_cash
         self.trade_size = trade_size
@@ -61,7 +73,9 @@ class Portfolio:
         self.vol_window = vol_window
         self.max_leverage = max_leverage
         self.rebalance_band = rebalance_band
+        self.short_borrow_bps = short_borrow_bps
         self.pending = pending
+        self.borrow_paid = 0.0  # cumulative dollars of borrow cost, for reporting
         self.cash = initial_cash
         self.positions: dict[str, int] = {}
         self.equity_history: list[tuple] = []
@@ -207,11 +221,38 @@ class Portfolio:
         )
         return self.cash + marked
 
+    def accrue_borrow(self) -> float:
+        """Charge one bar of stock-borrow cost on every short position.
+
+        Returns the dollars charged, which is zero unless short_borrow_bps was
+        set and something is actually short. The charge is a function of how
+        long a short is held, not of how often it is traded, which is why it
+        belongs here on the per-bar path rather than next to commission in the
+        execution handler.
+        """
+        if not self.short_borrow_bps:
+            return 0.0
+
+        daily = self.short_borrow_bps / 10_000.0 / TRADING_DAYS
+        charge = sum(
+            abs(shares) * self.data.current_price(symbol) * daily
+            for symbol, shares in self.positions.items()
+            if shares < 0
+        )
+        self.cash -= charge
+        self.borrow_paid += charge
+        return charge
+
     def mark_to_market(self, time) -> None:
         """Record one equity point for this bar.
 
         The engine calls this AFTER all of the bar's events are processed. Called
         before fills, the equity curve lags reality by a bar — the end-to-end
         test checks for exactly that bug.
+
+        Borrow accrues here, immediately before the mark, so a short position is
+        charged for the bar it was actually held and the equity point already
+        has the charge in it.
         """
+        self.accrue_borrow()
         self.equity_history.append((time, self.total_equity()))

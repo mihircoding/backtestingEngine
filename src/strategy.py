@@ -61,3 +61,57 @@ class MovingAverageCrossStrategy:
                 self._in_position.discard(symbol)
 
         return signals
+
+
+class MovingAverageCrossLongShortStrategy:
+    """The same crossing rule, but the down-cross goes short instead of flat.
+
+    MovingAverageCrossStrategy is long or in cash, which is the version every
+    tutorial writes and the version cross_section.py measured across 24 assets.
+    That test found the rule losing to buy & hold, with the entire loss in
+    equities and roughly nothing in bonds and commodities — and it could not
+    say whether the reason is that the rule does not work or that half of it
+    was missing. A long-only trend rule on something that drifts upward gives
+    up the risk premium on every day it sits in cash, so it is penalised by
+    the drift rather than by the signal. Trend following as practised is long
+    AND short, which removes exactly that asymmetry: a down-cross becomes a
+    position instead of an absence of one.
+
+    Nothing else changes. Same windows, same crossing-not-state discipline,
+    same signals-only contract with the portfolio - the only difference is
+    SHORT where the long-only version emits EXIT. Sizing, and therefore how
+    much risk the short leg actually carries, stays the portfolio's business.
+
+    One thing this makes newly relevant: shorts cost carry. Run this with a
+    Portfolio built with short_borrow_bps set, or the short leg is borrowing
+    stock for free.
+    """
+
+    def __init__(self, data: HistoricalDataHandler, short_window: int = 10,
+                 long_window: int = 30):
+        self.data = data
+        self.short_window = short_window
+        self.long_window = long_window
+        self._state: dict[str, SignalType] = {}
+
+    def on_market(self, event: MarketEvent) -> list[SignalEvent]:
+        signals = []
+
+        for symbol in self.data.symbols:
+            window = self.data.get_latest(symbol, self.long_window)
+            if len(window) < self.long_window:
+                continue  # warmup: not enough history to form the long MA yet
+
+            short_ma = window.iloc[-self.short_window:].mean()
+            long_ma = window.mean()
+            wanted = SignalType.LONG if short_ma > long_ma else SignalType.SHORT
+
+            # Same discipline as the long-only version: signal the change, not
+            # the state. Here it also means the flip from long to short is a
+            # single signal, and the portfolio turns that into one double-size
+            # order rather than an exit followed by an entry.
+            if self._state.get(symbol) is not wanted:
+                signals.append(SignalEvent(event.time, symbol, wanted))
+                self._state[symbol] = wanted
+
+        return signals
