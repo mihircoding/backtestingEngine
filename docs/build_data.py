@@ -28,6 +28,9 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from cross_section import UNIVERSE as CS_UNIVERSE
+from cross_section import cross_section as run_cross_section
+from cross_section import fetch_universe
 from run_backtest import (capacity_sweep, cost_sensitivity, fetch_opens, fetch_prices,
                           fetch_volumes, make_opens, make_prices, param_grid,
                           realized_vol, run, significance_report, stats,
@@ -253,7 +256,43 @@ def report_significance(sig):
           f"{sig['deflated']['dsr_vs_bh']:.1%} vs buy & hold")
 
 
-SECTIONS = {"capacity": capacity, "significance": significance}
+def crosssection(prices=None, n_boot=2000):
+    """The 24-asset table, for the page's "was it SPY?" section.
+
+    Its own section so `--only crosssection` can rebuild it without touching
+    the SPY dollar figures, which drift every time yfinance re-adjusts the
+    history for a dividend.
+    """
+    prices = fetch_universe(list(CS_UNIVERSE)) if prices is None else prices
+    rep = run_cross_section(prices, n_boot=n_boot)
+    return {
+        "rows": [{k: (round(v, 4) if isinstance(v, float) else v)
+                  for k, v in r.items() if not k.startswith("_")}
+                 for r in rep["rows"]],
+        "groups": [rounded(g) for g in rep["groups"]],
+        "n_assets": rep["n_assets"],
+        "effective_assets": round(rep["effective_assets"], 2),
+        "wins": rep["wins"],
+        "clear_wins": rep["clear_wins"],
+        "clear_losses": rep["clear_losses"],
+        "mean_diff": round(rep["mean_diff"], 4),
+        "median_diff": round(rep["median_diff"], 4),
+        "pooled": {k: round(float(v), 4) for k, v in rep["pooled"].items()
+                   if np.isscalar(v)},
+        "start": str(prices.index[0].date()),
+        "end": str(prices.index[-1].date()),
+    }
+
+
+def report_crosssection(cs):
+    print(f"  cross-section: beat buy & hold on {cs['wins']}/{cs['n_assets']}, "
+          f"mean gap {cs['mean_diff']:+.2f}, pooled sharpe "
+          f"{cs['pooled']['sharpe']:+.2f}, {cs['effective_assets']:.1f} "
+          f"effective tests")
+
+
+SECTIONS = {"capacity": capacity, "significance": significance,
+            "crosssection": crosssection}
 
 
 if __name__ == "__main__":
@@ -272,5 +311,7 @@ if __name__ == "__main__":
             report_capacity(data["capacity"])
         elif args.only == "significance":
             report_significance(data["significance"])
+        elif args.only == "crosssection":
+            report_crosssection(data["crosssection"])
     else:
         main()

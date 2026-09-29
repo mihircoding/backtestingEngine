@@ -101,6 +101,7 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
   <div class="links">
     <a class="btn primary" href="#results">Results</a>
     <a class="btn" href="#significance">How much is luck?</a>
+    <a class="btn" href="#crosssection">Was it SPY?</a>
     <a class="btn" href="https://github.com/mihircoding/backtestingEngine">Source on GitHub</a>
     <a class="btn" href="https://github.com/mihircoding/backtestingEngine/blob/main/RESULTS.md">Full write-up</a>
   </div>
@@ -289,6 +290,45 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
 </div>
 </section>
 
+<section id="crosssection">
+<div class="wrap">
+  <div class="eyebrow">External validity</div>
+  <h2>Is the rule bad, or is SPY a bad place to run it?</h2>
+  <p class="lede">Every number above is a statement about one ticker. The grid, the error bar and the walk-forward all answer &ldquo;is this parameter pair special?&rdquo; &mdash; none of them answers the question underneath. Trend following didn&rsquo;t come from equity indices; it came from futures books, where the argument for it is that commodities and rates trend for reasons a large-cap index doesn&rsquo;t share. <span class="mono">cross_section.py</span> runs the identical engine, costs and ten years across <span id="x-n">&mdash;</span> liquid ETFs.</p>
+
+  <div class="cards">
+    <div class="card"><div class="k">Beat buy &amp; hold on</div><div class="v" id="x-wins">&mdash;</div><div class="s" id="x-wins-s">&mdash;</div></div>
+    <div class="card"><div class="k">SPY&rsquo;s rank</div><div class="v" id="x-spyrank">&mdash;</div><div class="s">it was a median draw, not an unlucky one</div></div>
+    <div class="card"><div class="k">Mean gap to buy &amp; hold</div><div class="v red" id="x-mean">&mdash;</div><div class="s">Sharpe, per asset</div></div>
+    <div class="card"><div class="k">Hold it on all of them</div><div class="v red" id="x-pooled">&mdash;</div><div class="s" id="x-pooled-s">&mdash;</div></div>
+    <div class="card"><div class="k">Independent tests</div><div class="v" id="x-eff">&mdash;</div><div class="s" id="x-eff-s">&mdash;</div></div>
+  </div>
+
+  <div class="panel" style="margin-top:26px">
+    <h3>Rule minus buy &amp; hold, by asset</h3>
+    <div class="chart" style="height:420px"><canvas id="c-xs"></canvas></div>
+    <p class="cap">Each bar is that asset&rsquo;s strategy Sharpe minus its own buy-and-hold Sharpe, over the same 2015&ndash;2024 window with the same costs. Position sizes are equalized by dollars rather than share count, so the columns are comparable.</p>
+  </div>
+
+  <div class="grid2" style="margin-top:26px">
+    <div class="panel">
+      <h3>By asset class</h3>
+      <div class="scroll"><table id="t-xs-group"><thead><tr><th>Group</th><th class="n">n</th><th class="n">Mean rule</th><th class="n">Mean hold</th><th class="n">Mean gap</th><th class="n">Won</th></tr></thead><tbody></tbody></table></div>
+      <p style="margin-top:14px"><strong style="color:var(--ink)">The damage is all in equities.</strong> The rule costs real Sharpe per equity ETF and roughly nothing outside them &mdash; and inside equities it is losing to a benchmark that drifts upward. A long-only trend rule on an index gives up the equity premium every day it sits in cash, to dodge a drawdown it cannot forecast. Outside equities the benchmark has no such drift, so sitting out costs nothing and the rule breaks even.</p>
+    </div>
+    <div class="panel">
+      <h3>Every asset, in full</h3>
+      <div class="scroll" style="max-height:420px"><table id="t-xs"><thead><tr><th>Asset</th><th class="n">Rule</th><th class="n">Hold</th><th class="n">Gap</th><th class="n">95% interval</th></tr></thead><tbody></tbody></table></div>
+    </div>
+  </div>
+
+  <div class="note">
+    <p><strong>&ldquo;Beat buy &amp; hold on 9 of 24&rdquo; is a weaker sentence than it sounds.</strong> SPY, QQQ and XLK are close to the same bet. The same <span class="mono">effective_trials()</span> calculation the parameter grid uses says these assets behave like <span class="mono" id="x-eff2">&mdash;</span> independent opinions, so nine wins out of an effective seven tests is what coin flipping looks like.</p>
+    <p style="margin-top:10px">What this does <em>not</em> show, stated plainly: this is a <strong>long-only</strong> rule on <strong>cash ETFs</strong> at <strong>one speed</strong>. Real trend following is long and short, on futures, across a hundred markets, and the short leg is where the diversification against equities actually comes from. The result is consistent both with &ldquo;it needs the short leg&rdquo; and with &ldquo;it doesn&rsquo;t work&rdquo;, and this cross-section cannot separate those. It does settle the narrower question it was built for: SPY was not the problem.</p>
+  </div>
+</div>
+</section>
+
 <section>
 <div class="wrap">
   <div class="eyebrow">Overfitting</div>
@@ -428,6 +468,7 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
         <li>The impact constant is a default of 1.0, not a calibration. It gives the right shape of cost curve, which is enough to compare two strategies and not enough to quote a dollar figure.</li>
         <li>Volume is assumed unaffected by your own trading, and the 10% cap is a constant. Real liquidity is worst exactly when you most want to trade.</li>
         <li>No borrow costs, margin, or taxes.</li>
+        <li><s>One asset.</s> <span class="mono">cross_section.py</span> runs the same rule across 24 ETFs &mdash; see <a href="#crosssection">above</a>. Every other number on this page is still SPY alone.</li>
         <li>Daily bars only. Intraday, the crossover dates would move.</li>
       </ul>
     </div>
@@ -745,6 +786,61 @@ document.getElementById('x-cap-n-fast').textContent = atAum(cap.fast.rows, 1e8).
 // volume, so it is the same number of days of a $50M/day stock's.
 document.getElementById('x-cap-mid').textContent = '$' + Math.round(5e9 * 50e6 / adv / 1e6) + ' million';
 document.getElementById('x-cap-ratio').textContent = Math.round(adv / 50e6 / 10) * 10;
+
+
+/* ---------- cross-section (cross_section.py) ---------- */
+(function () {
+  const X = D.crosssection;
+  if (!X) return;
+  const el = id => document.getElementById(id);
+  const sh = v => (v >= 0 ? '+' : '\u2212') + Math.abs(v).toFixed(2);
+  const c = C();
+
+  const rank = X.rows.findIndex(r => r.symbol === 'SPY') + 1;
+  el('x-n').textContent = X.n_assets;
+  el('x-wins').textContent = X.wins + ' of ' + X.n_assets;
+  el('x-wins-s').textContent = X.clear_wins + ' clear of zero, ' +
+                               X.clear_losses + ' clearly worse';
+  el('x-spyrank').textContent = rank + ' of ' + X.n_assets;
+  el('x-mean').textContent = sh(X.mean_diff);
+  el('x-pooled').textContent = sh(X.pooled.sharpe);
+  el('x-pooled-s').textContent = '95% [' + sh(X.pooled.lo) + ', ' +
+                                 sh(X.pooled.hi) + ']';
+  el('x-eff').textContent = X.effective_assets.toFixed(1);
+  el('x-eff2').textContent = X.effective_assets.toFixed(1);
+  el('x-eff-s').textContent = 'not ' + X.n_assets + ' \u2014 they overlap';
+
+  document.querySelector('#t-xs-group tbody').innerHTML = X.groups.map(g =>
+    `<tr><td>${g.group}</td><td class="n">${g.n}</td>` +
+    `<td class="n">${g.mean_rule.toFixed(2)}</td>` +
+    `<td class="n">${g.mean_hold.toFixed(2)}</td>` +
+    `<td class="n ${g.mean_diff >= 0 ? 'pos' : 'neg'}">${sh(g.mean_diff)}</td>` +
+    `<td class="n">${g.wins}/${g.n}</td></tr>`).join('');
+
+  document.querySelector('#t-xs tbody').innerHTML = X.rows.map(r =>
+    `<tr><td><span class="mono">${r.symbol}</span> ${r.label}</td>` +
+    `<td class="n">${r.rule_sharpe.toFixed(2)}</td>` +
+    `<td class="n">${r.hold_sharpe.toFixed(2)}</td>` +
+    `<td class="n ${r.diff >= 0 ? 'pos' : 'neg'}">${sh(r.diff)}</td>` +
+    `<td class="n mono">[${sh(r.lo)}, ${sh(r.hi)}]</td></tr>`).join('');
+
+  new Chart(document.getElementById('c-xs'), {type:'bar', data:{
+    labels: X.rows.map(r => r.symbol),
+    datasets:[{data: X.rows.map(r => r.diff),
+               backgroundColor: X.rows.map(r => r.diff >= 0 ? c.green : c.red),
+               borderRadius:2}]},
+    options:{indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{display:false},
+        tooltip:{callbacks:{
+          title:i => X.rows[i[0].dataIndex].symbol + ' \u2014 ' +
+                     X.rows[i[0].dataIndex].label,
+          label:i => 'gap ' + sh(i.parsed.x) + '  95% [' +
+                     sh(X.rows[i.dataIndex].lo) + ', ' +
+                     sh(X.rows[i.dataIndex].hi) + ']'}}},
+      scales:{x:{title:{display:true, text:'strategy Sharpe \u2212 buy & hold Sharpe'},
+                 grid:{color:c.line}},
+              y:{grid:{display:false}, ticks:{autoSkip:false, font:{size:10}}}}}});
+})();
 
 </script>
 </body>
