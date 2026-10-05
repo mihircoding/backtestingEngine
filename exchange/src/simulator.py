@@ -1,0 +1,167 @@
+"""Zero-intelligence order flow through the book.
+
+Verify with:  pytest tests/test_simulator.py
+
+"Zero intelligence" (Gode & Sunder, 1993): agents submit random orders with no
+strategy whatsoever. The remarkable result is how much realistic market behavior
+— spreads, depth profiles, price impact, a random-walking mid — emerges from the
+matching mechanics alone. If a book of coin-flipping traders looks like a real
+one, the realism was in the exchange rules, not the traders.
+
+That is a genuinely useful null hypothesis. Any "stylized fact" a zero-intelligence
+book reproduces is not evidence of anything about trader behavior.
+"""
+
+import numpy as np
+
+from .order import Side, to_tick
+from .orderbook import LimitOrderBook
+
+TICK = 0.01
+
+# event mix — roughly the shape of real equity flow, where cancels are common
+P_LIMIT, P_MARKET, P_CANCEL = 0.60, 0.25, 0.15
+P_PASSIVE = 0.80          # share of limit orders placed inside their own side
+OFFSET_TICKS = 3.0        # scale of |N(0, .)| price offset from the mid
+MARKET_QTY = (10, 200)
+LIMIT_QTY = (10, 200)
+
+
+def seed_book(book: LimitOrderBook, mid: float = 100.0, levels: int = 5,
+              qty: int = 100) -> None:
+    """Pre-load `levels` price levels either side of `mid`.
+
+    Without this the book starts empty, the mid is undefined, and there is
+    nothing for the first market order to trade against.
+    """
+    for i in range(1, levels + 1):
+        book.add_limit_order(Side.BUY, to_tick(mid - TICK * i), qty)
+        book.add_limit_order(Side.SELL, to_tick(mid + TICK * i), qty)
+
+
+def simulate(book: LimitOrderBook, n_events: int = 5000, seed: int = 0,
+             hook=None, protected_ids=()) -> dict:
+    """Push random events through the book and record what happens.
+
+    Returns {'mids', 'spreads', 'n_trades', 'volume', 'impacts'} where `impacts`
+    holds (market order size, absolute mid move) pairs — enough to measure price
+    impact against order size afterwards.
+
+    hook, if given, is called as hook(event_index, book, trades) after every
+    event, trades being whatever that event printed. It exists so an experiment
+    can watch one specific order's fate without a second copy of the event
+    generator living somewhere else in the repo — the flow these numbers
+    describe has to be the same flow, or the comparison is to a different
+    market. queue_position.py is the caller.
+
+    protected_ids are order ids the random cancel stream will not touch. A
+    participant studying its own resting order does not want that order pulled
+    out from under it by an agent that picked an id at random; real cancels come
+    from the order's own owner. Note what this does NOT model: a real queue also
+    shrinks because people ahead of you cancel, and holding those in place makes
+    every fill probability measured this way a lower bound.
+    """
+    rng = np.random.default_rng(seed)
+    protected = set(protected_ids)
+
+    mids: list[float] = []
+    spreads: list[float] = []
+    impacts: list[tuple[int, float]] = []
+    n_trades = 0
+    volume = 0
+
+    live_ids: list[int] = [i for i in book._by_id if i not in protected]
+    last_mid = book.mid_price() or 100.0
+
+    for _i in range(n_events):
+        roll = rng.random()
+        mid = book.mid_price() or last_mid
+
+        if roll < P_LIMIT:
+            side = Side.BUY if rng.random() < 0.5 else Side.SELL
+            offset = abs(rng.normal(0, OFFSET_TICKS)) * TICK
+            passive = rng.random() < P_PASSIVE
+
+            # Passive orders sit behind the mid; aggressive ones reach across it.
+            # The aggressive minority is what makes limit orders trade at all,
+            # and it is why the spread does not simply widen forever.
+            if side is Side.BUY:
+                price = mid - offset if passive else mid + offset
+            else:
+                price = mid + offset if passive else mid - offset
+
+            qty = int(rng.integers(*LIMIT_QTY))
+            oid, trades = book.add_limit_order(side, to_tick(price), qty)
+            if oid in book._by_id:
+                live_ids.append(oid)
+
+        elif roll < P_LIMIT + P_MARKET:
+            side = Side.BUY if rng.random() < 0.5 else Side.SELL
+            qty = int(rng.integers(*MARKET_QTY))
+            before = book.mid_price()
+            trades = book.market_order(side, qty)
+            after = book.mid_price()
+            if before is not None and after is not None:
+                impacts.append((qty, abs(after - before)))
+
+        else:
+            trades = []
+            if live_ids:
+                idx = int(rng.integers(0, len(live_ids)))
+                # Stale ids are left in the list on purpose: cancel() returning
+                # False for an already-filled order is exactly what a real
+                # gateway sees when a cancel races a fill.
+                book.cancel(live_ids[idx])
+                live_ids[idx] = live_ids[-1]
+                live_ids.pop()
+
+        n_trades += len(trades)
+        volume += sum(t.quantity for t in trades)
+
+        current_mid, current_spread = book.mid_price(), book.spread()
+        if current_mid is not None:
+            mids.append(current_mid)
+            spreads.append(current_spread)
+            last_mid = current_mid
+
+        if hook is not None:
+            hook(_i, book, trades)
+
+    return {"mids": mids, "spreads": spreads, "n_trades": n_trades,
+            "volume": volume, "impacts": impacts}
+
+
+def impact_exponent(impacts: list[tuple[int, float]],
+                    buckets=(0, 50, 100, 150, 200)) -> float:
+    """Power-law fit impact ~ size^b from (order size, |mid move|) pairs.
+
+    b < 1 is concave (sublinear) impact - the stylized fact in RESULTS.md
+    section 3. Bucketing before the log-log fit matches what run_simulation.py
+    reports, so this is the same number, just made reusable for a test.
+    """
+    import numpy as np
+    import pandas as pd
+
+    df = pd.DataFrame(impacts, columns=["qty", "impact"])
+    df["bucket"] = pd.cut(df["qty"], buckets)
+    table = df.groupby("bucket", observed=True)["impact"].mean()
+    x = np.log(np.array([b.mid for b in table.index], dtype=float))
+    y = np.log(table.values)
+    slope, _ = np.polyfit(x, y, 1)
+    return float(slope)
+
+
+def hurst_exponent(mids: list[float],
+                   horizons=(1, 2, 4, 8, 16, 32, 64, 128)) -> float:
+    """Fit var(mid[t+k] - mid[t]) ~ k^(2H) across horizons k.
+
+    H = 0.5 is a pure random walk, H < 0.5 is mean-reverting (sub-diffusive)
+    - the stylized fact in RESULTS.md section 4.
+    """
+    import numpy as np
+
+    m = np.asarray(mids, dtype=float)
+    var1 = np.var(m[1:] - m[:-1])
+    ratios = [np.var(m[k:] - m[:-k]) / var1 for k in horizons]
+    slope, _ = np.polyfit(np.log(horizons), np.log(ratios), 1)
+    return float(slope / 2)

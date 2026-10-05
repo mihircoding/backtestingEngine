@@ -1,0 +1,109 @@
+{
+  "horizon": 1000,
+  "n_seeds": 45,
+  "buckets": [
+    {
+      "lo": 0,
+      "hi": 200,
+      "n": 18,
+      "median_ahead": 95,
+      "fill_rate": 1.0,
+      "fill_ratio": 1.0,
+      "events_to_fill": 9.777777777777779,
+      "edge": 0.5555555555556029,
+      "markout": 0.4444444444445139,
+      "adverse": -0.11111111111108901
+    },
+    {
+      "lo": 200,
+      "hi": 1000,
+      "n": 52,
+      "median_ahead": 603,
+      "fill_rate": 0.9423076923076923,
+      "fill_ratio": 0.9423076923076923,
+      "events_to_fill": 52.265306122448976,
+      "edge": 1.0102040816326623,
+      "markout": 0.7551020408162779,
+      "adverse": -0.25510204081638455
+    },
+    {
+      "lo": 1000,
+      "hi": 5000,
+      "n": 51,
+      "median_ahead": 2216,
+      "fill_rate": 0.9215686274509803,
+      "fill_ratio": 0.9215686274509803,
+      "events_to_fill": 204.17021276595744,
+      "edge": 1.1276595744679363,
+      "markout": 1.031914893617141,
+      "adverse": -0.09574468085079534
+    },
+    {
+      "lo": 5000,
+      "hi": 20000,
+      "n": 57,
+      "median_ahead": 8252,
+      "fill_rate": 0.5964912280701754,
+      "fill_ratio": 0.5964912280701754,
+      "events_to_fill": 609.5882352941177,
+      "edge": 1.132352941176444,
+      "markout": 1.7058823529411296,
+      "adverse": 0.5735294117646859
+    },
+    {
+      "lo": 20000,
+      "hi": 1000000000,
+      "n": 47,
+      "median_ahead": 30247,
+      "fill_rate": 0.0,
+      "fill_ratio": 0.0,
+      "events_to_fill": null,
+      "edge": null,
+      "markout": null,
+      "adverse": null
+    }
+  ],
+  "queue_vs_price": {
+    "front_value": 0.6655172413793277,
+    "front_n": 29,
+    "front_fill_rate": 1.0,
+    "rows": [
+      {
+        "pad": 0,
+        "n": 29,
+        "median_ahead": 303,
+        "join_value": 1.1379310344828604,
+        "join_fill_rate": 0.8620689655172413
+      },
+      {
+        "pad": 500,
+        "n": 29,
+        "median_ahead": 803,
+        "join_value": 1.224137931034506,
+        "join_fill_rate": 0.8620689655172413
+      },
+      {
+        "pad": 2000,
+        "n": 29,
+        "median_ahead": 2303,
+        "join_value": 1.2344827586207467,
+        "join_fill_rate": 0.8275862068965517
+      },
+      {
+        "pad": 8000,
+        "n": 29,
+        "median_ahead": 8303,
+        "join_value": 1.1517241379310734,
+        "join_fill_rate": 0.5862068965517241
+      },
+      {
+        "pad": 30000,
+        "n": 29,
+        "median_ahead": 30303,
+        "join_value": 0.0,
+        "join_fill_rate": 0.0
+      }
+    ]
+  },
+  "breakeven_shares": 17590.4251497007
+}
