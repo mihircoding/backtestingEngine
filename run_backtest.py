@@ -14,6 +14,7 @@ Usage:  python run_backtest.py [--no-download]
 """
 
 import argparse
+import inspect
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -136,9 +137,15 @@ def run(prices: pd.DataFrame, strategy_cls, trade_size: int, slippage_bps: float
     """
     data = HistoricalDataHandler(prices, opens=opens, volumes=volumes)
     strategy = strategy_cls(data, **kwargs)
-    execution = execution_cls(data, slippage_bps=slippage_bps,
-                              commission_per_share=commission_per_share,
-                              **(execution_kwargs or {}))
+    # Not every handler has a slippage parameter. BookExecutionHandler reads its
+    # cost off the order book instead of taking it as a number, so passing one
+    # would be a TypeError - and quietly accepting and ignoring it would be
+    # worse, because a sweep over slippage_bps would then silently do nothing.
+    execution_args = {"commission_per_share": commission_per_share,
+                      **(execution_kwargs or {})}
+    if "slippage_bps" in inspect.signature(execution_cls).parameters:
+        execution_args["slippage_bps"] = slippage_bps
+    execution = execution_cls(data, **execution_args)
     # The portfolio needs to see what is still working at the broker, or it
     # re-sends shares that are already in flight. Only the participation
     # handler ever has any, and it is the only one that offers the hook.

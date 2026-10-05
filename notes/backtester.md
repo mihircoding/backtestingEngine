@@ -331,6 +331,13 @@ the fill count at 160 instead of 2,500.
 
 ## How much money does this hold?
 
+> **Revised.** The ladder below is readable up to about $1bn and not above it. Past that the
+> participation cap stops filling the orders, most of the intended book sits in cash, and the
+> Sharpe ratio starts describing the cash — which is why it *rises* at the top of the table
+> instead of falling. See section 2 of ../RESULTS.md, which found this by running a second fill
+> model next to this one. The deployed-capital fraction, not the Sharpe, is the capacity number
+> this section was reaching for.
+
 Every result above this line is quoted at an implicit zero assets under management. Fills are
 instant, complete, and priced identically whether the order is a hundred shares or ten million —
 the README's own list of simplifications says so in its first line. That makes every Sharpe in
@@ -596,6 +603,11 @@ and the reason it makes things worse is visible in the table above.
   instantly, and every number in this file outside that section uses one of them.
 - ~~Slippage scales with price, not with order size relative to volume~~ — true of the default
   handler, and the reason the participation-limited one exists.
+- ~~The cost of a fill is a formula with a constant nobody publishes~~ — `BookExecutionHandler`
+  routes orders into the matching engine in `exchange/` and takes the fill price off the book
+  instead. ../RESULTS.md has what that changes: the flat charge overcharges small orders
+  fivefold, undercharges the largest fourteenfold, and crosses over at about 2% of a day's
+  volume. The formula handlers are still what every number in this file uses.
 - ~~No borrow costs~~ — `Portfolio(short_borrow_bps=...)` charges carry on short positions per bar
   held, and the long/short section prices the whole result at 0 to 400bp a year. It defaults
   to zero, which is correct for every long-only number in this file. No margin or taxes.

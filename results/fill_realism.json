@@ -1,0 +1,271 @@
+{
+ "symbol": "SPY",
+ "start": "2015-01-01",
+ "end": "2024-12-31",
+ "median_price": 271.0246887207031,
+ "median_volume": 76610800.0,
+ "cost_curves": [
+  {
+   "size_frac": 0.0001,
+   "shares": 7661,
+   "levels_walked": 1,
+   "filled_frac": 1.0,
+   "flat_bps": 2.0,
+   "book_bps": 0.3689700760178796,
+   "sqrt_bps": 3.0999942566694427
+  },
+  {
+   "size_frac": 0.001,
+   "shares": 76610,
+   "levels_walked": 1,
+   "filled_frac": 1.0,
+   "flat_bps": 2.0,
+   "book_bps": 0.3689700760178796,
+   "sqrt_bps": 5.4784872641793
+  },
+  {
+   "size_frac": 0.003,
+   "shares": 229832,
+   "levels_walked": 2,
+   "filled_frac": 1.0,
+   "flat_bps": 2.0,
+   "book_bps": 0.49196063648729116,
+   "sqrt_bps": 8.024942889648731
+  },
+  {
+   "size_frac": 0.01,
+   "shares": 766108,
+   "levels_walked": 6,
+   "filled_frac": 1.0,
+   "flat_bps": 2.0,
+   "book_bps": 1.106914562600053,
+   "sqrt_bps": 13.0
+  },
+  {
+   "size_frac": 0.03,
+   "shares": 2298324,
+   "levels_walked": 16,
+   "filled_frac": 1.0,
+   "flat_bps": 2.0,
+   "book_bps": 2.951772166933475,
+   "sqrt_bps": 21.05255888325765
+  },
+  {
+   "size_frac": 0.1,
+   "shares": 7661080,
+   "levels_walked": 51,
+   "filled_frac": 1.0,
+   "flat_bps": 2.0,
+   "book_bps": 9.408773782100452,
+   "sqrt_bps": 36.785054261852174
+  },
+  {
+   "size_frac": 0.3,
+   "shares": 22983240,
+   "levels_walked": 151,
+   "filled_frac": 1.0,
+   "flat_bps": 2.0,
+   "book_bps": 27.857349825434657,
+   "sqrt_bps": 62.24948132556827
+  }
+ ],
+ "crossover": 0.01968189019360802,
+ "capacity": [
+  {
+   "aum": null,
+   "final": 2358236.384346308,
+   "total_return": 1.3582363843463083,
+   "sharpe": 0.6520693390128427,
+   "max_dd": -0.2382711890839636,
+   "model": "no liquidity limit"
+  },
+  {
+   "aum": 100000000.0,
+   "position_in_days": 0.004428276685706287,
+   "sqrt": {
+    "final": 223863065.2900476,
+    "total_return": 1.238630652900476,
+    "sharpe": 0.598775066280912,
+    "max_dd": -0.2620201107175082
+   },
+   "book": {
+    "final": 237489315.07999948,
+    "total_return": 1.3748931507999949,
+    "sharpe": 0.6591071227052301,
+    "max_dd": -0.23544273416181316
+   },
+   "sqrt_stranded": 0.0,
+   "book_stranded": 0.0,
+   "sqrt_slices": 76,
+   "book_slices": 76,
+   "book_exhausted": 0,
+   "mean_levels_walked": 4.302631578947368,
+   "sqrt_deployed": 1.0,
+   "book_deployed": 1.0
+  },
+  {
+   "aum": 1000000000.0,
+   "position_in_days": 0.04428276685706287,
+   "sqrt": {
+    "final": 1988712188.7021935,
+    "total_return": 0.9887121887021935,
+    "sharpe": 0.490499213077406,
+    "max_dd": -0.31849818187152046
+   },
+   "book": {
+    "final": 2303690598.5300007,
+    "total_return": 1.3036905985300007,
+    "sharpe": 0.6245723737284845,
+    "max_dd": -0.2470402276694592
+   },
+   "sqrt_stranded": 0.0,
+   "book_stranded": 0.0,
+   "sqrt_slices": 89,
+   "book_slices": 89,
+   "book_exhausted": 0,
+   "mean_levels_walked": 32.58426966292135,
+   "sqrt_deployed": 1.0,
+   "book_deployed": 1.0
+  },
+  {
+   "aum": 5000000000.0,
+   "position_in_days": 0.22141383428531436,
+   "sqrt": {
+    "final": 9030798607.066105,
+    "total_return": 0.806159721413221,
+    "sharpe": 0.4358138382486123,
+    "max_dd": -0.3424600499666559
+   },
+   "book": {
+    "final": 10740220055.908052,
+    "total_return": 1.1480440111816104,
+    "sharpe": 0.5873469738391399,
+    "max_dd": -0.2707596691612014
+   },
+   "sqrt_stranded": 2942585521.8914795,
+   "book_stranded": 2942585521.8914795,
+   "sqrt_slices": 301,
+   "book_slices": 301,
+   "book_exhausted": 0,
+   "mean_levels_walked": 44.27906976744186,
+   "sqrt_deployed": 0.41148289562170415,
+   "book_deployed": 0.41148289562170415
+  },
+  {
+   "aum": 20000000000.0,
+   "position_in_days": 0.8856553371412574,
+   "sqrt": {
+    "final": 40100486087.84587,
+    "total_return": 1.0050243043922937,
+    "sharpe": 0.549109087051971,
+    "max_dd": -0.3489272860741254
+   },
+   "book": {
+    "final": 45673066092.688805,
+    "total_return": 1.28365330463444,
+    "sharpe": 0.6811869968556732,
+    "max_dd": -0.2768562269939717
+   },
+   "sqrt_stranded": 17942585567.16179,
+   "book_stranded": 17942585567.16179,
+   "sqrt_slices": 882,
+   "book_slices": 882,
+   "book_exhausted": 0,
+   "mean_levels_walked": 49.02267573696145,
+   "sqrt_deployed": 0.10287072164191058,
+   "book_deployed": 0.10287072164191058
+  },
+  {
+   "aum": 100000000000.0,
+   "position_in_days": 4.428276685706288,
+   "sqrt": {
+    "final": 253276926601.3144,
+    "total_return": 1.532769266013144,
+    "sharpe": 0.7275017395518627,
+    "max_dd": -0.28846623038327146
+   },
+   "book": {
+    "final": 264899255657.8614,
+    "total_return": 1.648992556578614,
+    "sharpe": 0.7796921500930201,
+    "max_dd": -0.27515634621388063
+   },
+   "sqrt_stranded": 97942585639.33594,
+   "book_stranded": 97942585639.33594,
+   "sqrt_slices": 1600,
+   "book_slices": 1600,
+   "book_exhausted": 0,
+   "mean_levels_walked": 50.320625,
+   "sqrt_deployed": 0.02057414360664067,
+   "book_deployed": 0.02057414360664067
+  }
+ ],
+ "depth_sweep": [
+  {
+   "depth_frac": 0.0002,
+   "shares_at_touch": 15322,
+   "final": 9546976567.404964,
+   "total_return": 0.9093953134809929,
+   "sharpe": 0.4884912947892126,
+   "max_dd": -0.3043423947983388,
+   "mean_levels_walked": 189.89589905362777,
+   "stranded": 4177088958.920746
+  },
+  {
+   "depth_frac": 0.0005,
+   "shares_at_touch": 38305,
+   "final": 9202058517.28182,
+   "total_return": 0.8404117034563641,
+   "sharpe": 0.4400365960272296,
+   "max_dd": -0.3265764235401106,
+   "mean_levels_walked": 174.21262458471762,
+   "stranded": 2942621068.066864
+  },
+  {
+   "depth_frac": 0.002,
+   "shares_at_touch": 153221,
+   "final": 10740220055.908052,
+   "total_return": 1.1480440111816104,
+   "sharpe": 0.5873469738391399,
+   "max_dd": -0.2707596691612014,
+   "mean_levels_walked": 44.27906976744186,
+   "stranded": 2942585521.8914795
+  },
+  {
+   "depth_frac": 0.005,
+   "shares_at_touch": 383054,
+   "final": 11047831543.298063,
+   "total_return": 1.2095663086596127,
+   "sharpe": 0.6184573935741874,
+   "max_dd": -0.2611238750334035,
+   "mean_levels_walked": 17.95016611295681,
+   "stranded": 2942585521.8914795
+  },
+  {
+   "depth_frac": 0.02,
+   "shares_at_touch": 1532216,
+   "final": 11201550649.058067,
+   "total_return": 1.2403101298116135,
+   "sharpe": 0.6341805161959235,
+   "max_dd": -0.25647144181493464,
+   "mean_levels_walked": 4.471760797342193,
+   "stranded": 2942585521.8914795
+  }
+ ],
+ "fees": {
+  "no fees": {
+   "final": 2303690598.5300007,
+   "total_return": 1.3036905985300007,
+   "sharpe": 0.6245723737284845,
+   "max_dd": -0.2470402276694592,
+   "fee_paid": 0.0
+  },
+  "maker-taker": {
+   "final": 2302343618.306,
+   "total_return": 1.3023436183060002,
+   "sharpe": 0.6239113410259784,
+   "max_dd": -0.24726969501813179,
+   "fee_paid": -1346980.2240000004
+  }
+ }
+}

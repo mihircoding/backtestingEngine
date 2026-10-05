@@ -1,206 +1,153 @@
-# Event-Driven Backtesting Engine
+# Market Simulation Stack
 
-**[Live site &rarr;](https://mihircoding.github.io/backtestingEngine/)** — the same results with the equity curves, the full trade log and the parameter grid, plotted from data this repo generates.
+**[Live site &rarr;](https://mihircoding.github.io/backtestingEngine/)** — the
+equity curves, the trade log, the parameter grid, the emergent order-book
+statistics, and a browser port of the matching engine you can send orders to.
 
-A backtester built the way production trading systems are built: components that talk to each
-other only through a queue of events, processing one timestamp at a time. No component can see
-the future, because the future hasn't been pushed onto the queue yet.
+Two halves of the same question, in one repository.
 
-Roughly 400 lines of source, 87 tests, and one uncomfortable result — see
-[RESULTS.md](RESULTS.md). Interview notes are in [INTERVIEW.md](INTERVIEW.md).
+**`exchange/`** is a price-time priority matching engine — the piece of
+infrastructure that *is* an exchange — plus a zero-intelligence order flow
+simulator to run through it. The agents flip coins. The book still produces a
+realistic spread distribution, concave price impact, and a mid price that
+mean-reverts at short horizons the way real equity data does. None of that was
+programmed in; it falls out of the matching rules.
+
+**`src/`** is an event-driven backtester, built the way production trading
+systems are built: components that talk to each other only through a queue of
+events, one timestamp at a time. No component can see the future, because the
+future has not been pushed onto the queue yet.
+
+They were separate projects, and separately they both had the same hole in
+them. A backtester has to decide what price your order filled at, and every
+backtester in the world decides it with a formula — some basis points, maybe
+scaled by order size. An order book does not need a formula. It knows what the
+fill was, because it printed it.
+
+**`src/book_execution.py` wires them together**: the backtester's orders go
+into the matching engine, and the fill price is the volume-weighted average of
+the resting orders the order actually consumed. Cost stops being a parameter
+and becomes a consequence of depth.
+
+The first thing that falls out is that the standard assumption is wrong in both
+directions. A flat 2 bps on SPY overcharges a small order by a factor of five
+and undercharges a 23-million-share order by a factor of fourteen; the two
+cross at about 2% of a day's volume. The second thing is a flaw the comparison
+exposed in the capacity study that was already here — its Sharpe ratio *rises*
+above $5bn, because the participation cap stops filling and the statistic ends
+up describing idle cash instead of a strategy. [RESULTS.md](RESULTS.md) has
+both, and the correction.
+
+261 tests.
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q               # 72 passed
-python run_backtest.py            # synthetic + SPY, writes engine_backtest.png
-python run_backtest.py --fill-timing   # same-bar-close vs next-bar-open, SPY
-python run_backtest.py --vol-target    # fixed share count vs volatility targeting
-python run_backtest.py --walk-forward  # refit the MA windows yearly, trade them out of sample
-python run_backtest.py --capacity      # how much money the strategy holds, at 10% of volume
-python run_backtest.py --significance  # bootstrap error bars, and deflate the grid's best cell
+python -m pytest -q                 # 261 passed
+
+# the two halves together
+python fill_realism.py              # fill models compared, the headline result
+
+# the strategy side
+python run_backtest.py              # synthetic + SPY, writes engine_backtest.png
+python run_backtest.py --walk-forward    # refit the windows yearly, trade out of sample
+python run_backtest.py --capacity        # how much money it holds, at 10% of volume
+python run_backtest.py --significance    # bootstrap error bars, deflate the grid's best cell
+python cross_section.py             # the same rule across 24 assets
+python long_short.py                # and with a short leg, which makes it worse
+
+# the venue side
+python run_simulation.py            # 50k events, writes simulation.png
+python benchmark.py                 # throughput and latency
+python queue_study.py               # what a place in the queue is worth
+python latency_study.py             # what a 15us disadvantage costs a market maker
+python auction_study.py             # the opening auction, where the rules differ
 ```
 
 ![Synthetic and SPY backtests](engine_backtest.png)
-
----
-
-## How it works
-
-### The problem with the obvious approach
-
-The natural way to backtest in pandas is **vectorized**: compute a signal column, shift it,
-multiply by a returns column, take a cumulative product. It's fast and fine for research, but
-it has three structural problems.
-
-- **Lookahead is one typo away.** The entire price series exists in memory as a column. Forget
-  a `.shift(1)` and you are trading on a close you couldn't have known. Nothing crashes; your
-  Sharpe just quietly triples.
-- **Order handling doesn't map to column arithmetic.** Partial fills, limit orders, stops,
-  position limits, latency — none of these are expressible as elementwise operations on a
-  Series.
-- **The research code looks nothing like the live code.** Going to production means a rewrite,
-  and a rewrite means a fresh set of bugs in the one place you can least afford them.
-
-### The event-driven alternative
-
-Process one bar at a time, through a queue. Five components, four message types:
-
-```
-DataHandler --MarketEvent--> Strategy --SignalEvent--> Portfolio
-                                                          |
-     Portfolio <--FillEvent-- ExecutionHandler <--OrderEvent
-```
-
-| Event | Meaning | Emitted by |
-|---|---|---|
-| `MarketEvent` | a new bar arrived (timestamp only) | DataHandler |
-| `SignalEvent` | an *opinion*: long / short / exit this symbol. No size. | Strategy |
-| `OrderEvent` | a *decision*: buy or sell N shares (signed) | Portfolio |
-| `FillEvent` | what actually executed: quantity, price after slippage, commission | ExecutionHandler |
-
-The separation is the design. Strategies express views. The portfolio turns views into sized
-orders — **this is where risk management lives**. That claim is load-bearing rather than
-decorative: volatility targeting, which changes every position size in the book and takes the
-SPY run's Sharpe from 0.75 to 0.85, is implemented entirely inside `Portfolio`. Neither strategy
-knows it exists, and neither strategy needed a line changed. The execution handler models market frictions.
-In a real shop these are three systems owned by three teams, and the interfaces between them are
-exactly these four messages.
-
-The engine itself is two nested loops:
-
-```python
-while data.has_more():
-    events.put(data.next_bar())          # outer loop: time
-
-    while not events.empty():            # inner loop: causality
-        event = events.get()
-        dispatch(event)                  # handlers may push new events
-
-    portfolio.mark_to_market(data.current_time())
-```
-
-The outer loop is time. The inner loop is causality: one bar can cascade into a signal, an
-order, and a fill, and all of it must settle before the bar's equity is stamped. Getting
-`mark_to_market` on the wrong side of that inner loop is the single most common bug in
-hand-rolled backtesters — your equity curve lags reality by exactly one bar, which looks
-plausible and is wrong. `tests/test_engine.py` checks the final number to the cent specifically
-to catch it.
-
-### How lookahead is prevented structurally
-
-`HistoricalDataHandler` keeps a cursor. `get_latest(symbol, n)` slices only up to that cursor,
-and **there is no method on the class that returns unreleased data**. The strategy is not
-trusted to avoid the future; it is not offered the future. That's the difference between a
-convention and a guarantee, and it's worth stating that way in an interview.
-
-A side effect: during warmup, `get_latest` returns *fewer* rows than asked for. Strategies must
-handle a short series rather than assume the window is full — the MA-cross strategy simply emits
-nothing until it has `long_window` bars.
-
-### The strategy: moving-average crossover
-
-Long when the 50-day mean is above the 200-day mean, flat otherwise. It is a trend-following
-strategy in its simplest possible form, chosen because it is easy to reason about, not because
-it works.
-
-The one non-obvious detail: **signal on the crossing, not on the state.** If the strategy emits
-LONG on every bar where the short MA sits above the long MA, the portfolio sees hundreds of
-redundant signals and pays commission on the churn. The strategy tracks what it has already
-signalled in a set, so LONG fires once per crossing.
-
-### Frictions
-
-Buys fill *above* the close, sells fill *below*, by `slippage_bps`. Slippage always hurts —
-that asymmetry is the entire model. Commission is per share.
-
-Filling at the close of the bar you signalled on is optimistic: you observed the close and then
-traded at it. That was a deliberate, documented modeling choice, not an oversight — and it's now
-also a choice you can turn off. `NextBarOpenExecutionHandler` (`src/execution.py`) queues the
-order instead and fills it at the *following* bar's open, which is what a real order placed on
-a close actually gets. `run_backtest.py --fill-timing` runs the identical SPY backtest both ways;
-[RESULTS.md](RESULTS.md) has the numbers.
-
-Both of those handlers will still fill any order at any size for the same price, which quietly
-quotes every result in this repo at zero assets under management.
-`ParticipationLimitedExecutionHandler` is the version that won't: fills are capped at a share of
-each bar's volume, the remainder stays working into the following bars, and each slice pays
-square-root impact — `impact_coef x trailing daily vol x sqrt(slice / bar volume)`, the
-Almgren form with the calibration constant exposed rather than hidden. `--capacity` sweeps the
-strategy across rising AUM. The short version: the 50/200 crossover gives up 0.04 of Sharpe at
-$20 billion and the 10/50 version gives up 0.16 at a quarter of that, because impact is a toll
-paid per trade and one of them trades seven times as often.
-
----
+![Emergent spread, impact and variance scaling](simulation.png)
 
 ## Layout
 
 ```
-├── run_backtest.py          # driver: synthetic + SPY
-├── src/
-│   ├── events.py            # the four frozen event dataclasses
-│   ├── data_handler.py      # bar replay; enforces no-lookahead by construction
-│   ├── strategy.py          # buy-and-hold + MA crossover
-│   ├── portfolio.py         # sizing (fixed or vol-targeted), accounting, equity
-│   ├── execution.py         # fills: same-bar, next-bar-open, participation-limited
-│   └── engine.py            # the event loop
-├── significance.py          # bootstrap intervals and the deflated Sharpe ratio
-└── tests/                   # 87 tests, incl. an end-to-end check to the cent
+src/              the backtester: events, data handler, strategy, portfolio, execution
+  book_execution.py   the bridge — execution that asks exchange/ what the fill was
+exchange/         the matching engine: order book, order types, fees, latency, auction
+tests/            backtester tests
+  exchange/       matching engine tests
+notes/            the two long write-ups, and the interview notes for each
+RESULTS.md        the result that needs both halves
 ```
 
-Events are **frozen** dataclasses. Messages shouldn't mutate after they're sent; freezing them
-means a downstream handler cannot rewrite history, and it makes them hashable and safe to log.
+## Results
+
+| | |
+|---|---|
+| [RESULTS.md](RESULTS.md) | fills simulated vs. assumed, and what the capacity study got wrong |
+| [notes/backtester.md](notes/backtester.md) | costs, significance, walk-forward, sizing, capacity, 24 assets, long/short |
+| [notes/exchange.md](notes/exchange.md) | spread, impact, mean reversion, fees, latency, auctions, queue value |
+| [notes/interview-backtester.md](notes/interview-backtester.md) | how to talk about the strategy side |
+| [notes/interview-exchange.md](notes/interview-exchange.md) | how to talk about the microstructure side |
+
+The short version of all of it: the 50/200 moving-average rule loses to buy and
+hold on SPY, loses across 24 assets, loses worse with a short leg added, and
+does not survive an honest walk-forward. Those write-ups lead with that rather
+than with the best cell of the parameter grid, and the engine exists to make
+the negative result trustworthy rather than to find a positive one.
 
 ---
 
-## Results in one line
+## How the two halves work
 
-On SPY 2015–2024 the 50/200 crossover returned **+67.4%** against buy-and-hold's **+81.7%**,
-with a *worse* drawdown. On the synthetic sine wave it posted a Sharpe of 4.10. Same code, same
-parameters. [RESULTS.md](RESULTS.md) is about why.
+### The matching engine
 
----
+An order book is two sorted collections of resting limit orders — bids below,
+asks above — and the gap between the best of each is the **spread**. Everything
+else is bookkeeping.
 
-## Extending it
+```
+         asks (sellers)          Someone willing to sell at 101.00
+  101.00 |████ 300              is offering; someone willing to buy
+  100.60 |██ 150                at 100.50 is bidding. Nothing trades
+  100.50 |█ 100     <- best ask  until one side reaches across.
+  ---------------------- spread = 0.05
+  100.45 |██ 200    <- best bid
+  100.40 |████ 400
+  100.30 |███ 250
+         bids (buyers)
+```
 
-Each of these is a small, well-contained change, which is the point of the architecture:
+Two orders at the same price are not the same order. The one that arrived first
+fills first, which is **price-time priority**, and section 8 of
+notes/exchange.md prices what that priority is worth to the trader holding it.
 
-- **Limit orders** — the execution handler needs a resting book (see the limit-order-book
-  project) and fills become conditional on subsequent bars.
-- ~~Next-bar-open fills~~ — done, `NextBarOpenExecutionHandler` in `src/execution.py`.
-- ~~Volatility-targeted sizing~~ — done, `Portfolio(vol_target=...)`; see RESULTS.md.
-- ~~Volume participation limits and size-dependent impact~~ — done,
-  `ParticipationLimitedExecutionHandler`; `--capacity` is the AUM sweep.
-- **Position limits / stop losses** — pure portfolio-layer changes; no strategy edits.
-- **Multiple symbols** — already supported; the loop iterates `data.symbols`.
-- ~~Walk-forward parameter selection~~ — done, `--walk-forward`. It loses to the unfitted
-  convention by 0.15 of Sharpe; RESULTS.md is about why that is the expected answer.
+### The event-driven backtester
 
-## Known simplifications
+The natural way to backtest in pandas is **vectorized**: compute a signal
+column, shift it, multiply by a returns column, take a cumulative product. It
+is fast and fine for research, and it has three structural problems.
 
-Stated plainly, because a backtester that hides its assumptions is worse than no backtester.
+- **Lookahead is one typo away.** The entire price series exists in memory as a
+  column. Forget a `.shift(1)` and you are trading on a close you could not
+  have known. Nothing crashes; your Sharpe just quietly triples.
+- **Order handling does not map to column arithmetic.** Partial fills, limit
+  orders, stops, position limits, latency — none of these are expressible as
+  elementwise operations on a Series.
+- **The research code looks nothing like the live code.** Going to production
+  means a rewrite, and a rewrite means a fresh set of bugs in the one place you
+  can least afford them.
 
-- ~~Fills are always complete, at any size~~ — `ParticipationLimitedExecutionHandler` is the
-  one that isn't, and `--capacity` is what it's for. The two simpler handlers still fill
-  everything instantly, and every number in RESULTS.md outside the capacity section uses one of
-  them, so read those as an upper bound.
-- The impact model's leading constant is a documented default of 1.0, not a calibration. Getting
-  it right needs a firm's own fill data; what the model gives you without that is the right
-  *shape* of the cost curve, which is enough to compare strategies against each other and not
-  enough to quote a dollar figure to a risk committee.
-- Volume is assumed unaffected by your own trading, and the participation cap is a constant.
-  Neither is true: a real day's volume partly *is* other people reacting to you, and liquidity
-  is worst exactly when you most want to trade.
-- No borrow costs, no margin, no dividends beyond what `auto_adjust` bakes into the prices.
-- Floats throughout. Real accounting systems use integer cents (`0.1 + 0.2 != 0.3`); the tests
-  compare with tolerances instead.
-- Single asset class, daily bars, one venue.
+The event-driven alternative is a queue. A `MarketEvent` releases one bar. The
+strategy sees it and may emit a `SignalEvent`. The portfolio turns that into a
+sized `OrderEvent`. The execution handler turns that into a `FillEvent`. Each
+component can only read what has already been released, so lookahead is not
+something to be careful about — it is unrepresentable.
 
-## Reading
+### Why that matters for the bridge
 
-- QuantStart, *Event-Driven Backtesting with Python* — the canonical free walkthrough of this
-  exact architecture.
-- [Backtrader](https://github.com/mementum/backtrader) and
-  [Zipline](https://github.com/quantopian/zipline) — read the source *after* building your own;
-  every component here has a counterpart there.
-- Ernest Chan, *Quantitative Trading*, ch. 5 — backtesting pitfalls.
-- Robert Pardo, *The Evaluation and Optimization of Trading Strategies* — walk-forward testing.
+Because the execution handler is just another component behind the queue,
+swapping the one that applies a formula for the one that routes into a real
+matching engine changes nothing else in the system. Four handlers now exist —
+same-bar close, next-bar open, participation-limited, and the book — and they
+differ in how the fill price is formed and in nothing else. That is what makes
+them comparable, and comparability is the only reason the numbers in RESULTS.md
+mean anything.
