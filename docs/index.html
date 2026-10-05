@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Market Simulation Stack — Mihir Konda</title>
-<meta name="description" content="An event-driven backtester wired to a limit-order-book matching engine, so fills are simulated rather than assumed. A flat 2bp slippage charge turns out to be wrong in both directions, crossing over at 2% of a day's volume.">
+<meta name="description" content="An event-driven backtester wired to a limit-order-book matching engine, so fills are simulated rather than assumed. A flat 2bp slippage charge is wrong in both directions, and giving the book a realistic depth profile moves the crossover five times earlier without changing the capacity answer.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -116,19 +116,36 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
   <p class="lede">Every execution handler here used to price its own fills — a flat <span class="mono">slippage_bps</span>, or a square-root impact law whose constant every firm calibrates on its own fills and nobody publishes. So a cost figure was quoted in a number the reader cannot check. <strong style="color:var(--ink)">The matching engine in <span class="mono">exchange/</span> does not need a formula: it knows what the fill was, because it printed it.</strong></p>
   <p><span class="mono">src/book_execution.py</span> builds a book from each bar's volume, walks it, and takes the volume-weighted price of the resting orders the order actually consumed. Cost stops being a parameter and becomes a consequence of depth.</p>
 
-  <h3 style="margin-top:28px">Cost per share on SPY, three models</h3>
+  <h3 style="margin-top:28px">Cost per share on SPY, four models</h3>
   <table>
-    <thead><tr><th>Order, % of a day</th><th>Shares</th><th>Flat 2bp</th><th>Square-root law</th><th>The book</th><th>Levels walked</th></tr></thead>
+    <thead><tr><th>Order, % of a day</th><th>Shares</th><th>Flat 2bp</th><th>Square-root law</th><th>Flat book</th><th>Shaped book</th></tr></thead>
     <tbody>
-      <tr><td>0.01%</td><td class="mono">7,661</td><td class="mono">2.00</td><td class="mono">3.10</td><td class="mono"><strong>0.37</strong></td><td class="mono">1</td></tr>
-      <tr><td>0.10%</td><td class="mono">76,610</td><td class="mono">2.00</td><td class="mono">5.48</td><td class="mono"><strong>0.37</strong></td><td class="mono">1</td></tr>
-      <tr><td>1.00%</td><td class="mono">766,108</td><td class="mono">2.00</td><td class="mono">13.00</td><td class="mono"><strong>1.11</strong></td><td class="mono">6</td></tr>
-      <tr><td>3.00%</td><td class="mono">2,298,324</td><td class="mono">2.00</td><td class="mono">21.05</td><td class="mono"><strong>2.95</strong></td><td class="mono">16</td></tr>
-      <tr><td>10.0%</td><td class="mono">7,661,080</td><td class="mono">2.00</td><td class="mono">36.79</td><td class="mono"><strong>9.41</strong></td><td class="mono">51</td></tr>
-      <tr><td>30.0%</td><td class="mono">22,983,240</td><td class="mono">2.00</td><td class="mono">62.25</td><td class="mono"><strong>27.86</strong></td><td class="mono">151</td></tr>
+      <tr><td>0.01%</td><td class="mono">7,661</td><td class="mono">2.00</td><td class="mono">3.10</td><td class="mono">0.37</td><td class="mono"><strong>0.37</strong></td></tr>
+      <tr><td>0.10%</td><td class="mono">76,610</td><td class="mono">2.00</td><td class="mono">5.48</td><td class="mono">0.37</td><td class="mono"><strong>0.89</strong></td></tr>
+      <tr><td>0.30%</td><td class="mono">229,832</td><td class="mono">2.00</td><td class="mono">8.02</td><td class="mono">0.49</td><td class="mono"><strong>1.75</strong></td></tr>
+      <tr><td>1.00%</td><td class="mono">766,108</td><td class="mono">2.00</td><td class="mono">13.00</td><td class="mono">1.11</td><td class="mono"><strong>3.82</strong></td></tr>
+      <tr><td>3.00%</td><td class="mono">2,298,324</td><td class="mono">2.00</td><td class="mono">21.05</td><td class="mono">2.95</td><td class="mono"><strong>7.91</strong></td></tr>
+      <tr><td>10.0%</td><td class="mono">7,661,080</td><td class="mono">2.00</td><td class="mono">36.79</td><td class="mono">9.41</td><td class="mono"><strong>17.63</strong></td></tr>
+      <tr><td>30.0%</td><td class="mono">22,983,240</td><td class="mono">2.00</td><td class="mono">62.25</td><td class="mono">27.86</td><td class="mono"><strong>36.65</strong></td></tr>
     </tbody>
   </table>
-  <p style="margin-top:14px">Basis points per share. The crossover is the number worth quoting: <strong style="color:var(--ink)">the book starts costing more than a flat 2 bps at 1.97% of a day's volume</strong> — 1.5M shares, about $409M of SPY. Below that every cost figure in the write-up is pessimistic; above it, optimistic.</p>
+  <p style="margin-top:14px">Basis points per share. Against a <em>flat</em> book, the crossover is <strong style="color:var(--ink)">1.97% of a day's volume</strong> — 1.5M shares, about $409M of SPY. Below that every cost figure in the write-up is pessimistic; above it, optimistic.</p>
+
+  <h3 style="margin-top:32px">The book was not flat either, and fixing that moved the crossover 5x</h3>
+  <p>Seeding every price level with the same size says the touch is as attractive a place to rest as a level ten ticks behind it. That is backwards — the touch is where you get filled by whoever knows something, so it is the <em>least</em> attractive place to leave size, and real books lean the other way. The <span class="mono">shape</span> parameter thins the front and thickens the back, holding the book's <strong style="color:var(--ink)">total</strong> size fixed at 30.6M shares either way.</p>
+  <p>I expected that to tilt the cost curve: small orders dearer, large orders cheaper. <strong style="color:var(--ink)">It does not tilt — it raises cost at every size.</strong> A fill price comes off <em>cumulative</em> depth, not the total, and moving size backwards lowers the cumulative at every level except the last. So the shaped book is reached into further at any size, and the two curves meet only on an order that sweeps the whole side.</p>
+  <table>
+    <thead><tr><th>Shape</th><th>Shares at the touch</th><th>Crossover</th><th>Notional</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">0.00 <span style="opacity:.6">(flat)</span></td><td class="mono">153,221</td><td class="mono">1.96%</td><td class="mono">$408M</td></tr>
+      <tr><td class="mono">0.25</td><td class="mono">50,798</td><td class="mono">0.87%</td><td class="mono">$180M</td></tr>
+      <tr><td class="mono">0.50 <span style="opacity:.6">(shipped)</span></td><td class="mono">16,192</td><td class="mono"><strong>0.39%</strong></td><td class="mono"><strong>$80M</strong></td></tr>
+      <tr><td class="mono">1.00</td><td class="mono">1,524</td><td class="mono">0.06%</td><td class="mono">$13M</td></tr>
+      <tr><td class="mono">2.00</td><td class="mono">11</td><td class="mono">0.00%</td><td class="mono">&mdash;</td></tr>
+    </tbody>
+  </table>
+  <p style="margin-top:14px">So the honest description of <span class="mono">shape</span> is not the one I first wrote down. Normalising the total makes it <em>size</em>-neutral, not <em>cost</em>-neutral — it still moves cost, and only ever upward. That one-sidedness is the point: the knob cannot be turned to make a backtest look cheaper, only dearer, and a parameter that can only hurt the result is safer to ship than one that can flatter it. Shape 2.0 puts 11 shares at the touch, which is not a book; it is in the sweep to show the effect saturating, not as a candidate setting.</p>
+  <p><strong style="color:var(--ink)">And the conclusion the crossover was for did not move.</strong> The capacity ladder goes from Sharpe 0.62 to 0.58 at $1bn and the deployed-capital column is identical to the share. What strands capital above $5bn is the 10% participation cap, not the cost of the fill, so a cost correction cannot touch it. The headline number changed by a factor of five; the answer it supported changed by 0.04 of a Sharpe. Worth knowing which of your numbers are load-bearing.</p>
 
   <h3 style="margin-top:32px">And it exposed a flaw in the capacity study that was already here</h3>
   <p>Running two fill models side by side made something visible that one model alone hid. The capacity ladder's Sharpe ratio <em>rises</em> above $5bn — not because capacity improves with size, but because the participation cap stops filling the orders.</p>

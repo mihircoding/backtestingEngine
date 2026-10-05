@@ -27,18 +27,65 @@ out of levels and the same order pays two hundred basis points or goes
 unfilled, where the flat model still charges two. fill_realism.py finds where
 they cross.
 
+The book itself is not flat either, and that is the part this file got wrong
+first time. Seeding every price level with the same size says the touch is as
+attractive a place to rest as a level ten ticks behind it, which is backwards:
+the touch is where you get filled by whoever knows something, so it is the
+least attractive place to leave size. Real books lean the other way - thin in
+front, thicker behind - and `shape` sets how hard.
+
+The thing I expected `shape` to do, it does not do, and the correction is the
+useful part. Holding the book's TOTAL size fixed and only moving it backwards
+looked like it ought to tilt the cost curve: small orders dearer because the
+touch is thinner, large orders cheaper because the back is fatter. It does not
+tilt. It raises the cost at every single order size.
+
+The reason is that a fill price depends on CUMULATIVE depth - how much is
+available within n ticks - and not on the total. Moving size from the front to
+the back lowers the cumulative at every level except the last, where the two
+books are equal by construction. So a shaped book is reached-into further at
+any size, and the two curves only meet when the order sweeps the whole book:
+
+    order, shares of a 10,000-share side      flat    shape 0.5    shape 1.0
+       100                                    1.00       1.00         1.00
+     1,000                                    1.00       1.56         2.28
+     5,000                                    3.00       4.07         4.97
+     9,000                                    5.00       5.95         6.67
+     9,900                                    5.45       6.32         6.97
+    (cost in ticks)
+
+Which means the honest description of `shape` is not "a cost-neutral statement
+about where liquidity sits". Normalising the total does NOT neutralise it; the
+parameter still moves cost, and only ever upward. What normalising buys is
+narrower but real: the knob is now a shape a market-data feed can show you,
+and it cannot be used to make a backtest cheaper - only dearer. A knob that
+can only hurt the result is a safer thing to leave in a repository than one
+that can flatter it, which is the argument for keeping it and for leaving the
+default at a mild 0.5 rather than at 0.
+
 What this does not fix, which is the honest centre of the file, because
 otherwise it is one hidden assumption swapped for another:
 
-  - There is still one free parameter, `depth_frac`: resting size at each
-    price level, as a fraction of the bar's volume. Nothing here derives it.
-    The difference from `slippage_bps` is not that it is measured rather than
-    assumed - it is that it is DEPTH. A venue publishes depth, a market data
-    feed carries it, and anyone can look it up for the asset they care about.
-    Cost in basis points is published by nobody and depends on the order you
-    were trying to do. An assumption that can be checked against a feed is a
-    different kind of object from one that cannot. fill_realism.py sweeps it
-    over two orders of magnitude instead of defending a default.
+  - There are two free parameters, and both are depth rather than cost.
+    `depth_frac` is the resting size at a price level as a fraction of the
+    bar's volume; `shape` is how that size is distributed across levels.
+    Nothing here derives either. The difference from `slippage_bps` is not
+    that they are measured rather than assumed - it is that they are DEPTH. A
+    venue publishes depth, a market data feed carries it, and anyone can look
+    it up for the asset they care about. Cost in basis points is published by
+    nobody and depends on the order you were trying to do. An assumption that
+    can be checked against a feed is a different kind of object from one that
+    cannot. fill_realism.py sweeps both instead of defending a default.
+
+    `shape` is normalised so the book holds the same total size whatever it is
+    set to. That is worth stating precisely, because it is weaker than it
+    sounds and I first wrote it down too strongly: holding the total fixed
+    makes the parameter SIZE-neutral, not COST-neutral. Cost comes off the
+    cumulative depth, and every positive shape lowers the cumulative at every
+    level, so raising it raises the cost of every order. The knob is one-sided.
+    It cannot be turned to make a fill look cheaper than a flat book, which is
+    the property that makes it safe to ship; it is not the property of having
+    no effect.
 
   - One bar is one book. A day's liquidity is pooled into a single snapshot
     taken at the open, which overstates what is available at the touch in any
@@ -89,6 +136,29 @@ DEPTH_FRAC = 0.002
 # from the open on SPY; past that the order waits for the next bar instead.
 LEVELS = 200
 
+# How the resting size is distributed across those levels. Size at the i-th
+# level away from the touch is proportional to i**SHAPE, renormalised so the
+# total resting in the book does not depend on SHAPE at all.
+#
+# 0.0 is a flat book - every level the same - which is what this handler did
+# before and what the tests pin. Positive values thin the touch and thicken
+# the levels behind it, which is the direction real books lean: the touch is
+# where adverse selection is worst, so it is the least attractive place to
+# leave size, and the empirical average book across equity venues rises away
+# from the touch before it eventually decays.
+#
+# 0.5 is the default because it is the middle of the range the literature
+# reports and because fill_realism.py sweeps it rather than relying on it.
+#
+# The normalisation keeps the TOTAL resting size fixed as this changes, so a
+# cost difference between two shapes is a difference in where the depth sits
+# rather than in how much of it there is. It does not make the parameter
+# cost-neutral: cost comes off cumulative depth, and any positive shape lowers
+# the cumulative at every level but the last, so raising SHAPE raises the cost
+# of every order. That one-sidedness is deliberate - the knob can make a
+# backtest look worse and cannot make it look better.
+SHAPE = 0.5
+
 
 class BookExecutionHandler:
     """Routes orders into the matching engine and reports the fills it printed.
@@ -99,6 +169,13 @@ class BookExecutionHandler:
     levels      : tick-wide levels the book is seeded with. An order larger
                   than depth_frac * levels * volume cannot complete in one bar
                   however aggressive it is, which is the point.
+    shape       : exponent on the depth profile. 0 is flat; positive thins the
+                  touch and thickens the levels behind it. Total resting size
+                  is held constant, so the capacity limit above is unchanged -
+                  but cost is not, because cost comes off cumulative depth.
+                  Every positive shape makes every order dearer than the flat
+                  book, and the two agree only on an order that sweeps the
+                  entire side.
     participation : cap on the share of a bar's volume one order may take.
                   Identical in meaning to the participation handler's, so the
                   two differ only in how the price is formed.
@@ -114,17 +191,22 @@ class BookExecutionHandler:
 
     def __init__(self, data: HistoricalDataHandler, depth_frac: float = DEPTH_FRAC,
                  levels: int = LEVELS, participation: float = 0.10,
-                 fees: FeeSchedule = FLAT, commission_per_share: float = 0.005):
+                 fees: FeeSchedule = FLAT, commission_per_share: float = 0.005,
+                 shape: float = SHAPE):
         if not 0 < participation <= 1:
             raise ValueError("participation must be in (0, 1]")
         if depth_frac <= 0:
             raise ValueError("depth_frac must be positive")
         if levels < 1:
             raise ValueError("levels must be at least 1")
+        if shape < 0:
+            raise ValueError("shape must be non-negative")
 
         self.data = data
         self.depth_frac = depth_frac
         self.levels = levels
+        self.shape = shape
+        self._weights = self._depth_weights(levels, shape)
         self.participation = participation
         self.fees = fees
         self.commission_per_share = commission_per_share
@@ -217,17 +299,38 @@ class BookExecutionHandler:
 
     # ---------- the book ----------
 
+    @staticmethod
+    def _depth_weights(levels: int, shape: float) -> np.ndarray:
+        """Share of the book's total size resting at each level, nearest first.
+
+        Proportional to i**shape and normalised to sum to `levels`, so the
+        weight is a MULTIPLE of the flat book's per-level size. shape=0 gives
+        every level a weight of exactly 1, which is the flat book, so the
+        profile is a generalisation of the old behaviour rather than a
+        replacement for it.
+        """
+        i = np.arange(1, levels + 1, dtype=float)
+        w = i ** shape
+        return w * (levels / w.sum())
+
     def _build_book(self, symbol: str, volume: float) -> LimitOrderBook:
         """A book centred on this bar's open, `levels` deep either side.
 
         Centred on the open rather than the close because the open is the price
         the order is being sent at - the same choice, for the same reason, as
         the next-bar-open handler.
+
+        Size at each level is the flat per-level size times that level's weight
+        from the profile. Rounding every level up to at least one share leaks a
+        little size into a book that asked for less than a share a level, which
+        is the right way to be wrong: an empty level would print a fill price
+        that skipped a tick it should have paid for.
         """
         book = LimitOrderBook()
         mid = self.data.current_open(symbol)
-        per_level = max(int(self.depth_frac * volume), 1)
+        flat = self.depth_frac * volume
         for i in range(1, self.levels + 1):
+            per_level = max(int(flat * self._weights[i - 1]), 1)
             book.add_limit_order(Side.BUY, to_tick(mid - TICK * i), per_level)
             book.add_limit_order(Side.SELL, to_tick(mid + TICK * i), per_level)
         return book

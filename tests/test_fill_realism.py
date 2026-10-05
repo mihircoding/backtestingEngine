@@ -13,15 +13,22 @@ a date on them, not in an assertion that breaks when Yahoo revises a split.
 import pytest
 
 from exchange.order import TICK
-from fill_realism import cost_curves, crossover, interpretable_to
+from fill_realism import (cost_curves, crossover, crossover_by_shape,
+                          interpretable_to)
 
 PRICE = 100.0
 VOLUME = 1_000_000.0
 
 
-def curves(**kwargs):
-    """depth_frac 0.001 of a million shares is 1,000 shares a level."""
-    return cost_curves(PRICE, VOLUME, depth_frac=0.001, levels=10, **kwargs)
+def curves(shape=0.0, **kwargs):
+    """depth_frac 0.001 of a million shares is 1,000 shares a level.
+
+    shape is pinned flat here rather than left at the study's default. These
+    tests are arithmetic on a known book, and a flat book is the one whose
+    arithmetic can be done by hand. The profile gets its own section below.
+    """
+    return cost_curves(PRICE, VOLUME, depth_frac=0.001, levels=10,
+                       shape=shape, **kwargs)
 
 
 # ---------- the cost curves ----------
@@ -60,9 +67,9 @@ def test_an_order_past_the_last_level_is_reported_as_partly_unfilled():
 
 
 def test_a_deeper_book_is_cheaper_at_the_same_size():
-    thin = cost_curves(PRICE, VOLUME, depth_frac=0.0005, levels=50,
+    thin = cost_curves(PRICE, VOLUME, depth_frac=0.0005, levels=50, shape=0.0,
                        size_fracs=(0.005,))[0]
-    thick = cost_curves(PRICE, VOLUME, depth_frac=0.005, levels=50,
+    thick = cost_curves(PRICE, VOLUME, depth_frac=0.005, levels=50, shape=0.0,
                         size_fracs=(0.005,))[0]
     assert thick["book_bps"] < thin["book_bps"]
 
@@ -70,7 +77,8 @@ def test_a_deeper_book_is_cheaper_at_the_same_size():
 def test_the_square_root_law_is_concave_in_size():
     """Not a property of this file - a property of the law it is reproducing -
     but if the comparison curve were linear the whole chart would be wrong."""
-    rows = cost_curves(PRICE, VOLUME, size_fracs=(0.01, 0.04, 0.16))
+    rows = cost_curves(PRICE, VOLUME, size_fracs=(0.01, 0.04, 0.16),
+                       shape=0.0)
     first = rows[1]["sqrt_bps"] - rows[0]["sqrt_bps"]
     second = rows[2]["sqrt_bps"] - rows[1]["sqrt_bps"]
     assert second < first * 4
@@ -90,7 +98,7 @@ def test_the_crossover_lands_between_the_rows_that_bracket_it():
 def test_a_book_deep_enough_to_never_cross_returns_none():
     """None is an answer, not a missing value: on a book this deep, a flat
     2 bps is conservative at every size tested."""
-    rows = cost_curves(PRICE, VOLUME, depth_frac=0.5, levels=200,
+    rows = cost_curves(PRICE, VOLUME, depth_frac=0.5, levels=200, shape=0.0,
                        size_fracs=(0.0001, 0.001, 0.01))
     assert crossover(rows) is None
 
@@ -98,9 +106,9 @@ def test_a_book_deep_enough_to_never_cross_returns_none():
 def test_a_thinner_book_crosses_sooner():
     sizes = (0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05)
     thin = crossover(cost_curves(PRICE, VOLUME, depth_frac=0.0002,
-                                 levels=500, size_fracs=sizes))
+                                 levels=500, size_fracs=sizes, shape=0.0))
     thick = crossover(cost_curves(PRICE, VOLUME, depth_frac=0.002,
-                                  levels=500, size_fracs=sizes))
+                                  levels=500, size_fracs=sizes, shape=0.0))
     assert thin < thick
 
 
@@ -131,3 +139,58 @@ def test_the_floor_is_the_caller_s_choice():
     rows = _ladder([(1e8, 1.0), (1e9, 0.5)])
     assert interpretable_to(rows, "book", floor=0.90) == 1e8
     assert interpretable_to(rows, "book", floor=0.40) == 1e9
+
+
+# ---------- the depth profile ----------
+#
+# The claim section 1b makes is one-directional: shaping the book moves the
+# crossover earlier and never later, and it does so without changing how much
+# the book can absorb. Both halves need pinning, because the second is what
+# separates a statement about the shape of liquidity from a statement about
+# how much of it there is.
+
+
+def test_shaping_the_book_cannot_make_an_order_cheaper():
+    """Checked size by size rather than on the crossover alone.
+
+    A crossover that moved the right way while some individual size got
+    cheaper would mean the profile was doing something other than what it is
+    documented to do.
+    """
+    flat = curves(shape=0.0)
+    tilt = curves(shape=1.0)
+
+    assert len(flat) == len(tilt)
+    for f, t in zip(flat, tilt):
+        assert f["size_frac"] == t["size_frac"]
+        assert t["book_bps"] >= f["book_bps"] - 1e-9
+
+
+def test_a_shaped_book_holds_the_same_shares_as_a_flat_one():
+    """Capacity is total depth, and total depth is what the profile preserves.
+
+    Tolerance is one share a level: rounding each level up to a whole share is
+    the only thing that stops this being exact, and it is stated in
+    book_execution.py rather than smoothed over here.
+    """
+    rows = crossover_by_shape(PRICE, VOLUME, depth_frac=0.001, levels=10)
+    capacities = [r["capacity_shares"] for r in rows]
+
+    assert max(capacities) - min(capacities) <= 10
+
+
+def test_the_crossover_moves_earlier_as_the_book_is_shaped_harder():
+    rows = crossover_by_shape(PRICE, VOLUME, depth_frac=0.001, levels=10,
+                              shapes=(0.0, 0.5, 1.0, 2.0))
+    found = [r["crossover_frac"] for r in rows if r["crossover_frac"]]
+
+    assert len(found) >= 2, "expected a crossover at more than one shape"
+    assert found == sorted(found, reverse=True)
+
+
+def test_a_harder_shape_thins_the_touch():
+    rows = crossover_by_shape(PRICE, VOLUME, depth_frac=0.001, levels=10,
+                              shapes=(0.0, 1.0))
+    flat, tilt = rows
+
+    assert tilt["touch_shares"] < flat["touch_shares"]

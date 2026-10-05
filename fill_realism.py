@@ -53,7 +53,7 @@ import pandas as pd
 
 from exchange.fees import MAKER_TAKER
 from exchange.order import TICK
-from src.book_execution import BookExecutionHandler
+from src.book_execution import SHAPE, BookExecutionHandler
 from src.execution import (NextBarOpenExecutionHandler,
                            ParticipationLimitedExecutionHandler)
 from src.strategy import MovingAverageCrossStrategy
@@ -63,37 +63,65 @@ SYMBOL = "SPY"
 START, END = "2015-01-01", "2024-12-31"
 AUMS = (1e8, 1e9, 5e9, 2e10, 1e11)
 DEPTH_FRACS = (0.0002, 0.0005, 0.002, 0.005, 0.02)
+# 0 is the flat book this handler shipped with first. 2.0 is harder than any
+# real book; it is in the sweep to show the effect saturating rather than as a
+# candidate setting.
+SHAPES = (0.0, 0.25, 0.5, 1.0, 2.0)
 SIZE_FRACS = (0.0001, 0.001, 0.003, 0.01, 0.03, 0.10, 0.30)
 OUT = "results/fill_realism.json"
 
 
 # ---------- 1. where the two cost models disagree ----------
 
+def _level_sizes(depth_frac: float, volume: float, levels: int,
+                 shape: float) -> np.ndarray:
+    """Resting shares at each level, nearest the touch first.
+
+    The weights come from BookExecutionHandler rather than being written out
+    again here. Two copies of the profile is exactly the kind of duplication
+    that lets a study agree with a handler while both drift from what was
+    intended, and the profile is the thing under test.
+    """
+    flat = depth_frac * volume
+    w = BookExecutionHandler._depth_weights(levels, shape)
+    return np.maximum((flat * w).astype(int), 1)
+
+
 def cost_curves(price: float, volume: float, depth_frac: float = 0.002,
                 levels: int = 200, slippage_bps: float = 2.0,
-                size_fracs=SIZE_FRACS) -> list[dict]:
+                size_fracs=SIZE_FRACS, shape: float = SHAPE) -> list[dict]:
     """Cost per share of one order, under each model, at rising order sizes.
 
-    The book cost is computed by actually walking a book rather than by the
-    closed form, because the closed form would be a second implementation of
-    the thing under test and the two could agree while both being wrong.
+    The book cost is computed by actually walking the levels rather than by a
+    closed form, because a closed form would be a second implementation of the
+    thing under test and the two could agree while both being wrong. That
+    matters more now than it did with a flat book: with a profile there is no
+    tidy closed form to be tempted by.
 
     Returns one row per size, with cost in basis points of the price so the
-    two models are in the same units as the slippage parameter they replace.
+    models are in the same units as the slippage parameter they replace.
     """
     rows = []
-    per_level = max(int(depth_frac * volume), 1)
-    capacity = per_level * levels
+    sizes = _level_sizes(depth_frac, volume, levels, shape)
+    capacity = int(sizes.sum())
 
     for frac in size_fracs:
         shares = max(int(frac * volume), 1)
-        # Walk the levels the order would consume. The last level is partial.
-        full, remainder = divmod(min(shares, capacity), per_level)
         filled = min(shares, capacity)
         if filled == 0:
             continue
-        cost = sum(TICK * (i + 1) * per_level for i in range(full))
-        cost += TICK * (full + 1) * remainder
+
+        # Walk out from the touch, taking what each level holds.
+        left, cost, walked = filled, 0.0, 0
+        for i, available in enumerate(sizes, start=1):
+            take = min(left, int(available))
+            if take <= 0:
+                break
+            cost += TICK * i * take
+            left -= take
+            walked = i
+            if left == 0:
+                break
         book_bps = (cost / filled) / price * 10_000
 
         # Square-root impact, as execution.py charges it, at this rate.
@@ -102,11 +130,45 @@ def cost_curves(price: float, volume: float, depth_frac: float = 0.002,
 
         rows.append({
             "size_frac": frac, "shares": shares,
-            "levels_walked": full + (1 if remainder else 0),
+            "levels_walked": walked,
             "filled_frac": filled / shares,
             "flat_bps": slippage_bps,
             "book_bps": book_bps,
             "sqrt_bps": sqrt_bps,
+        })
+    return rows
+
+
+def crossover_by_shape(price: float, volume: float, depth_frac: float = 0.002,
+                       levels: int = 200, shapes=SHAPES) -> list[dict]:
+    """How far the crossover moves when the book is shaped rather than flat.
+
+    The crossover is the order size at which walking the book costs more than
+    the flat 2 bps the engine charges by default, so it is the size above
+    which the old assumption flatters the strategy. Shaping the book can only
+    move it one way - down - because every positive shape lowers cumulative
+    depth. The question this answers is how far down, which is the difference
+    between a correction worth quoting and one worth a footnote.
+
+    A finer size grid than SIZE_FRACS is used, because interpolating a
+    crossover between 1% and 3% of a day's volume reports the grid as much as
+    the book.
+    """
+    grid = tuple(float(x) for x in np.geomspace(1e-5, 0.5, 120))
+    rows = []
+    for shape in shapes:
+        curve = cost_curves(price, volume, depth_frac=depth_frac, levels=levels,
+                            size_fracs=grid, shape=shape)
+        cross = crossover(curve)
+        touch = curve[0]["book_bps"] if curve else float("nan")
+        sizes = _level_sizes(depth_frac, volume, levels, shape)
+        rows.append({
+            "shape": shape,
+            "crossover_frac": cross,
+            "crossover_shares": None if cross is None else int(cross * volume),
+            "crossover_notional": None if cross is None else cross * volume * price,
+            "touch_shares": int(sizes[0]),
+            "capacity_shares": int(sizes.sum()),
         })
     return rows
 
@@ -309,6 +371,37 @@ def print_cost_curves(rows: list[dict], cross: float | None, price: float,
               f"${cross * volume * price / 1e6:,.0f}M of {SYMBOL}).")
 
 
+def print_crossover_by_shape(rows: list[dict], price: float,
+                             volume: float) -> None:
+    """The correction the depth profile makes to section 1's headline number."""
+    print(f"\n1b. WHAT SHAPING THE BOOK DOES TO THAT CROSSOVER")
+    print(f"    shape 0 is the flat book this handler shipped with. Total "
+          f"resting size is")
+    print(f"    identical down the column - only its distribution changes.")
+    print(f"\n{'shape':>7} {'at the touch':>14} {'crossover':>11} "
+          f"{'shares':>12} {'notional':>11}")
+    for r in rows:
+        if r["crossover_frac"] is None:
+            print(f"{r['shape']:>7.2f} {r['touch_shares']:>14,} "
+                  f"{'never':>11} {'-':>12} {'-':>11}")
+            continue
+        print(f"{r['shape']:>7.2f} {r['touch_shares']:>14,} "
+              f"{r['crossover_frac']:>10.2%} {r['crossover_shares']:>12,} "
+              f"{r['crossover_notional'] / 1e6:>10,.0f}M")
+
+    flat = next((r for r in rows if r["shape"] == 0.0), None)
+    shaped = next((r for r in rows if r["shape"] == SHAPE), None)
+    if flat and shaped and flat["crossover_frac"] and shaped["crossover_frac"]:
+        ratio = flat["crossover_frac"] / shaped["crossover_frac"]
+        print(f"\n    At the shipped default of {SHAPE}, the crossover arrives "
+              f"{ratio:.1f}x sooner than")
+        print(f"    the flat book said it would. Capacity is untouched - the "
+              f"book holds the same")
+        print(f"    {shaped['capacity_shares']:,} shares either way - so this "
+              f"is purely the cost of")
+        print(f"    reaching past a thinner touch.")
+
+
 def print_capacity(rows: list[dict]) -> None:
     base = rows[0]
     print(f"\n2. THE SAME CAPACITY LADDER UNDER BOTH MODELS")
@@ -367,6 +460,9 @@ def main() -> None:
     cross = crossover(curves)
     print_cost_curves(curves, cross, price, volume, 0.002)
 
+    by_shape = crossover_by_shape(price, volume)
+    print_crossover_by_shape(by_shape, price, volume)
+
     cap = capacity_under_both(prices, opens, volumes, aums=aums)
     print_capacity(cap)
     readable = interpretable_to(cap, "book")
@@ -386,6 +482,7 @@ def main() -> None:
         json.dump({"symbol": SYMBOL, "start": START, "end": END,
                    "median_price": price, "median_volume": volume,
                    "cost_curves": curves, "crossover": cross,
+                   "shape": SHAPE, "crossover_by_shape": by_shape,
                    "capacity": cap, "depth_sweep": sweep, "fees": bill},
                   fh, indent=1, default=float)
     print(f"\nwrote {OUT}")

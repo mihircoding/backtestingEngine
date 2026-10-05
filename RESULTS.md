@@ -59,8 +59,10 @@ touch absorbs pays one. So the default slippage assumption **overcharges small
 orders by a factor of five**, and keeps charging the same 2 bps for an order
 that walks 151 price levels and should cost fourteen times that.
 
-The crossover is the number worth quoting: **the book starts costing more than
-a flat 2 bps at 1.97% of a day's volume** — 1.5M shares, about $409M of SPY.
+The crossover is the number worth quoting: **a flat book starts costing more
+than a flat 2 bps at 1.97% of a day's volume** — 1.5M shares, about $409M of
+SPY. Section 1b shapes the book and moves that to 0.39%, so read this one as
+the flat-book figure rather than the final answer.
 Below that, every cost figure in notes/backtester.md is pessimistic. Above it,
 optimistic. The repo's own trade size of 200 shares sits six orders of
 magnitude below the crossover, which means the costs charged throughout that
@@ -73,6 +75,80 @@ concave cost curve should — it is evidence that `impact_coef = 1.0` is
 aggressive for a name as liquid as SPY. Which is exactly what a constant
 nobody publishes is expected to be: a guess, and in this case a conservative
 one.
+
+### 1b. The book was not flat either, and that moved the crossover 5x
+
+Reproduce with: `python fill_realism.py` (section 1b)
+
+Section 1 replaced a cost assumption with a depth assumption and called that
+progress. It is, but the depth assumption had a second half hiding in it that
+I did not notice writing the first version: the book was seeded with the
+**same size at every price level**. That says resting at the touch is as
+attractive as resting ten ticks behind it, which is backwards. The touch is
+where you get filled by whoever knows something, so it is the least attractive
+place to leave size, and real books lean the other way — thin in front,
+thicker behind.
+
+`shape` sets how hard. Size at the i-th level is proportional to `i ** shape`,
+renormalised so the **total** resting size does not change. `shape = 0` is the
+old flat book; the handler now ships at 0.5.
+
+I expected that to tilt the cost curve — small orders dearer because the touch
+is thinner, large orders cheaper because the back is fatter. **It does not
+tilt. It raises cost at every size.**
+
+| order, % of a day | shares | flat 2bp | sqrt law | flat book | shaped book |
+|---|---|---|---|---|---|
+| 0.01% | 7,661 | 2.00 | 3.10 | 0.37 | **0.37** |
+| 0.10% | 76,610 | 2.00 | 5.48 | 0.37 | **0.89** |
+| 0.30% | 229,832 | 2.00 | 8.02 | 0.49 | **1.75** |
+| 1.00% | 766,108 | 2.00 | 13.00 | 1.11 | **3.82** |
+| 3.00% | 2,298,324 | 2.00 | 21.05 | 2.95 | **7.91** |
+| 10.0% | 7,661,080 | 2.00 | 36.79 | 9.41 | **17.63** |
+| 30.0% | 22,983,240 | 2.00 | 62.25 | 27.86 | **36.65** |
+
+Cost per share in basis points. Both books hold 30,644,200 shares a side — the
+same liquidity, differently arranged.
+
+The reason the tilt does not happen is worth being able to say in one line: a
+fill price comes off **cumulative** depth, how much is available within n
+ticks, and not off the total. Moving size backwards lowers the cumulative at
+every level except the last, where the two books are equal by construction. So
+the shaped book is reached into further at any size, and the two curves meet
+only on an order that sweeps the entire side. There is a test on each half of
+that.
+
+**The crossover moves from 1.97% of a day's volume to 0.39%** — $409M of SPY
+down to $80M, 5.1x sooner — while the touch thins from 153,221 shares to
+16,192 and total capacity does not move at all.
+
+Which means the honest description of `shape` is not the one I first wrote
+down. Normalising the total makes the parameter **size**-neutral, not
+**cost**-neutral; it still moves cost, and only ever upward. What that buys is
+narrower than cost-neutrality but real: the knob is a shape a market-data feed
+can show you, and it cannot be turned to make a backtest look cheaper — only
+dearer. A parameter that can only hurt the result is a safer thing to leave in
+a repository than one that can flatter it.
+
+Two things I would not claim from this:
+
+- **The profile is monotone, and a real book is not.** Depth rises away from
+  the touch and then decays further out; `i ** shape` only has the rising half.
+  It is the half that matters for anything short of a full sweep, and the
+  sweep in `fill_realism.py` shows the effect saturating well before `shape`
+  gets silly — at 2.0 the touch holds 11 shares, which is not a book, and it
+  is in the sweep to show the limit rather than as a candidate setting.
+- **5x on the crossover did not change the conclusion the crossover was for.**
+  The capacity ladder barely moves: Sharpe 0.62 → 0.58 at $1bn, and the
+  deployed-capital column is identical to the share. That is not an
+  anticlimax, it is the answer — what strands the capital at $5bn and above is
+  the 10% participation cap, not the cost of the fill, so a cost correction
+  cannot move it. The 200-share default trade size still sits four orders of
+  magnitude below even the shaped crossover.
+
+So the number that was worth quoting changed by a factor of five, and the
+number it was quoted in support of did not change at all. Finding that out
+cost one parameter and about thirty lines.
 
 ### 2. The capacity number was measuring a cash pile
 

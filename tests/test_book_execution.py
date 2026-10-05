@@ -30,16 +30,25 @@ VOLUME = 1_000_000.0
 
 
 def handler(volume=VOLUME, n=12, depth_frac=0.001, levels=10,
-            participation=1.0, **kwargs):
+            participation=1.0, shape=0.0, **kwargs):
     """A flat book: every bar opens at 100.00 with `volume` shares traded.
 
     depth_frac 0.001 of a million shares is 1,000 shares a level, so the
     arithmetic in these tests is in round numbers.
+
+    shape is pinned to 0.0 here rather than left at the handler's default,
+    which is deliberate. These tests check the matching mechanism - one level
+    for a small order, the volume-weighted average of what was taken, shares
+    conserved - and a flat book is the one where that arithmetic can be done
+    by hand and disagreed with. The shaped book the handler actually ships
+    with is tested separately, at the bottom of this file, against the
+    properties the shape is supposed to have.
     """
     data = make_handler_with_volumes({"AAA": [OPEN] * n}, {"AAA": [OPEN] * n},
                                       {"AAA": [volume] * n})
     return data, BookExecutionHandler(data, depth_frac=depth_frac, levels=levels,
-                                       participation=participation, **kwargs)
+                                       participation=participation, shape=shape,
+                                       **kwargs)
 
 
 def send(data, ex, quantity, bars=1):
@@ -242,10 +251,124 @@ def test_deeper_books_cost_less_which_is_the_parameter_being_swept():
 
 @pytest.mark.parametrize("bad", [
     {"participation": 0.0}, {"participation": 1.5},
-    {"depth_frac": 0.0}, {"levels": 0},
+    {"depth_frac": 0.0}, {"levels": 0}, {"shape": -0.5},
 ])
 def test_nonsense_settings_are_refused_at_construction(bad):
     data = make_handler_with_volumes({"AAA": [OPEN]}, {"AAA": [OPEN]},
                                       {"AAA": [VOLUME]})
     with pytest.raises(ValueError):
         BookExecutionHandler(data, **bad)
+
+
+# ---------- the shape of the book ----------
+#
+# `shape` moves resting size from the touch to the levels behind it, holding
+# the total fixed. I expected that to tilt the cost curve - small orders
+# dearer, large orders cheaper - and it does not: it raises cost at every
+# size, because a fill price comes off CUMULATIVE depth and moving size
+# backwards lowers the cumulative everywhere except the last level.
+#
+# So that one-sidedness is what these tests pin, since it is the property the
+# parameter is safe because of. A depth knob that could be turned to make
+# fills look cheaper would be slippage_bps again under a better name.
+
+
+def test_a_flat_shape_leaves_every_level_the_same_size():
+    """shape=0 reproduces the old flat book exactly, not approximately.
+
+    Every test above this line is written against the flat book, so if this
+    drifts those tests stop measuring what their names say.
+    """
+    w = BookExecutionHandler._depth_weights(levels=25, shape=0.0)
+    assert np.allclose(w, 1.0)
+
+
+@pytest.mark.parametrize("shape", [0.0, 0.3, 0.5, 1.0, 2.0])
+def test_total_resting_size_does_not_depend_on_the_shape(shape):
+    """The normalisation is the whole argument, so it gets its own test.
+
+    If total depth moved with shape, a cost difference between two shapes
+    could just be the book being bigger, and the parameter would be a second
+    cost dial rather than a statement about where the liquidity sits.
+    """
+    levels = 40
+    w = BookExecutionHandler._depth_weights(levels=levels, shape=shape)
+    assert w.sum() == pytest.approx(levels)
+
+
+def test_a_positive_shape_thins_the_touch_and_thickens_the_back():
+    w = BookExecutionHandler._depth_weights(levels=20, shape=0.5)
+
+    assert w[0] < 1.0               # thinner at the touch than a flat book
+    assert w[-1] > 1.0              # thicker at the back
+    assert np.all(np.diff(w) > 0)   # and monotone in between
+
+
+@pytest.mark.parametrize("size", [300, 1_000, 2_500, 5_000, 7_500, 9_000])
+def test_a_shaped_book_is_never_cheaper_than_a_flat_one(size):
+    """The one-sidedness, across the whole range of sizes the book can fill.
+
+    Both books hold the same 10,000 shares a side over the same ten levels.
+    The shaped one reaches further for any of these orders, so it pays at
+    least as much. This is the test that would catch someone "improving" the
+    profile into something that quietly discounts fills.
+    """
+    d_flat, h_flat = handler(shape=0.0)
+    d_tilt, h_tilt = handler(shape=1.0)
+    p_flat = send(d_flat, h_flat, size)[0].fill_price
+    p_tilt = send(d_tilt, h_tilt, size)[0].fill_price
+
+    assert p_tilt >= p_flat
+
+
+def test_the_two_books_agree_on_an_order_that_sweeps_the_whole_side():
+    """Where the curves meet, which is the reason the total is normalised.
+
+    An order big enough to take every resting share pays the average of all
+    of them, and the two books hold the same shares at the same prices - only
+    in different proportions. So the one order that touches all of it cannot
+    tell them apart, give or take the per-level rounding.
+    """
+    d_flat, h_flat = handler(shape=0.0)
+    d_tilt, h_tilt = handler(shape=1.0)
+    f_flat = send(d_flat, h_flat, 10_000)[0]
+    f_tilt = send(d_tilt, h_tilt, 10_000)[0]
+
+    assert f_tilt.fill_price == pytest.approx(f_flat.fill_price, abs=2 * TICK)
+
+
+def test_shaping_does_not_change_how_much_the_book_can_absorb():
+    """Capacity is set by total depth, and total depth is held fixed.
+
+    An order twice the size of the book is short by the same amount under
+    either profile, so the shape cannot be used to claim the venue swallowed
+    more than it did.
+    """
+    d_flat, h_flat = handler(shape=0.0)
+    d_tilt, h_tilt = handler(shape=1.5)
+    flat_filled = sum(f.quantity for f in send(d_flat, h_flat, 20_000))
+    tilt_filled = sum(f.quantity for f in send(d_tilt, h_tilt, 20_000))
+
+    # Within a share a level: the per-level rounding is the only difference.
+    assert abs(flat_filled - tilt_filled) <= h_flat.levels
+
+
+def test_a_book_too_thin_to_shape_still_prints_every_level():
+    """The rounding floor, which is the one place the normalisation leaks.
+
+    A heavy tilt on a thin book asks for less than a share at the touch.
+    Rounding up to one share puts slightly more in the book than asked for;
+    the alternative is an empty level, which would print a fill price that
+    skipped a tick the order should have paid for. Being wrong by a share is
+    the better side of that trade, and it is better stated than discovered.
+    """
+    data, ex = handler(volume=5_000.0, depth_frac=0.001, levels=10, shape=3.0)
+    fills = send(data, ex, 3)
+
+    assert fills, "a three-share order should fill against any live book"
+    # The profile asks for a fraction of a share at the front levels, so each
+    # holds exactly one. Three shares therefore walk three levels and pay the
+    # average of the first three ticks - not one tick, which is what a book
+    # with a real 5 shares at the touch would have printed.
+    assert fills[0].quantity == 3
+    assert fills[0].fill_price == pytest.approx(OPEN + 2 * TICK)

@@ -607,7 +607,13 @@ and the reason it makes things worse is visible in the table above.
   routes orders into the matching engine in `exchange/` and takes the fill price off the book
   instead. ../RESULTS.md has what that changes: the flat charge overcharges small orders
   fivefold, undercharges the largest fourteenfold, and crosses over at about 2% of a day's
-  volume. The formula handlers are still what every number in this file uses.
+  volume against a flat book — 0.4% once the book is given a realistic depth profile, which
+  is section 1b there. The formula handlers are still what every number in this file uses.
+- ~~The book is as thick at the touch as it is ten ticks out~~ — `shape` on
+  `BookExecutionHandler` thins the touch and thickens the levels behind it, holding total depth
+  fixed. It moved the crossover by 5x and the capacity answer by 0.04 of a Sharpe, because what
+  binds above $5bn is the participation cap and not the cost of the fill. Still monotone in
+  distance from the touch, where a real book rises and then decays.
 - ~~No borrow costs~~ — `Portfolio(short_borrow_bps=...)` charges carry on short positions per bar
   held, and the long/short section prices the whole result at 0 to 400bp a year. It defaults
   to zero, which is correct for every long-only number in this file. No margin or taxes.
