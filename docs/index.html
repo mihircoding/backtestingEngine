@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Event-Driven Backtesting Engine — Mihir Konda</title>
-<meta name="description" content="An event-driven backtester with no lookahead by construction. Same 50/200 crossover: Sharpe 4.10 on synthetic data, 0.75 on SPY, losing to buy-and-hold. Full attribution of why.">
+<title>Market Simulation Stack — Mihir Konda</title>
+<meta name="description" content="An event-driven backtester wired to a limit-order-book matching engine, so fills are simulated rather than assumed. A flat 2bp slippage charge turns out to be wrong in both directions, crossing over at 2% of a day's volume.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -95,18 +95,57 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
 
 <header>
 <div class="wrap">
-  <div class="tagline">Sharpe 4.10 on one dataset, 0.75 on the other</div>
-  <h1>Event-Driven Backtesting Engine</h1>
-  <p class="lede">A backtester built the way production trading systems are built: five components that talk to each other only through a queue of events, processing one timestamp at a time. <strong style="color:var(--ink)">No component can see the future, because the future hasn't been pushed onto the queue yet.</strong> Roughly 300 lines of source and 87 tests.</p>
+  <div class="tagline">Two halves of one question: what did the order actually fill at?</div>
+  <h1>Market Simulation Stack</h1>
+  <p class="lede">An event-driven backtester, a price-time priority matching engine, and a bridge between them. Every backtester decides your fill price with a formula; this one can ask a real order book instead. <strong style="color:var(--ink)">The standard flat-slippage assumption turns out to be five times too expensive for a small order and fourteen times too cheap for a large one.</strong> 261 tests.</p>
   <div class="links">
-    <a class="btn primary" href="#results">Results</a>
-    <a class="btn" href="#significance">How much is luck?</a>
-    <a class="btn" href="#crosssection">Was it SPY?</a>
+    <a class="btn primary" href="#fills">The fill result</a>
+    <a class="btn" href="#results">Strategy results</a>
+    <a class="btn" href="exchange/">The matching engine &rarr;</a>
     <a class="btn" href="https://github.com/mihircoding/backtestingEngine">Source on GitHub</a>
     <a class="btn" href="https://github.com/mihircoding/backtestingEngine/blob/main/RESULTS.md">Full write-up</a>
   </div>
 </div>
 </header>
+
+
+<section id="fills">
+<div class="wrap">
+  <div class="eyebrow">The result that needed both halves</div>
+  <h2>Fills simulated, not assumed</h2>
+  <p class="lede">Every execution handler here used to price its own fills — a flat <span class="mono">slippage_bps</span>, or a square-root impact law whose constant every firm calibrates on its own fills and nobody publishes. So a cost figure was quoted in a number the reader cannot check. <strong style="color:var(--ink)">The matching engine in <span class="mono">exchange/</span> does not need a formula: it knows what the fill was, because it printed it.</strong></p>
+  <p><span class="mono">src/book_execution.py</span> builds a book from each bar's volume, walks it, and takes the volume-weighted price of the resting orders the order actually consumed. Cost stops being a parameter and becomes a consequence of depth.</p>
+
+  <h3 style="margin-top:28px">Cost per share on SPY, three models</h3>
+  <table>
+    <thead><tr><th>Order, % of a day</th><th>Shares</th><th>Flat 2bp</th><th>Square-root law</th><th>The book</th><th>Levels walked</th></tr></thead>
+    <tbody>
+      <tr><td>0.01%</td><td class="mono">7,661</td><td class="mono">2.00</td><td class="mono">3.10</td><td class="mono"><strong>0.37</strong></td><td class="mono">1</td></tr>
+      <tr><td>0.10%</td><td class="mono">76,610</td><td class="mono">2.00</td><td class="mono">5.48</td><td class="mono"><strong>0.37</strong></td><td class="mono">1</td></tr>
+      <tr><td>1.00%</td><td class="mono">766,108</td><td class="mono">2.00</td><td class="mono">13.00</td><td class="mono"><strong>1.11</strong></td><td class="mono">6</td></tr>
+      <tr><td>3.00%</td><td class="mono">2,298,324</td><td class="mono">2.00</td><td class="mono">21.05</td><td class="mono"><strong>2.95</strong></td><td class="mono">16</td></tr>
+      <tr><td>10.0%</td><td class="mono">7,661,080</td><td class="mono">2.00</td><td class="mono">36.79</td><td class="mono"><strong>9.41</strong></td><td class="mono">51</td></tr>
+      <tr><td>30.0%</td><td class="mono">22,983,240</td><td class="mono">2.00</td><td class="mono">62.25</td><td class="mono"><strong>27.86</strong></td><td class="mono">151</td></tr>
+    </tbody>
+  </table>
+  <p style="margin-top:14px">Basis points per share. The crossover is the number worth quoting: <strong style="color:var(--ink)">the book starts costing more than a flat 2 bps at 1.97% of a day's volume</strong> — 1.5M shares, about $409M of SPY. Below that every cost figure in the write-up is pessimistic; above it, optimistic.</p>
+
+  <h3 style="margin-top:32px">And it exposed a flaw in the capacity study that was already here</h3>
+  <p>Running two fill models side by side made something visible that one model alone hid. The capacity ladder's Sharpe ratio <em>rises</em> above $5bn — not because capacity improves with size, but because the participation cap stops filling the orders.</p>
+  <table>
+    <thead><tr><th>AUM</th><th>Deployed</th><th>Square-root Sharpe</th><th>Book Sharpe</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">$0.1bn</td><td class="mono">100%</td><td class="mono">0.60</td><td class="mono">0.66</td></tr>
+      <tr><td class="mono">$1bn</td><td class="mono">100%</td><td class="mono">0.49</td><td class="mono">0.62</td></tr>
+      <tr><td class="mono">$5bn</td><td class="mono">41%</td><td class="mono">0.44</td><td class="mono">0.59</td></tr>
+      <tr><td class="mono">$20bn</td><td class="mono">10%</td><td class="mono">0.55</td><td class="mono">0.68</td></tr>
+      <tr><td class="mono">$100bn</td><td class="mono">2%</td><td class="mono">0.73</td><td class="mono">0.78</td></tr>
+    </tbody>
+  </table>
+  <p style="margin-top:14px">At $100bn, 98% of the intended book never reaches the market. The equity curve is 98% idle cash, the denominator of the Sharpe ratio collapses, and the statistic describes a cash pile. <strong style="color:var(--ink)">The ladder was only ever readable to $1bn.</strong> The fix is to report deployed capital beside it, which is the capacity number the study was reaching for in the first place — and the same artifact turns out to explain the one non-monotone row in the depth sweep.</p>
+  <p><a href="exchange/">The matching engine's own results &rarr;</a> — emergent spread and impact, mean reversion, venue fees, latency, the opening auction, and what a place in the queue is worth.</p>
+</div>
+</section>
 
 <section>
 <div class="wrap">
