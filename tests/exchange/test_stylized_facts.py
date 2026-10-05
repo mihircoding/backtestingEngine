@@ -15,8 +15,8 @@ average; any single seed's bucket-mean fit is a small-sample estimate of
 it and shouldn't be asserted against on its own.
 """
 
-from src.orderbook import LimitOrderBook
-from src.simulator import hurst_exponent, impact_exponent, seed_book, simulate
+from exchange.orderbook import LimitOrderBook
+from exchange.simulator import hurst_exponent, impact_exponent, seed_book, simulate
 
 REPORTING_N_EVENTS = 50_000
 REPORTING_SEED = 7  # matches RESULTS.md exactly

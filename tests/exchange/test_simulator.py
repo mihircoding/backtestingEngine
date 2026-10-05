@@ -1,5 +1,5 @@
-from src.orderbook import LimitOrderBook
-from src.simulator import seed_book, simulate
+from exchange.orderbook import LimitOrderBook
+from exchange.simulator import seed_book, simulate
 
 
 class TestSimulation:

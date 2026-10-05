@@ -8,8 +8,8 @@ of the test is specifically the no-STP default.
 
 import pytest
 
-from src.order import Side, StpPolicy
-from src.orderbook import LimitOrderBook
+from exchange.order import Side, StpPolicy
+from exchange.orderbook import LimitOrderBook
 
 
 class TestNoStpByDefault:

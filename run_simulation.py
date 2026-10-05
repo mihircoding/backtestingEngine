@@ -18,9 +18,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from src.order import Side
-from src.orderbook import LimitOrderBook
-from src.simulator import hurst_exponent, impact_exponent, seed_book, simulate
+from exchange.order import Side
+from exchange.orderbook import LimitOrderBook
+from exchange.simulator import hurst_exponent, impact_exponent, seed_book, simulate
 
 N_EVENTS = 50_000
 SEED = 7

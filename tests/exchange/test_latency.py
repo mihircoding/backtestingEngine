@@ -9,9 +9,9 @@ the ordering coming apart.
 
 import pytest
 
-from src.latency import LatencyModel, MessageBus
-from src.order import Side
-from src.orderbook import LimitOrderBook
+from exchange.latency import LatencyModel, MessageBus
+from exchange.order import Side
+from exchange.orderbook import LimitOrderBook
 
 
 def test_arrival_order_beats_submission_order():

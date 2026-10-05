@@ -30,10 +30,10 @@ leaving a few hundred shares on the screen at a time.
 
 import numpy as np
 
-from src.auction import AuctionOrder, book_from_levels, indicative, uncross
-from src.order import Side, to_tick
-from src.orderbook import LimitOrderBook
-from src.simulator import seed_book, simulate
+from exchange.auction import AuctionOrder, book_from_levels, indicative, uncross
+from exchange.order import Side, to_tick
+from exchange.orderbook import LimitOrderBook
+from exchange.simulator import seed_book, simulate
 
 # Order sizes as a share of the liquidity resting on the offer, so the table
 # says something about the mechanism rather than about how many shares this

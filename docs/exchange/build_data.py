@@ -22,10 +22,10 @@ from benchmark import (EagerCancelBook, ScanBook, latency_percentiles,
 import auction_study
 import latency_study
 from run_simulation import N_EVENTS, SEED
-from src.fees import MAKER_TAKER, SCHEDULES, breakeven_maker_rate
-from src.order import Side
-from src.orderbook import LimitOrderBook
-from src.simulator import hurst_exponent, impact_exponent, seed_book, simulate
+from exchange.fees import MAKER_TAKER, SCHEDULES, breakeven_maker_rate
+from exchange.order import Side
+from exchange.orderbook import LimitOrderBook
+from exchange.simulator import hurst_exponent, impact_exponent, seed_book, simulate
 
 BENCH_DEPTHS = (10, 50, 100, 500, 1000)
 BENCH_EVENTS = 20_000   # smaller than benchmark.py's 50k so the page build stays quick

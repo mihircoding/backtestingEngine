@@ -17,8 +17,8 @@ from collections import deque
 import numpy as np
 import pytest
 
-from src.order import Side, StpPolicy, to_tick
-from src.orderbook import LimitOrderBook
+from exchange.order import Side, StpPolicy, to_tick
+from exchange.orderbook import LimitOrderBook
 
 
 class EagerCancelBook(LimitOrderBook):

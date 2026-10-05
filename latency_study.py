@@ -20,11 +20,11 @@ reason latency is worth money.
 
 import numpy as np
 
-from src.fees import MAKER_TAKER, SCHEDULES, breakeven_maker_rate
-from src.latency import LatencyModel, MessageBus
-from src.order import Side, to_tick
-from src.orderbook import LimitOrderBook
-from src.simulator import seed_book
+from exchange.fees import MAKER_TAKER, SCHEDULES, breakeven_maker_rate
+from exchange.latency import LatencyModel, MessageBus
+from exchange.order import Side, to_tick
+from exchange.orderbook import LimitOrderBook
+from exchange.simulator import seed_book
 
 TICK = 0.01
 

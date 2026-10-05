@@ -11,11 +11,11 @@ supplied it and not to whatever else printed on the same event.
 """
 import pytest
 
-from src.order import Side
-from src.orderbook import LimitOrderBook
-from src.queue_position import (MakerOutcome, rest_one_order, warm_book,
+from exchange.order import Side
+from exchange.orderbook import LimitOrderBook
+from exchange.queue_position import (MakerOutcome, rest_one_order, warm_book,
                                 bucket)
-from src.simulator import TICK, seed_book, simulate
+from exchange.simulator import TICK, seed_book, simulate
 
 
 def test_queue_ahead_counts_only_what_is_in_front():
@@ -149,7 +149,7 @@ def test_adverse_selection_is_markout_minus_edge():
 
 
 def test_a_rebate_only_counts_on_the_shares_that_filled():
-    from src.fees import MAKER_TAKER
+    from exchange.fees import MAKER_TAKER
     o = MakerOutcome(price=100.0, ahead=0, natural_ahead=0, size=100,
                      filled=50, fill_event=1, mid_at_entry=100.0,
                      mid_at_fill=100.0, mid_after=100.0)

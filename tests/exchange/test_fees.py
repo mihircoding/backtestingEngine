@@ -9,7 +9,7 @@ import math
 
 import pytest
 
-from src.fees import (FLAT, INVERTED, MAKER_TAKER, FeeSchedule,
+from exchange.fees import (FLAT, INVERTED, MAKER_TAKER, FeeSchedule,
                       breakeven_maker_rate)
 
 

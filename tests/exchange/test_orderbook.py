@@ -2,8 +2,8 @@
 
 import pytest
 
-from src.order import Side
-from src.orderbook import LimitOrderBook
+from exchange.order import Side
+from exchange.orderbook import LimitOrderBook
 
 
 @pytest.fixture

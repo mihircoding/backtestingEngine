@@ -28,9 +28,9 @@ import time
 
 import numpy as np
 
-from src.order import Side, to_tick
-from src.orderbook import LimitOrderBook
-from src.simulator import seed_book, simulate
+from exchange.order import Side, to_tick
+from exchange.orderbook import LimitOrderBook
+from exchange.simulator import seed_book, simulate
 
 TICK = 0.01
 

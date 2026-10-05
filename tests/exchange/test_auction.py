@@ -10,9 +10,9 @@ continuous book works.
 """
 import pytest
 
-from src.auction import (AuctionOrder, book_from_levels, candidate_prices,
+from exchange.auction import (AuctionOrder, book_from_levels, candidate_prices,
                          indicative, uncross)
-from src.order import Side
+from exchange.order import Side
 
 
 def order(side, qty, price=None, seq=0):

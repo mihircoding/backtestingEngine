@@ -11,8 +11,8 @@ deletion is most likely to break.
 import numpy as np
 import pytest
 
-from src.order import Side, to_tick
-from src.orderbook import LimitOrderBook
+from exchange.order import Side, to_tick
+from exchange.orderbook import LimitOrderBook
 
 
 def scan_best(book: LimitOrderBook, side: Side) -> float | None:

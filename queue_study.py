@@ -54,8 +54,8 @@ does the queue have to be before the tick is worth paying?
 import argparse
 import json
 
-from src.fees import MAKER_TAKER
-from src.queue_position import (HORIZON_EVENTS, bucket, rest_one_order,
+from exchange.fees import MAKER_TAKER
+from exchange.queue_position import (HORIZON_EVENTS, bucket, rest_one_order,
                                 warm_book)
 
 PADS = (0, 500, 2_000, 8_000, 30_000)
