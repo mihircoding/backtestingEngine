@@ -17,7 +17,7 @@ import pytest
 
 from exchange.fees import MAKER_TAKER
 from exchange.order import TICK, to_tick
-from src.book_execution import BookExecutionHandler
+from src.book_execution import MULTIPLIER_BAND, BookExecutionHandler
 from src.engine import Backtest
 from src.events import OrderEvent
 from src.execution import ParticipationLimitedExecutionHandler
@@ -372,3 +372,174 @@ def test_a_book_too_thin_to_shape_still_prints_every_level():
     # with a real 5 shares at the touch would have printed.
     assert fills[0].quantity == 3
     assert fills[0].fill_price == pytest.approx(OPEN + 2 * TICK)
+
+
+# ---------- depth through time ----------
+#
+# `shape` says where the liquidity sits. `vol_elasticity` says when it is
+# there: resting size scales as (typical vol / current vol) ** elasticity, so
+# a loud bar gets a thinner book than a quiet one.
+#
+# This knob is different from `shape` in a way worth testing for rather than
+# trusting. `shape` can only make a fill dearer, so leaving it on cannot
+# flatter a backtest. This one cuts both ways - a quiet bar gets a DEEPER book
+# than the constant-depth model gave it - so the tests below pin both
+# directions, and the one that matters most is the last: the estimate is built
+# out of get_latest(), so it must be impossible for a bar that has not been
+# released to change a fill price that has already printed.
+
+VOL_WINDOW = 5
+CALM, LOUD = 0.001, 0.02
+
+
+def segment(bars: int, sigma: float) -> list[float]:
+    """Closes alternating sigma either side of 100.00, `bars` long.
+
+    Deterministic rather than random draws, so the trailing standard deviation
+    is arithmetic and a failure points at the handler instead of at a seed.
+    """
+    return [OPEN * (1 + sigma * (1 if i % 2 else -1)) for i in range(bars)]
+
+
+def vol_series(*segments: tuple[int, float]) -> list[float]:
+    """Closes stitched out of (bars, sigma) stretches.
+
+    The reference the multiplier is measured against is an EXPANDING MEDIAN of
+    the trailing vol, so what matters in these fixtures is not only the last
+    bar but how much of the history sits either side of it. A series that ends
+    on a long calm tail has a calm median too, and the multiplier comes back to
+    1 - which is correct behaviour and useless as a fixture. So the quiet-bar
+    cases below use a long loud stretch and a tail just long enough to fill one
+    window. Opens stay at 100.00 throughout, so the book is always centred on
+    the same price and only its depth changes.
+    """
+    closes = []
+    for bars, sigma in segments:
+        closes.extend(segment(bars, sigma))
+    return closes
+
+
+def vol_handler(closes, volume=VOLUME, depth_frac=0.001, levels=200,
+                vol_elasticity=1.0, vol_window=VOL_WINDOW, **kwargs):
+    n = len(closes)
+    data = make_handler_with_volumes({"AAA": closes}, {"AAA": [OPEN] * n},
+                                      {"AAA": [volume] * n})
+    return data, BookExecutionHandler(data, depth_frac=depth_frac, levels=levels,
+                                       participation=1.0, shape=0.0,
+                                       vol_elasticity=vol_elasticity,
+                                       vol_window=vol_window, **kwargs)
+
+
+def send_on_last_bar(data, ex, quantity):
+    """Release every bar but one, then trade on the final bar.
+
+    The order is placed on the second-to-last bar and settles on the last, so
+    the handler sees the whole history when it sizes the book - which is the
+    situation the vol estimate is meant for and not one the `send` helper above
+    reaches.
+    """
+    while data._cursor < len(data.prices) - 1:
+        data.next_bar()
+    ex.execute(OrderEvent(time=data.current_time(), symbol="AAA",
+                          quantity=quantity))
+    data.next_bar()
+    return ex.pop_settled_fills(data.current_time())
+
+
+def test_zero_elasticity_is_exactly_the_constant_depth_book():
+    closes = vol_series((20, CALM), (20, LOUD))
+    data, elastic = vol_handler(closes, vol_elasticity=0.0)
+    data2, constant = vol_handler(closes, vol_elasticity=0.0, vol_window=99)
+    assert (send_on_last_bar(data, elastic, 50_000)[0].fill_price
+            == send_on_last_bar(data2, constant, 50_000)[0].fill_price)
+
+
+def test_a_loud_bar_gets_a_thinner_book_and_a_dearer_fill():
+    """The last bar of a loud stretch is above the expanding median, so depth
+    is scaled down and the same order reaches further into the book."""
+    closes = vol_series((30, CALM), (VOL_WINDOW + 1, LOUD))
+    data, elastic = vol_handler(closes, vol_elasticity=1.0)
+    data2, flat = vol_handler(closes, vol_elasticity=0.0)
+    assert (send_on_last_bar(data, elastic, 50_000)[0].fill_price
+            > send_on_last_bar(data2, flat, 50_000)[0].fill_price)
+    assert elastic.slice_multiplier[0] < 1.0
+
+
+def test_a_quiet_bar_gets_a_deeper_book_and_a_cheaper_fill():
+    """The direction `shape` cannot go. Ending on the calm stretch puts current
+    vol below the median, so this order fills BETTER than the constant-depth
+    book said it would - which is why the knob needs measuring per strategy
+    rather than defending as conservative."""
+    closes = vol_series((30, LOUD), (VOL_WINDOW + 1, CALM))
+    data, elastic = vol_handler(closes, vol_elasticity=1.0)
+    data2, flat = vol_handler(closes, vol_elasticity=0.0)
+    assert (send_on_last_bar(data, elastic, 50_000)[0].fill_price
+            < send_on_last_bar(data2, flat, 50_000)[0].fill_price)
+    assert elastic.slice_multiplier[0] > 1.0
+
+
+def test_a_harder_elasticity_moves_the_fill_further_in_the_same_direction():
+    """A mild loud stretch rather than LOUD, deliberately: at a twentyfold vol
+    ratio both elasticities clip to the same bound and the fills come out
+    identical, which is the band doing its job and not a monotonicity failure.
+    """
+    closes = vol_series((30, CALM), (VOL_WINDOW + 1, CALM * 1.5))
+    prices = []
+    for elasticity in (0.0, 1.0, 2.0):
+        data, ex = vol_handler(closes, vol_elasticity=elasticity)
+        prices.append(send_on_last_bar(data, ex, 50_000)[0].fill_price)
+    assert prices[0] < prices[1] < prices[2]
+
+
+def test_the_multiplier_is_one_until_there_is_enough_history():
+    """Fewer than two windows of returns and there is no median to compare
+    against, so the handler says 1.0 rather than inventing a reference."""
+    data, ex = vol_handler(vol_series((6, CALM)), vol_window=VOL_WINDOW)
+    send_on_last_bar(data, ex, 1_000)
+    assert ex.slice_multiplier[0] == 1.0
+    assert np.isnan(ex.slice_vol_pct[0])
+
+
+def test_the_multiplier_is_clipped_rather_than_extrapolated():
+    """A long calm stretch after a violent one would put the ratio far outside
+    anything measured. The band is an admission that the relationship was only
+    ever estimated in the middle of the distribution."""
+    closes = vol_series((40, 0.10), (VOL_WINDOW + 1, 1e-5))
+    data, ex = vol_handler(closes, vol_elasticity=1.0)
+    send_on_last_bar(data, ex, 1_000)
+    assert ex.slice_multiplier[0] == MULTIPLIER_BAND[1]
+
+
+def test_the_vol_estimate_cannot_see_a_bar_that_has_not_been_released():
+    """The structural claim, and the only one that would be a bug rather than a
+    disagreement. The same order on the same bar has to print the same price
+    whatever comes after it, because get_latest() cannot return it."""
+    history = vol_series((30, CALM), (VOL_WINDOW + 1, LOUD))
+    data, ex = vol_handler(history + [OPEN])
+    known = send_on_last_bar(data, ex, 50_000)[0].fill_price
+
+    future = vol_series((40, 1e-5))
+    data2, ex2 = vol_handler(history + [OPEN] + future)
+    while data2._cursor < len(history):
+        data2.next_bar()
+    ex2.execute(OrderEvent(time=data2.current_time(), symbol="AAA",
+                           quantity=50_000))
+    data2.next_bar()
+    assert ex2.pop_settled_fills(data2.current_time())[0].fill_price == known
+
+
+def test_the_percentile_reports_where_the_traded_bar_sat():
+    """The diagnostic the conditional-cost result is built on: a fill on a loud
+    bar has to be recorded as a fill on a loud bar."""
+    data, ex = vol_handler(vol_series((30, CALM), (VOL_WINDOW + 1, LOUD)),
+                           vol_elasticity=1.0)
+    send_on_last_bar(data, ex, 1_000)
+    assert ex.slice_vol_pct[0] > 0.5
+
+
+@pytest.mark.parametrize("bad", [{"vol_elasticity": -0.1}, {"vol_window": 1}])
+def test_nonsense_vol_settings_are_refused_at_construction(bad):
+    data = make_handler_with_volumes({"AAA": [OPEN]}, {"AAA": [OPEN]},
+                                      {"AAA": [VOLUME]})
+    with pytest.raises(ValueError):
+        BookExecutionHandler(data, **bad)

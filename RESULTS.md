@@ -118,8 +118,8 @@ the shaped book is reached into further at any size, and the two curves meet
 only on an order that sweeps the entire side. There is a test on each half of
 that.
 
-**The crossover moves from 1.97% of a day's volume to 0.39%** — $409M of SPY
-down to $80M, 5.1x sooner — while the touch thins from 153,221 shares to
+**The crossover moves from 1.96% of a day's volume to 0.37%** — $408M of SPY
+down to $77M, 5.3x sooner — while the touch thins from 153,221 shares to
 16,192 and total capacity does not move at all.
 
 Which means the honest description of `shape` is not the one I first wrote
@@ -140,7 +140,8 @@ Two things I would not claim from this:
   is in the sweep to show the limit rather than as a candidate setting.
 - **5x on the crossover did not change the conclusion the crossover was for.**
   The capacity ladder barely moves: Sharpe 0.62 → 0.58 at $1bn, and the
-  deployed-capital column is identical to the share. That is not an
+  deployed-capital column is identical to the share. Section 1c then takes it
+  to 0.57 for the same reason and with the same non-effect on deployment. That is not an
   anticlimax, it is the answer — what strands the capital at $5bn and above is
   the 10% participation cap, not the cost of the fill, so a cost correction
   cannot move it. The 200-share default trade size still sits four orders of
@@ -150,6 +151,117 @@ So the number that was worth quoting changed by a factor of five, and the
 number it was quoted in support of did not change at all. Finding that out
 cost one parameter and about thirty lines.
 
+### 1c. And it was not the same book every day, which is where the money was
+
+Reproduce with: `python fill_realism.py` (section 1c)
+
+Sections 1 and 1b both fixed **where** the liquidity sits. Neither touched
+**when** it is there. The book was rebuilt every bar out of that bar's volume
+and otherwise identical: an average day's depth quoted on every day in the
+sample, including the ones nobody wanted to quote into.
+
+That is the wrong way round, and the mechanism is a sentence. A market maker
+quotes a budget of risk, not a number of shares. When the price is moving
+around more, the same number of shares is more risk, so it shows fewer of
+them. Depth and volatility move against each other, which is the same fact as
+the better known one that spreads widen when vol rises — one relationship seen
+from two sides.
+
+`vol_elasticity` puts that in. Resting size at every level is multiplied by
+`(typical vol / current vol) ** vol_elasticity`, where current vol is the
+trailing 20-bar realized volatility and typical vol is the **expanding median**
+of that same series — what a desk sitting at that date would call a normal day,
+given only the history it had. The handler reads both out of `get_latest()`, so
+a bar that has not been released cannot change a fill that has already printed.
+There is a test that truncates the future and checks the price is identical.
+
+Elasticity 1.0 ships, because it is the textbook statement rather than a fitted
+number and because the risk-budget argument above predicts exactly that
+exponent.
+
+| elasticity | depth it met | cost per share | Sharpe | total return | levels walked |
+|---|---|---|---|---|---|
+| 0.00 (constant) | 1.00x | 13.76 bps | 0.58 | 121.8% | 57.4 |
+| 0.50 | 0.88x | 14.95 bps | 0.58 | 120.1% | 63.0 |
+| **1.00 (ships)** | **0.80x** | **16.44 bps** | **0.57** | **118.0%** | **70.0** |
+| 2.00 | 0.74x | 19.66 bps | 0.55 | 113.5% | 85.1 |
+
+$1bn, 10% participation, share-weighted. "Depth it met" is the multiplier
+averaged over the bars the strategy actually traded, weighted by shares.
+
+**This knob is not like `shape`.** `shape` can only make a fill dearer, so
+leaving it switched on cannot flatter a backtest. This one cuts both ways: a
+quiet bar now gets a **deeper** book than the constant model gave it, and an
+order placed on one fills cheaper than before. Whether it helps or hurts is
+therefore not a property of the model at all. It is a property of **when the
+strategy trades**, and that has to be measured rather than argued.
+
+Measured, it is one-sided for this strategy, and this is the result:
+
+- Across every bar in the sample the multiplier averages **0.99**. The book has
+  not been quietly made thinner; a run that never traded would see no change.
+- On the bars this strategy chose to trade it averages **0.80**. The book it
+  actually met is a fifth thinner than the one it was being charged for.
+- Its fills land at the **64th percentile** of realized volatility, not the
+  50th — stable at 0.62 to 0.64 at every AUM level on the ladder, so it is a
+  property of the signal and not of the size.
+
+The reason is not subtle once stated, which is what makes it worth stating: a
+moving-average crossover fires when a trend breaks, and a trend breaking **is**
+a volatility event. The signal is correlated with illiquidity by construction.
+Every strategy that trades on price movement has some version of this, and the
+constant-depth book cannot see any of it.
+
+**Splitting the 2.68 bps.** It would be easy to over-claim here, because cost
+is convex in depth and two different things are being conflated. Running a
+**constant** book scaled to that same 0.80x — thinner every single day, but
+never thinner on the days that matter — costs 15.93 bps, which is +2.16 of the
++2.68. So **81% of the extra cost is nothing but when this strategy trades**,
+and the remaining 19% is the convexity around it. The co-movement is the
+effect; the dispersion is a rounding error on it.
+
+Both columns below run at the shipped `shape` of 0.5, so they differ from the
+flat-book ladder in section 2 and from each other only in `vol_elasticity`.
+
+| AUM | deployed | Sharpe, constant | Sharpe, elastic | cost, constant | cost, elastic |
+|---|---|---|---|---|---|
+| $0.1bn | 100% | 0.65 | 0.64 | 3.17 bps | 3.77 bps |
+| $1bn | 100% | 0.58 | 0.57 | 13.76 bps | 16.44 bps |
+| $5bn | 41% | 0.54 | 0.52 | 17.23 bps | 21.07 bps |
+| $20bn | 10% | 0.64 | 0.62 | 18.15 bps | 22.00 bps |
+| $100bn | 2% | 0.76 | 0.75 | 19.18 bps | 23.84 bps |
+
+Two things to notice in that table, and the second one matters more.
+
+The cost column rises by 19% to 24% at every rung, which is the point of the
+section. The **deployed** column does not move by a single share. That is the
+third time in this file that a cost correction has failed to move the capacity
+answer, and by now it is not a coincidence but a structural fact worth saying
+plainly: what strands capital above $5bn here is the 10% participation cap, and
+a participation cap is not a cost. Correcting a cost model cannot move a limit
+that was never about cost. Knowing which of your numbers are load-bearing is
+most of what a cost study is for.
+
+What I would not claim from this:
+
+- **The elasticity is not estimated from depth data.** It is the exponent the
+  risk-budget argument predicts and the one the spread literature reports,
+  checked for sensitivity by sweeping it, not fitted to an order book. Fitting
+  it needs a depth history this project does not have.
+- **The multiplier is clipped to [0.25x, 4.0x].** Twenty days of unusual calm
+  inside ten years can put current vol a factor of four below the median, and
+  an unclipped elasticity of 1 would then quote four times the real depth on
+  the strength of twenty observations. The clip is an admission that the
+  relationship was only ever measured in the middle of the distribution.
+- **One bar is still one book.** Depth now varies across days and remains a
+  single pooled snapshot within one. The intraday version of this effect — the
+  book thinning for minutes around a print — needs intraday data.
+- **Volume is not adjusted alongside depth.** Real volume *rises* with
+  volatility while depth at the touch falls, and only the second half is
+  modeled here, so the participation cap is slightly tighter on loud days than
+  it should be. It moves nothing in the table above, because the cap only
+  binds above $5bn where the deployed column is the answer anyway.
+
 ### 2. The capacity number was measuring a cash pile
 
 Same strategy, same AUM ladder, same 10% participation cap as section 11. Only
@@ -157,19 +269,22 @@ the fill model changes.
 
 | AUM | days of volume | deployed | square-root Sharpe | book Sharpe | gap |
 |---|---|---|---|---|---|
-| $0.1bn | 0.00 | 100% | 0.60 | 0.66 | +0.06 |
-| $1bn | 0.04 | 100% | 0.49 | 0.62 | +0.13 |
-| $5bn | 0.22 | 41% | 0.44 | 0.59 | +0.15 |
-| $20bn | 0.89 | 10% | 0.55 | 0.68 | +0.13 |
-| $100bn | 4.43 | 2% | 0.73 | 0.78 | +0.05 |
+| $0.1bn | 0.00 | 100% | 0.60 | 0.64 | +0.04 |
+| $1bn | 0.04 | 100% | 0.49 | 0.57 | +0.08 |
+| $5bn | 0.22 | 41% | 0.44 | 0.52 | +0.08 |
+| $20bn | 0.89 | 10% | 0.55 | 0.62 | +0.07 |
+| $100bn | 4.43 | 2% | 0.73 | 0.75 | +0.03 |
 
-Baseline with no liquidity limit: 0.65.
+Baseline with no liquidity limit: 0.65. The book column runs at the handler's
+shipped settings, which now include both the depth profile of section 1b and
+the volatility response of section 1c; it was 0.66 / 0.62 / 0.59 / 0.68 / 0.78
+on the flat, constant-depth book this section was first written against.
 
-The fill model moves the Sharpe by +0.05 to +0.15 and never changes a sign, so
+The fill model moves the Sharpe by +0.03 to +0.08 and never changes a sign, so
 the capacity conclusion survives the swap. The interesting result is the one I
 was not looking for, and it is in the third column.
 
-**Sharpe falls to 0.44 at $5bn and then rises, to 0.68 and 0.78.** Capacity
+**Sharpe falls to 0.44 at $5bn and then rises, to 0.62 and 0.75.** Capacity
 does not improve with size. What happens is that the participation cap stops
 the orders from filling: at $100bn, 98% of the intended book never reaches the
 market. The equity curve is 98% idle cash, the denominator of the Sharpe ratio
@@ -243,6 +358,10 @@ strategies now live in the same repository.
   book would report that quoting is impossible, which is a fact about the
   pooling and not about quoting. That needs intraday data and a persistent
   book.
-- The depth is flat across levels and constant through time. Real books are
-  thin at the touch and thicken outward, and both thin out in exactly the
-  markets where it hurts most.
+- Depth varies across days (section 1c) but not within one, so the book
+  thinning for minutes around a print is still missing. Volume is also held at
+  its actual value while depth responds to volatility; really both move, in
+  opposite directions.
+- The depth profile rises away from the touch and never decays. A real average
+  book rises and then falls off further out; only the half that matters short
+  of a full sweep is modeled.

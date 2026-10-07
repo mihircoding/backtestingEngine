@@ -53,7 +53,9 @@ import pandas as pd
 
 from exchange.fees import MAKER_TAKER
 from exchange.order import TICK
-from src.book_execution import SHAPE, BookExecutionHandler
+from src.book_execution import (SHAPE, VOL_ELASTICITY, VOL_WINDOW,
+                                BookExecutionHandler)
+from src.data_handler import HistoricalDataHandler
 from src.execution import (NextBarOpenExecutionHandler,
                            ParticipationLimitedExecutionHandler)
 from src.strategy import MovingAverageCrossStrategy
@@ -68,6 +70,10 @@ DEPTH_FRACS = (0.0002, 0.0005, 0.002, 0.005, 0.02)
 # candidate setting.
 SHAPES = (0.0, 0.25, 0.5, 1.0, 2.0)
 SIZE_FRACS = (0.0001, 0.001, 0.003, 0.01, 0.03, 0.10, 0.30)
+# 0 is the constant-depth book. 1.0 is the shipped default and the textbook
+# relationship; 2.0 is past anything measured and is there to show the effect
+# growing smoothly rather than as a candidate setting.
+ELASTICITIES = (0.0, 0.5, 1.0, 2.0)
 OUT = "results/fill_realism.json"
 
 
@@ -200,6 +206,127 @@ def crossover(rows: list[dict]) -> float | None:
             w = (lo["flat_bps"] - lo["book_bps"]) / span
             return lo["size_frac"] + w * (hi["size_frac"] - lo["size_frac"])
     return None
+
+
+# ---------- 1c. the book is not the same depth every day ----------
+
+def depth_multipliers(prices, symbol: str = SYMBOL,
+                      vol_elasticity: float = VOL_ELASTICITY,
+                      vol_window: int = VOL_WINDOW) -> np.ndarray:
+    """The depth multiplier the handler would apply on every bar in the sample.
+
+    Built by stepping a data handler through the series and asking the
+    execution handler the same question it asks itself, rather than
+    recomputing the formula here. A second implementation of the thing under
+    test is how a study ends up agreeing with a handler while both drift from
+    what was meant - the same reason _level_sizes() borrows the depth profile.
+
+    Bars before the estimator has enough history return 1.0, which is what the
+    handler does with them too.
+    """
+    data = HistoricalDataHandler(prices)
+    handler = BookExecutionHandler(data, vol_elasticity=vol_elasticity,
+                                   vol_window=vol_window)
+    out = []
+    while data.has_more():
+        data.next_bar()
+        out.append(handler._trailing_vol(symbol)[0])
+    return np.array(out, dtype=float)
+
+
+def _weighted(values: list[float], weights: list[int]) -> float:
+    """Share-weighted mean, ignoring entries the estimator could not score.
+
+    Share-weighted rather than slice-weighted throughout, because a cost is a
+    cost per share and a hundred-share slice should not count as much as a
+    hundred-thousand-share one.
+    """
+    v = np.asarray(values, dtype=float)
+    w = np.asarray(weights, dtype=float)
+    ok = ~np.isnan(v)
+    if not ok.any() or w[ok].sum() == 0:
+        return float("nan")
+    return float((v[ok] * w[ok]).sum() / w[ok].sum())
+
+
+def _execution_summary(equity) -> dict:
+    """Cost and conditions of the fills one run printed."""
+    ex = equity.attrs["execution"]
+    return {
+        **stats(equity),
+        "slices": ex.slices,
+        "cost_bps": _weighted(ex.slice_cost_bps, ex.slice_shares),
+        "vol_percentile": _weighted(ex.slice_vol_pct, ex.slice_shares),
+        "multiplier": _weighted(ex.slice_multiplier, ex.slice_shares),
+        "mean_levels_walked": (float(np.mean(ex.levels_walked))
+                               if ex.levels_walked else 0.0),
+        "deployed": ex.unfilled_shares,
+    }
+
+
+def vol_elasticity_study(prices, opens, volumes, aum: float = 1e9,
+                         elasticities=ELASTICITIES, participation: float = 0.10,
+                         depth_frac: float = 0.002, **kwargs) -> dict:
+    """What it costs this strategy that depth is not the same every day.
+
+    Sections 1 and 1b fixed WHERE the liquidity sits. This one fixes WHEN it is
+    there. Depth and volatility move against each other - a maker quoting a
+    fixed amount of risk rather than a fixed number of shares shows less size
+    when the price is moving around more - so the constant-depth book quotes an
+    average day's liquidity on every day, including the ones nobody wanted to
+    quote into.
+
+    Unlike `shape`, this knob is not one-sided: a quiet bar now gets a DEEPER
+    book than before and an order placed on one fills cheaper. So whether it
+    helps or hurts depends entirely on when the strategy trades, and that is a
+    measurement rather than a property of the model. Hence the three numbers
+    this returns together:
+
+      - `unconditional_multiplier`: the average multiplier across every bar in
+        the sample. Near 1 means the sample as a whole has not been quietly
+        made thinner, so any cost difference is about timing.
+      - `multiplier` in each row: the SHARE-WEIGHTED average on the bars this
+        strategy actually traded. The gap between the two is the finding.
+      - `level_matched`: a constant-depth book scaled down to that same
+        share-weighted average. It separates trading on thinner days (which
+        this run reproduces) from the dispersion around it (which it does not),
+        because cost is convex in depth and the two are easy to conflate.
+    """
+    first_price = float(prices.iloc[0, 0])
+    shares = max(int(aum / first_price), 1)
+
+    def go(**execution_kwargs) -> dict:
+        equity = run(prices, MovingAverageCrossStrategy, trade_size=shares,
+                     initial_cash=aum, opens=opens, volumes=volumes,
+                     execution_cls=BookExecutionHandler,
+                     execution_kwargs={"participation": participation,
+                                       "depth_frac": depth_frac,
+                                       **execution_kwargs}, **kwargs)
+        return _execution_summary(equity)
+
+    rows = [{"elasticity": e, **go(vol_elasticity=e)} for e in elasticities]
+
+    shipped = next((r for r in rows if r["elasticity"] == VOL_ELASTICITY), None)
+    level_matched = None
+    if shipped is not None and not np.isnan(shipped["multiplier"]):
+        level_matched = {
+            **go(vol_elasticity=0.0,
+                 depth_frac=depth_frac * shipped["multiplier"]),
+            # After the spread, not before: the run's own summary carries a
+            # `multiplier` of 1.0 (it is a constant-depth run) and would
+            # otherwise overwrite the level it was matched to.
+            "matched_to": shipped["multiplier"],
+        }
+
+    all_bars = depth_multipliers(prices)
+    return {
+        "aum": aum,
+        "vol_window": VOL_WINDOW,
+        "rows": rows,
+        "level_matched": level_matched,
+        "unconditional_multiplier": float(all_bars.mean()),
+        "unconditional_median": float(np.median(all_bars)),
+    }
 
 
 # ---------- 2. does the capacity answer move ----------
@@ -402,6 +529,59 @@ def print_crossover_by_shape(rows: list[dict], price: float,
         print(f"    reaching past a thinner touch.")
 
 
+def print_vol_elasticity(study: dict) -> None:
+    """Section 1b was about where the depth sits. This is about when."""
+    rows = study["rows"]
+    flat = next((r for r in rows if r["elasticity"] == 0.0), None)
+    shipped = next((r for r in rows if r["elasticity"] == VOL_ELASTICITY), None)
+
+    print(f"\n1c. AND IT IS NOT THE SAME DEPTH EVERY DAY   "
+          f"(at ${study['aum'] / 1e9:.0f}bn)")
+    print(f"    Resting size scales as (typical vol / current vol) ** "
+          f"elasticity, measured on a")
+    print(f"    {study['vol_window']}-bar window against an expanding median "
+          f"of itself. 0 is the constant book.")
+    print(f"\n{'elasticity':>11} {'depth met':>10} {'cost/share':>11} "
+          f"{'sharpe':>8} {'return':>9} {'levels':>8}")
+    for r in rows:
+        met = "-" if np.isnan(r["multiplier"]) else f"{r['multiplier']:.2f}x"
+        print(f"{r['elasticity']:>11.2f} {met:>10} {r['cost_bps']:>10.2f}  "
+              f"{r['sharpe']:>8.2f} {r['total_return']:>9.2%} "
+              f"{r['mean_levels_walked']:>8.1f}")
+
+    if shipped is None or np.isnan(shipped["multiplier"]):
+        return
+
+    print(f"\n    Across every bar in the sample the multiplier averages "
+          f"{study['unconditional_multiplier']:.2f}, so")
+    print(f"    the book has not been made thinner overall. On the bars this "
+          f"strategy chose to")
+    print(f"    trade it averages {shipped['multiplier']:.2f}. Its fills land "
+          f"at the {shipped['vol_percentile'] * 100:.0f}th percentile of")
+    print(f"    realized volatility, not the 50th, because a moving-average "
+          f"crossover fires after")
+    print(f"    a trend breaks and a trend breaking IS a volatility event. "
+          f"The signal is")
+    print(f"    correlated with illiquidity by construction.")
+
+    matched = study.get("level_matched")
+    if matched and flat:
+        total = shipped["cost_bps"] - flat["cost_bps"]
+        level = matched["cost_bps"] - flat["cost_bps"]
+        if total > 0:
+            print(f"\n    Splitting that {total:+.2f} bps a share. A constant "
+                  f"book held at the same")
+            print(f"    {matched['matched_to']:.2f}x - thinner every day, but "
+                  f"never thinner on the days that")
+            print(f"    matter - costs {level:+.2f} bps. So {level / total:.0%} "
+                  f"of the extra cost is nothing")
+            print(f"    but WHEN this strategy trades, and the remaining "
+                  f"{1 - level / total:.0%} is the convexity")
+            print(f"    of cost in depth: the level of the co-movement matters "
+                  f"{level / (total - level):.0f}x more than")
+            print(f"    the spread around it.")
+
+
 def print_capacity(rows: list[dict]) -> None:
     base = rows[0]
     print(f"\n2. THE SAME CAPACITY LADDER UNDER BOTH MODELS")
@@ -463,6 +643,9 @@ def main() -> None:
     by_shape = crossover_by_shape(price, volume)
     print_crossover_by_shape(by_shape, price, volume)
 
+    vol_study = vol_elasticity_study(prices, opens, volumes)
+    print_vol_elasticity(vol_study)
+
     cap = capacity_under_both(prices, opens, volumes, aums=aums)
     print_capacity(cap)
     readable = interpretable_to(cap, "book")
@@ -483,6 +666,8 @@ def main() -> None:
                    "median_price": price, "median_volume": volume,
                    "cost_curves": curves, "crossover": cross,
                    "shape": SHAPE, "crossover_by_shape": by_shape,
+                   "vol_elasticity": VOL_ELASTICITY,
+                   "vol_elasticity_study": vol_study,
                    "capacity": cap, "depth_sweep": sweep, "fees": bill},
                   fh, indent=1, default=float)
     print(f"\nwrote {OUT}")

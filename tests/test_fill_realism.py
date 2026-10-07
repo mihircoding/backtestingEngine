@@ -10,11 +10,13 @@ Those depend on ten years of downloaded prices and belong in the write-up with
 a date on them, not in an assertion that breaks when Yahoo revises a split.
 """
 
+import numpy as np
+import pandas as pd
 import pytest
 
 from exchange.order import TICK
-from fill_realism import (cost_curves, crossover, crossover_by_shape,
-                          interpretable_to)
+from fill_realism import (_weighted, cost_curves, crossover, crossover_by_shape,
+                          depth_multipliers, interpretable_to)
 
 PRICE = 100.0
 VOLUME = 1_000_000.0
@@ -194,3 +196,78 @@ def test_a_harder_shape_thins_the_touch():
     flat, tilt = rows
 
     assert tilt["touch_shares"] < flat["touch_shares"]
+
+
+# ---------- depth through time ----------
+#
+# Section 1c's finding rests on comparing two averages: the multiplier over
+# every bar in the sample against the multiplier on the bars the strategy
+# traded. That comparison only means anything if the first one is close to 1 -
+# otherwise the model has quietly made the whole sample thinner and the
+# "timing" result is just a lower depth_frac in disguise. So that is what gets
+# pinned here, on a synthetic series where the answer is known in advance.
+
+def multiplier_frame(closes):
+    return pd.DataFrame({"AAA": closes},
+                        index=pd.bdate_range("2015-01-02", periods=len(closes)))
+
+
+def wobble(bars: int, sigma: float, start: int = 0) -> list[float]:
+    return [100.0 * (1 + sigma * (1 if (i + start) % 2 else -1))
+            for i in range(bars)]
+
+
+def test_a_stationary_series_averages_a_multiplier_of_one():
+    """The claim the conditional-cost result depends on. Constant volatility
+    means current vol equals its own median on every bar, so the book is
+    neither deeper nor thinner than the constant-depth one anywhere."""
+    series = depth_multipliers(multiplier_frame(wobble(300, 0.01)),
+                               symbol="AAA", vol_elasticity=1.0, vol_window=20)
+    assert series.mean() == pytest.approx(1.0, abs=0.02)
+
+
+def test_zero_elasticity_leaves_every_bar_alone():
+    series = depth_multipliers(multiplier_frame(wobble(120, 0.01)),
+                               symbol="AAA", vol_elasticity=0.0, vol_window=20)
+    assert (series == 1.0).all()
+
+
+def test_the_warmup_bars_report_no_adjustment():
+    """Two windows of returns before there is a median to compare against."""
+    series = depth_multipliers(multiplier_frame(wobble(120, 0.01)),
+                               symbol="AAA", vol_elasticity=1.0, vol_window=20)
+    assert (series[:40] == 1.0).all()
+
+
+def test_a_volatile_stretch_is_scored_thinner_than_a_calm_one():
+    """The loud stretch is deliberately the minority of the sample. The
+    reference is an EXPANDING MEDIAN, so a regime that takes up more than half
+    the history becomes the typical one and gets scored at 1 - correct
+    behaviour, and the reason a fixture has to say which regime is the
+    exception.
+    """
+    closes = wobble(200, 0.002) + wobble(40, 0.02, start=200)
+    series = depth_multipliers(multiplier_frame(closes), symbol="AAA",
+                               vol_elasticity=1.0, vol_window=20)
+    assert series[-1] < 1.0
+    assert series[180] == pytest.approx(1.0, abs=0.05)
+
+
+# ---------- the share weighting ----------
+
+def test_the_weighted_mean_is_by_shares_not_by_slice():
+    """A hundred-thousand-share slice should not count the same as a hundred-
+    share one, because the quantity being averaged is a cost per share."""
+    assert _weighted([1.0, 3.0], [100_000, 100]) == pytest.approx(
+        (1.0 * 100_000 + 3.0 * 100) / 100_100)
+
+
+def test_slices_the_estimator_could_not_score_are_left_out():
+    """Warmup bars report NaN rather than 1.0 for the percentile, and averaging
+    them in as zeroes would drag every conditional number toward the middle."""
+    assert _weighted([float("nan"), 2.0], [999_999, 1]) == 2.0
+
+
+def test_nothing_to_average_is_not_an_error():
+    assert np.isnan(_weighted([], []))
+    assert np.isnan(_weighted([float("nan")], [10]))

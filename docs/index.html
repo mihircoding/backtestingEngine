@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Market Simulation Stack — Mihir Konda</title>
-<meta name="description" content="An event-driven backtester wired to a limit-order-book matching engine, so fills are simulated rather than assumed. A flat 2bp slippage charge is wrong in both directions, and giving the book a realistic depth profile moves the crossover five times earlier without changing the capacity answer.">
+<meta name="description" content="An event-driven backtester wired to a limit-order-book matching engine, so fills are simulated rather than assumed. A flat 2bp slippage charge is wrong in both directions; shaping the book moves the crossover five times earlier; and letting depth thin with volatility shows the strategy trades at the 64th percentile of realized vol and pays 19% more than the constant-depth book charged it.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -97,7 +97,7 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
 <div class="wrap">
   <div class="tagline">Two halves of one question: what did the order actually fill at?</div>
   <h1>Market Simulation Stack</h1>
-  <p class="lede">An event-driven backtester, a price-time priority matching engine, and a bridge between them. Every backtester decides your fill price with a formula; this one can ask a real order book instead. <strong style="color:var(--ink)">The standard flat-slippage assumption turns out to be five times too expensive for a small order and fourteen times too cheap for a large one.</strong> 261 tests.</p>
+  <p class="lede">An event-driven backtester, a price-time priority matching engine, and a bridge between them. Every backtester decides your fill price with a formula; this one can ask a real order book instead. <strong style="color:var(--ink)">The standard flat-slippage assumption turns out to be five times too expensive for a small order and fourteen times too cheap for a large one.</strong> 299 tests.</p>
   <div class="links">
     <a class="btn primary" href="#fills">The fill result</a>
     <a class="btn" href="#results">Strategy results</a>
@@ -129,7 +129,7 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
       <tr><td>30.0%</td><td class="mono">22,983,240</td><td class="mono">2.00</td><td class="mono">62.25</td><td class="mono">27.86</td><td class="mono"><strong>36.65</strong></td></tr>
     </tbody>
   </table>
-  <p style="margin-top:14px">Basis points per share. Against a <em>flat</em> book, the crossover is <strong style="color:var(--ink)">1.97% of a day's volume</strong> — 1.5M shares, about $409M of SPY. Below that every cost figure in the write-up is pessimistic; above it, optimistic.</p>
+  <p style="margin-top:14px">Basis points per share. Against a <em>flat</em> book, the crossover is <strong style="color:var(--ink)">1.96% of a day's volume</strong> — 1.5M shares, about $408M of SPY. Below that every cost figure in the write-up is pessimistic; above it, optimistic.</p>
 
   <h3 style="margin-top:32px">The book was not flat either, and fixing that moved the crossover 5x</h3>
   <p>Seeding every price level with the same size says the touch is as attractive a place to rest as a level ten ticks behind it. That is backwards — the touch is where you get filled by whoever knows something, so it is the <em>least</em> attractive place to leave size, and real books lean the other way. The <span class="mono">shape</span> parameter thins the front and thickens the back, holding the book's <strong style="color:var(--ink)">total</strong> size fixed at 30.6M shares either way.</p>
@@ -139,7 +139,7 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
     <tbody>
       <tr><td class="mono">0.00 <span style="opacity:.6">(flat)</span></td><td class="mono">153,221</td><td class="mono">1.96%</td><td class="mono">$408M</td></tr>
       <tr><td class="mono">0.25</td><td class="mono">50,798</td><td class="mono">0.87%</td><td class="mono">$180M</td></tr>
-      <tr><td class="mono">0.50 <span style="opacity:.6">(shipped)</span></td><td class="mono">16,192</td><td class="mono"><strong>0.39%</strong></td><td class="mono"><strong>$80M</strong></td></tr>
+      <tr><td class="mono">0.50 <span style="opacity:.6">(shipped)</span></td><td class="mono">16,192</td><td class="mono"><strong>0.37%</strong></td><td class="mono"><strong>$77M</strong></td></tr>
       <tr><td class="mono">1.00</td><td class="mono">1,524</td><td class="mono">0.06%</td><td class="mono">$13M</td></tr>
       <tr><td class="mono">2.00</td><td class="mono">11</td><td class="mono">0.00%</td><td class="mono">&mdash;</td></tr>
     </tbody>
@@ -147,16 +147,44 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
   <p style="margin-top:14px">So the honest description of <span class="mono">shape</span> is not the one I first wrote down. Normalising the total makes it <em>size</em>-neutral, not <em>cost</em>-neutral — it still moves cost, and only ever upward. That one-sidedness is the point: the knob cannot be turned to make a backtest look cheaper, only dearer, and a parameter that can only hurt the result is safer to ship than one that can flatter it. Shape 2.0 puts 11 shares at the touch, which is not a book; it is in the sweep to show the effect saturating, not as a candidate setting.</p>
   <p><strong style="color:var(--ink)">And the conclusion the crossover was for did not move.</strong> The capacity ladder goes from Sharpe 0.62 to 0.58 at $1bn and the deployed-capital column is identical to the share. What strands capital above $5bn is the 10% participation cap, not the cost of the fill, so a cost correction cannot touch it. The headline number changed by a factor of five; the answer it supported changed by 0.04 of a Sharpe. Worth knowing which of your numbers are load-bearing.</p>
 
+  <h3 style="margin-top:32px">And it was not the same book every day, which is where the money was</h3>
+  <p>Both corrections above fixed <em>where</em> the liquidity sits. Neither touched <em>when</em> it is there: the book was rebuilt every bar out of that bar's volume and otherwise identical, so an average day's depth was quoted on every day in the sample — including the ones nobody wanted to quote into.</p>
+  <p>The mechanism is one sentence. <strong style="color:var(--ink)">A market maker quotes a budget of risk, not a number of shares.</strong> When the price is moving around more, the same number of shares is more risk, so it shows fewer of them. Depth and volatility move against each other, which is the same fact as the better-known one that spreads widen when vol rises. <span class="mono">vol_elasticity</span> multiplies resting size by <span class="mono">(typical vol / current vol) ** elasticity</span>, where current vol is trailing 20-bar realized volatility and typical vol is the <em>expanding median</em> of that series — what a desk sitting at that date would call a normal day, given only the history it had. Both come out of <span class="mono">get_latest()</span>, so a bar that has not been released cannot change a fill that has already printed; a test truncates the future and checks the price is identical.</p>
+  <table>
+    <thead><tr><th>Elasticity</th><th>Depth it met</th><th>Cost per share</th><th>Sharpe</th><th>Total return</th><th>Levels walked</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">0.00 <span style="opacity:.6">(constant)</span></td><td class="mono">1.00&times;</td><td class="mono">13.76</td><td class="mono">0.58</td><td class="mono">121.8%</td><td class="mono">57.4</td></tr>
+      <tr><td class="mono">0.50</td><td class="mono">0.88&times;</td><td class="mono">14.95</td><td class="mono">0.58</td><td class="mono">120.1%</td><td class="mono">63.0</td></tr>
+      <tr><td class="mono">1.00 <span style="opacity:.6">(shipped)</span></td><td class="mono"><strong>0.80&times;</strong></td><td class="mono"><strong>16.44</strong></td><td class="mono"><strong>0.57</strong></td><td class="mono"><strong>118.0%</strong></td><td class="mono"><strong>70.0</strong></td></tr>
+      <tr><td class="mono">2.00</td><td class="mono">0.74&times;</td><td class="mono">19.66</td><td class="mono">0.55</td><td class="mono">113.5%</td><td class="mono">85.1</td></tr>
+    </tbody>
+  </table>
+  <p style="margin-top:14px">$1bn, 10% participation, cost in basis points per share and share-weighted. "Depth it met" is the multiplier averaged over the bars the strategy actually traded.</p>
+  <p><strong style="color:var(--ink)">This knob is not like <span class="mono">shape</span>.</strong> Shape can only make a fill dearer, so leaving it on cannot flatter a backtest. This one cuts both ways — a quiet bar gets a <em>deeper</em> book than the constant model gave it, and an order placed on one fills cheaper. So whether it helps or hurts is not a property of the model at all. It is a property of when the strategy trades, and that has to be measured.</p>
+  <p>Measured, it is one-sided for this strategy. Across every bar in the sample the multiplier averages <strong style="color:var(--ink)">0.99</strong> — the book has not been quietly made thinner, and a run that never traded would see no change. On the bars this strategy chose to trade it averages <strong style="color:var(--ink)">0.80</strong>, and its fills land at the <strong style="color:var(--ink)">64th percentile</strong> of realized volatility rather than the 50th, stable at 0.62&ndash;0.64 at every rung of the AUM ladder. The reason is not subtle once stated, which is what makes it worth stating: <em>a moving-average crossover fires when a trend breaks, and a trend breaking is a volatility event.</em> The signal is correlated with illiquidity by construction, and the constant-depth book cannot see any of it.</p>
+  <p><strong style="color:var(--ink)">Splitting the 2.68 bps,</strong> because cost is convex in depth and it would be easy to over-claim. A <em>constant</em> book scaled to that same 0.80&times; — thinner every single day, but never thinner on the days that matter — costs 15.93 bps, which is +2.16 of the +2.68. So <strong style="color:var(--ink)">81% of the extra cost is nothing but when this strategy trades</strong>, and the remaining 19% is the convexity around it. The co-movement is the effect; the dispersion is a rounding error on it.</p>
+  <table>
+    <thead><tr><th>AUM</th><th>Deployed</th><th>Sharpe, constant</th><th>Sharpe, elastic</th><th>Cost, constant</th><th>Cost, elastic</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">$0.1bn</td><td class="mono">100%</td><td class="mono">0.65</td><td class="mono">0.64</td><td class="mono">3.17</td><td class="mono">3.77</td></tr>
+      <tr><td class="mono">$1bn</td><td class="mono">100%</td><td class="mono">0.58</td><td class="mono">0.57</td><td class="mono">13.76</td><td class="mono">16.44</td></tr>
+      <tr><td class="mono">$5bn</td><td class="mono">41%</td><td class="mono">0.54</td><td class="mono">0.52</td><td class="mono">17.23</td><td class="mono">21.07</td></tr>
+      <tr><td class="mono">$20bn</td><td class="mono">10%</td><td class="mono">0.64</td><td class="mono">0.62</td><td class="mono">18.15</td><td class="mono">22.00</td></tr>
+      <tr><td class="mono">$100bn</td><td class="mono">2%</td><td class="mono">0.76</td><td class="mono">0.75</td><td class="mono">19.18</td><td class="mono">23.84</td></tr>
+    </tbody>
+  </table>
+  <p style="margin-top:14px">Both columns at the shipped <span class="mono">shape</span> of 0.5, so they differ from the ladder below and from each other only in <span class="mono">vol_elasticity</span>. The cost column rises 19&ndash;24% at every rung. <strong style="color:var(--ink)">The deployed column does not move by a single share.</strong> That is the third time on this page that a cost correction has failed to move the capacity answer, and by now it is a structural fact rather than a coincidence: what strands capital above $5bn is the 10% participation cap, and a participation cap is not a cost.</p>
+
   <h3 style="margin-top:32px">And it exposed a flaw in the capacity study that was already here</h3>
   <p>Running two fill models side by side made something visible that one model alone hid. The capacity ladder's Sharpe ratio <em>rises</em> above $5bn — not because capacity improves with size, but because the participation cap stops filling the orders.</p>
   <table>
     <thead><tr><th>AUM</th><th>Deployed</th><th>Square-root Sharpe</th><th>Book Sharpe</th></tr></thead>
     <tbody>
-      <tr><td class="mono">$0.1bn</td><td class="mono">100%</td><td class="mono">0.60</td><td class="mono">0.66</td></tr>
-      <tr><td class="mono">$1bn</td><td class="mono">100%</td><td class="mono">0.49</td><td class="mono">0.62</td></tr>
-      <tr><td class="mono">$5bn</td><td class="mono">41%</td><td class="mono">0.44</td><td class="mono">0.59</td></tr>
-      <tr><td class="mono">$20bn</td><td class="mono">10%</td><td class="mono">0.55</td><td class="mono">0.68</td></tr>
-      <tr><td class="mono">$100bn</td><td class="mono">2%</td><td class="mono">0.73</td><td class="mono">0.78</td></tr>
+      <tr><td class="mono">$0.1bn</td><td class="mono">100%</td><td class="mono">0.60</td><td class="mono">0.64</td></tr>
+      <tr><td class="mono">$1bn</td><td class="mono">100%</td><td class="mono">0.49</td><td class="mono">0.57</td></tr>
+      <tr><td class="mono">$5bn</td><td class="mono">41%</td><td class="mono">0.44</td><td class="mono">0.52</td></tr>
+      <tr><td class="mono">$20bn</td><td class="mono">10%</td><td class="mono">0.55</td><td class="mono">0.62</td></tr>
+      <tr><td class="mono">$100bn</td><td class="mono">2%</td><td class="mono">0.73</td><td class="mono">0.75</td></tr>
     </tbody>
   </table>
   <p style="margin-top:14px">At $100bn, 98% of the intended book never reaches the market. The equity curve is 98% idle cash, the denominator of the Sharpe ratio collapses, and the statistic describes a cash pile. <strong style="color:var(--ink)">The ladder was only ever readable to $1bn.</strong> The fix is to report deployed capital beside it, which is the capacity number the study was reaching for in the first place — and the same artifact turns out to explain the one non-monotone row in the depth sweep.</p>
@@ -522,7 +550,7 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
       <ul>
         <li>Outside the capacity section, fills are complete and instant at any size. <strong style="color:var(--ink)">Read those numbers as an upper bound.</strong></li>
         <li>The impact constant is a default of 1.0, not a calibration. It gives the right shape of cost curve, which is enough to compare two strategies and not enough to quote a dollar figure.</li>
-        <li>Volume is assumed unaffected by your own trading, and the 10% cap is a constant. Real liquidity is worst exactly when you most want to trade.</li>
+        <li>Volume is assumed unaffected by your own trading, and the 10% cap is a constant. Depth is no longer a constant &mdash; it thins with volatility, which is where that last sentence turned out to be worth 19% of this strategy's trading cost &mdash; but volume should rise as depth falls, and only one half of that is modelled.</li>
         <li>No borrow costs, margin, or taxes.</li>
         <li><s>One asset.</s> <span class="mono">cross_section.py</span> runs the same rule across 24 ETFs &mdash; see <a href="#crosssection">above</a>. Every other number on this page is still SPY alone.</li>
         <li>Daily bars only. Intraday, the crossover dates would move.</li>

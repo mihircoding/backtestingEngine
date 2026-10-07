@@ -32,13 +32,18 @@ and becomes a consequence of depth.
 The first thing that falls out is that the standard assumption is wrong in both
 directions. A flat 2 bps on SPY overcharges a small order by a factor of five
 and undercharges a 23-million-share order by a factor of fourteen; the two
-cross at about 2% of a day's volume. The second thing is a flaw the comparison
-exposed in the capacity study that was already here — its Sharpe ratio *rises*
+cross at about 2% of a day's volume. The second thing only shows up once the
+book is allowed to thin when the market gets loud: this strategy's fills land
+at the 64th percentile of realized volatility rather than the 50th, so it meets
+a book a fifth thinner than it was being charged for, and four fifths of the
+extra cost is the timing rather than the size. A moving-average crossover fires
+when a trend breaks, and a trend breaking is a volatility event. The third is a
+flaw the comparison exposed in the capacity study that was already here — its Sharpe ratio *rises*
 above $5bn, because the participation cap stops filling and the statistic ends
 up describing idle cash instead of a strategy. [RESULTS.md](RESULTS.md) has
-both, and the correction.
+all three, and the corrections.
 
-261 tests.
+299 tests.
 
 ```bash
 pip install -r requirements.txt

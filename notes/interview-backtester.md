@@ -175,6 +175,20 @@ that includes delisted names with their delisting prices. Backtesting today's S&
 over the last decade means you selected the survivors in advance, which reliably inflates returns
 by a few percent a year.
 
+**"Is your transaction cost model conservative?"**
+Wrong question to answer with a yes. The cost model's parameters are depth, not basis points,
+because a venue publishes depth and nobody publishes cost. Two of them have a direction I can
+argue for: `shape` moves resting size behind the touch, and because a fill price comes off
+cumulative depth, it can only ever make a fill dearer — switched on, it cannot flatter a result.
+The third, `vol_elasticity`, cannot be argued for that way, and that is the interesting one. It
+makes depth inversely proportional to trailing volatility, so quiet days get a *deeper* book than
+the constant model gave them and orders placed on them fill cheaper. Whether it helps or hurts is
+a fact about the strategy, not the model. For this one it hurts: the multiplier averages 0.99 over
+every bar in the sample and 0.80 over the bars the strategy traded, because a moving-average
+crossover fires when a trend breaks and a trend breaking is a volatility event. Its fills land at
+the 64th percentile of realized vol. Costs rise 19%, and 81% of that is the timing rather than the
+convexity — I checked by running a constant book held at the same average depth.
+
 **"Multiple symbols — what breaks?"**
 The loop already iterates `data.symbols`. What breaks is everything sizing-related: fixed share
 counts mean a $600 stock and a $30 stock get wildly different dollar exposure. You'd move to
@@ -189,7 +203,11 @@ Volunteering the limitations reads as competence, not weakness. Listing them fir
 control which one gets discussed.
 
 - Same-bar-close fills are optimistic. Next-bar-open is the honest default.
-- Fills are unlimited size. Real books have depth.
+- Fills through `src/execution.py` are unlimited size. The book handler is the one with depth,
+  and it is the one every cost number in RESULTS.md comes from.
+- `vol_elasticity` is the exponent a risk-budget argument predicts, swept rather than fitted. I
+  have no depth history to fit it on, and I clip the multiplier at 4x rather than extrapolate a
+  relationship I only measured in the middle of the distribution.
 - Parameters (50/200) are conventional, not fitted — and fitting them on the same sample I
   reported on would have produced a better number and a worse answer.
 - One asset, one decade, one regime pair. Not enough to conclude anything about the strategy

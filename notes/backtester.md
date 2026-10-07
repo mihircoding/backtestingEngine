@@ -614,6 +614,14 @@ and the reason it makes things worse is visible in the table above.
   fixed. It moved the crossover by 5x and the capacity answer by 0.04 of a Sharpe, because what
   binds above $5bn is the participation cap and not the cost of the fill. Still monotone in
   distance from the touch, where a real book rises and then decays.
+- ~~The same book is quoted on every day in the sample~~ — `vol_elasticity` scales resting size
+  by (typical vol / current vol), so depth thins when the market gets loud. Section 1c of
+  ../RESULTS.md has the measurement, and it is the one result in that file that is about this
+  strategy rather than about the fill model: the multiplier averages 0.99 over every bar and
+  0.80 over the bars this strategy traded, because a moving-average crossover fires when a trend
+  breaks and a trend breaking is a volatility event. Costs rise 19%, and 81% of that is the
+  timing rather than the convexity. Depth still does not vary WITHIN a bar, and volume should
+  rise as depth falls — only one half of that pair is modelled.
 - ~~No borrow costs~~ — `Portfolio(short_borrow_bps=...)` charges carry on short positions per bar
   held, and the long/short section prices the whole result at 0 to 400bp a year. It defaults
   to zero, which is correct for every long-only number in this file. No margin or taxes.
