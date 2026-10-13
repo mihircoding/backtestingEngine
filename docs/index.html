@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Market Simulation Stack — Mihir Konda</title>
-<meta name="description" content="An event-driven backtester wired to a limit-order-book matching engine, so fills are simulated rather than assumed. A flat 2bp slippage charge is wrong in both directions; shaping the book moves the crossover five times earlier; and letting depth thin with volatility shows the strategy trades at the 64th percentile of realized vol and pays 19% more than the constant-depth book charged it.">
+<meta name="description" content="An event-driven backtester wired to a limit-order-book matching engine, so fills are simulated rather than assumed. A flat 2bp slippage charge is wrong in both directions; shaping the book moves the crossover five times earlier, and letting the far book decay moves it twenty times the other way, which is the error bar on the number; and letting depth thin with volatility shows the strategy trades at the 64th percentile of realized vol and pays 19% more than the constant-depth book charged it.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -97,7 +97,7 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
 <div class="wrap">
   <div class="tagline">Two halves of one question: what did the order actually fill at?</div>
   <h1>Market Simulation Stack</h1>
-  <p class="lede">An event-driven backtester, a price-time priority matching engine, and a bridge between them. Every backtester decides your fill price with a formula; this one can ask a real order book instead. <strong style="color:var(--ink)">The standard flat-slippage assumption turns out to be five times too expensive for a small order and fourteen times too cheap for a large one.</strong> 299 tests.</p>
+  <p class="lede">An event-driven backtester, a price-time priority matching engine, and a bridge between them. Every backtester decides your fill price with a formula; this one can ask a real order book instead. <strong style="color:var(--ink)">The standard flat-slippage assumption turns out to be five times too expensive for a small order and fourteen times too cheap for a large one.</strong> 310 tests.</p>
   <div class="links">
     <a class="btn primary" href="#fills">The fill result</a>
     <a class="btn" href="#results">Strategy results</a>
@@ -146,6 +146,20 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
   </table>
   <p style="margin-top:14px">So the honest description of <span class="mono">shape</span> is not the one I first wrote down. Normalising the total makes it <em>size</em>-neutral, not <em>cost</em>-neutral — it still moves cost, and only ever upward. That one-sidedness is the point: the knob cannot be turned to make a backtest look cheaper, only dearer, and a parameter that can only hurt the result is safer to ship than one that can flatter it. Shape 2.0 puts 11 shares at the touch, which is not a book; it is in the sweep to show the effect saturating, not as a candidate setting.</p>
   <p><strong style="color:var(--ink)">And the conclusion the crossover was for did not move.</strong> The capacity ladder goes from Sharpe 0.62 to 0.58 at $1bn and the deployed-capital column is identical to the share. What strands capital above $5bn is the 10% participation cap, not the cost of the fill, so a cost correction cannot touch it. The headline number changed by a factor of five; the answer it supported changed by 0.04 of a Sharpe. Worth knowing which of your numbers are load-bearing.</p>
+
+  <h3 style="margin-top:32px">The other half of the profile, and the error bar on the crossover</h3>
+  <p>The ramp above has its <em>heaviest</em> level at the far edge of the book &mdash; level 200 holds 1.5x the flat size, level 1 holds 0.1x. Right at the touch, wrong everywhere behind it; nobody rests size two dollars from a one-cent market. So the other half: size at level <span class="mono">i</span> is <span class="mono">i<sup>shape</sup> &middot; exp(&minus;i/decay)</span>, which rises to a peak and thins out past it, the hump every empirical average book has. Total size held fixed, shape at 0.5, and the far book allowed to empty:</p>
+  <table>
+    <thead><tr><th>decay</th><th class="n">Peak at level</th><th class="n">Touch</th><th class="n">Half the size within</th><th class="n">1% of day</th><th class="n">10%</th><th class="n">30%</th><th class="n">Crossover</th></tr></thead>
+    <tbody>
+      <tr><td>none (ships)</td><td class="mono">200</td><td class="mono">0.11x</td><td class="mono">126 levels</td><td class="mono">3.82</td><td class="mono">17.63</td><td class="mono">36.65</td><td class="mono"><strong>0.37%</strong></td></tr>
+      <tr><td>80</td><td class="mono">40</td><td class="mono">0.38x</td><td class="mono">78</td><td class="mono">1.70</td><td class="mono">8.64</td><td class="mono">22.35</td><td class="mono">1.27%</td></tr>
+      <tr><td>40</td><td class="mono">20</td><td class="mono">0.89x</td><td class="mono">46</td><td class="mono">0.99</td><td class="mono">4.95</td><td class="mono">13.48</td><td class="mono">2.90%</td></tr>
+      <tr><td>20</td><td class="mono">10</td><td class="mono">2.41x</td><td class="mono">24</td><td class="mono">0.56</td><td class="mono">2.54</td><td class="mono">6.91</td><td class="mono"><strong>7.31%</strong></td></tr>
+    </tbody>
+  </table>
+  <p style="margin-top:14px">Basis points per share by order size; touch as a multiple of the flat per-level size. <strong style="color:var(--ink)">This is the tilt the shape was expected to produce and could not.</strong> Moving size backwards lowers cumulative depth at every level; moving it out of the tail and into the middle raises it at every level a mid-sized order reaches, so large orders get cheaper &mdash; cheaper than the flat book, past a point. And the crossover, the number the section above quoted at 0.39%, runs from <strong style="color:var(--ink)">0.37% to 7.31%</strong> of a day's volume &mdash; $77M to $1.5bn of SPY &mdash; on a parameter nothing in this repository can observe. A twentyfold range on the headline, which is a less comfortable finding than the 5x: the crossover is not a measurement, it is a function of a depth profile with two free parameters.</p>
+  <p>Which is why <span class="mono">decay</span> ships off, for the opposite reason <span class="mono">shape</span> ships on. A shape can only make the book dearer than flat, so leaving it on is safe. A decay can make it cheaper by an amount set by a number nobody here can pin, and shipping a value from the middle of that range would quote a crossover that looked measured and was chosen. The ramp is the dearest book of the family; the one thing it cannot do is flatter the strategy. And for the third time, deployed capital did not move, because the participation cap does not know what the book looks like. <strong style="color:var(--ink)">The number that is robust to the cost model is the one that was never about cost.</strong></p>
 
   <h3 style="margin-top:32px">And it was not the same book every day, which is where the money was</h3>
   <p>Both corrections above fixed <em>where</em> the liquidity sits. Neither touched <em>when</em> it is there: the book was rebuilt every bar out of that bar's volume and otherwise identical, so an average day's depth was quoted on every day in the sample — including the ones nobody wanted to quote into.</p>

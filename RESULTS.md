@@ -134,10 +134,9 @@ Two things I would not claim from this:
 
 - **The profile is monotone, and a real book is not.** Depth rises away from
   the touch and then decays further out; `i ** shape` only has the rising half.
-  It is the half that matters for anything short of a full sweep, and the
-  sweep in `fill_realism.py` shows the effect saturating well before `shape`
-  gets silly — at 2.0 the touch holds 11 shares, which is not a book, and it
-  is in the sweep to show the limit rather than as a candidate setting.
+  I first wrote here that the rising half is the half that matters short of a
+  full sweep. Section 1d measured that and it is wrong: the far half decides
+  where the crossover sits, by a factor of twenty.
 - **5x on the crossover did not change the conclusion the crossover was for.**
   The capacity ladder barely moves: Sharpe 0.62 → 0.58 at $1bn, and the
   deployed-capital column is identical to the share. Section 1c then takes it
@@ -262,6 +261,66 @@ What I would not claim from this:
   it should be. It moves nothing in the table above, because the cap only
   binds above $5bn where the deployed column is the answer anyway.
 
+### 1d. The other half of the profile, and what it does to the headline
+
+Reproduce with: `python fill_realism.py` (section 1d)
+
+Section 1b's first caveat was that the profile only has the rising half. It
+is worse than a caveat. `i ** 0.5` over 200 levels has its *heaviest* level at
+the far edge of the book — level 200 holds 1.5x the flat size, level 1 holds
+0.1x — so the ramp was the right shape at the touch and the wrong one
+everywhere behind it. Nobody rests size two dollars from a one-cent market.
+
+`decay` is the other half: size at level *i* is `i ** shape * exp(-i / decay)`,
+which rises to a peak at `shape * decay` levels and thins out past it. That is
+the hump every empirical average book has. `None` is the ramp, exactly, so
+every number above is still reachable. The sweep holds `shape` at 0.5 and the
+total resting size fixed, as before:
+
+| decay | peak at level | touch | half the size within | level 200 | 0.1% | 1% | 3% | 10% | 30% | crossover |
+|---|---|---|---|---|---|---|---|---|---|---|
+| none (ships) | 200 | 0.11x | 126 levels | 1.495x | 0.89 | 3.82 | 7.91 | 17.63 | 36.65 | **0.37%** |
+| 80 | 40 | 0.38x | 78 | 0.442x | 0.46 | 1.70 | 3.59 | 8.64 | 22.35 | 1.27% |
+| 40 | 20 | 0.89x | 46 | 0.087x | 0.37 | 0.99 | 2.05 | 4.95 | 13.48 | 2.90% |
+| 20 | 10 | 2.41x | 24 | 0.002x | 0.37 | 0.56 | 1.08 | 2.54 | 6.91 | **7.31%** |
+
+Cost in bps per share by order size as a share of the day's volume, SPY at
+$271 and 76.6M shares; touch and level 200 as multiples of the flat per-level
+size.
+
+**This is the tilt `shape` was expected to produce and could not.** Section 1b
+worked out why shaping the book raises the cost of every order: moving size
+backwards lowers cumulative depth at every level but the last. The decay moves
+size the other way — out of the tail and into the middle — and that *raises*
+cumulative depth at every level a mid-sized order reaches. So large orders get
+cheaper. Cheaper than the flat book, past a point: at 30% of the day a decay of
+40 pays 13.5 bps against the flat book's 27.9. Small orders are untouched
+because the touch is the touch.
+
+And so the crossover — the size above which a flat 2 bps was flattering the
+strategy, the number section 1b quoted at 0.39% and $80M — runs from **0.37%
+to 7.31%** of a day's volume, $77M to $1.5bn of SPY, as one parameter moves
+across a range every value of which is a plausible book. **A twentyfold range
+on the headline figure, set by a number nothing in this repository can
+observe.** That is the finding, and it is a less comfortable one than 1b's:
+the crossover is not a measurement, it is a function of the depth profile, and
+the profile is an assumption with two free parameters rather than one.
+
+Which is why `decay` ships off, for the opposite reason `shape` ships on. A
+shape can only make the book dearer than flat, so leaving it on is safe. A
+decay can make it cheaper, by an amount set by a parameter this repository
+cannot pin, and shipping a value from the middle of that range would quote a
+crossover that looked measured and was chosen. The ramp is the dearest book of
+the family. The one thing it cannot do is flatter the strategy, and the sweep
+sits in the results as the error bar on the number.
+
+What does not move, again: the capacity ladder. Deployed capital is a function
+of the participation cap and the cap does not know what the book looks like.
+Three cost corrections in a row have failed to move it (1b, 1c, and now a
+sweep that moves the crossover twenty times over), and that is the sentence
+worth taking from the whole of section 1 — **the number that is robust to the
+cost model is the one that was never about cost.**
+
 ### 2. The capacity number was measuring a cash pile
 
 Same strategy, same AUM ladder, same 10% participation cap as section 11. Only
@@ -362,6 +421,7 @@ strategies now live in the same repository.
   thinning for minutes around a print is still missing. Volume is also held at
   its actual value while depth responds to volatility; really both move, in
   opposite directions.
-- The depth profile rises away from the touch and never decays. A real average
-  book rises and then falls off further out; only the half that matters short
-  of a full sweep is modeled.
+- The depth profile that ships rises away from the touch and never decays.
+  Section 1d has the decaying version and the reason it is off: it moves the
+  crossover by 20x on a parameter nothing here observes, so the dearest book
+  of the family ships and the sweep is the error bar.

@@ -159,6 +159,32 @@ LEVELS = 200
 # backtest look worse and cannot make it look better.
 SHAPE = 0.5
 
+# Where the profile turns over. Size at the i-th level is i**SHAPE times
+# exp(-i / DECAY), so the book rises away from the touch for SHAPE * DECAY
+# levels and then thins out, which is the hump every empirical average book
+# has: the maximum sits a few ticks behind the best, and past it the levels
+# empty out because nobody rests size a dollar away from a one-cent market.
+#
+# The rising-only profile this shipped with first has its HEAVIEST level at
+# the far edge of the book - with SHAPE 0.5 and 200 levels, level 200 holds
+# 1.5x the flat size and level 1 holds 0.1x - which is the right shape at the
+# touch and the wrong one everywhere behind it. None turns the decay off and
+# reproduces that book exactly, so every earlier number is still reachable.
+#
+# It ships OFF, and the reason is the opposite of the reason SHAPE ships on.
+# SHAPE can only make a fill dearer than the flat book, so leaving it on is
+# safe. DECAY moves size out of the tail and into the middle of the book,
+# and because the total is held fixed that makes the middle DEEPER than the
+# flat book: a large order gets cheaper, and how much cheaper depends
+# entirely on a number nothing here observes. fill_realism.py sweeps it, and
+# the crossover - the size above which a flat 2 bps flatters the strategy -
+# runs from 0.4% of a day's volume with no decay to 7% with a decay of 20.
+# A twentyfold range on the headline figure, set by one unobserved parameter,
+# is the finding; shipping a value in the middle of it would hide that. So
+# the handler keeps the ramp, which is the dearest book of the family, and
+# the sweep is in the results as the error bar on the crossover.
+DECAY = None
+
 # Trailing window, in bars, used to measure how volatile the market is right
 # now. 20 trading days is a month and is the window a desk would quote; it is
 # long enough that one gap does not dominate it and short enough to still be
@@ -210,6 +236,14 @@ class BookExecutionHandler:
                   Every positive shape makes every order dearer than the flat
                   book, and the two agree only on an order that sweeps the
                   entire side.
+    decay       : levels at which the profile starts thinning out again, so
+                  the book is a hump rather than a ramp. None is the ramp.
+                  Unlike `shape` this cuts both ways against the flat book:
+                  it moves size from the far tail into the middle, which is
+                  dearer for a small order and CHEAPER for a large one. The
+                  tilt `shape` was expected to produce and cannot, this does,
+                  and the reason is that moving size backwards only ever
+                  lowers cumulative depth while moving it forwards raises it.
     vol_elasticity : how hard resting size responds to realized volatility.
                   0 reproduces the constant-depth book exactly. 1 makes depth
                   inversely proportional to trailing volatility, measured on a
@@ -235,7 +269,8 @@ class BookExecutionHandler:
                  levels: int = LEVELS, participation: float = 0.10,
                  fees: FeeSchedule = FLAT, commission_per_share: float = 0.005,
                  shape: float = SHAPE, vol_elasticity: float = VOL_ELASTICITY,
-                 vol_window: int = VOL_WINDOW):
+                 vol_window: int = VOL_WINDOW,
+                 decay: float | None = DECAY):
         if not 0 < participation <= 1:
             raise ValueError("participation must be in (0, 1]")
         if depth_frac <= 0:
@@ -244,6 +279,8 @@ class BookExecutionHandler:
             raise ValueError("levels must be at least 1")
         if shape < 0:
             raise ValueError("shape must be non-negative")
+        if decay is not None and decay <= 0:
+            raise ValueError("decay must be positive, or None for no decay")
         if vol_elasticity < 0:
             raise ValueError("vol_elasticity must be non-negative")
         if vol_window < 2:
@@ -253,7 +290,8 @@ class BookExecutionHandler:
         self.depth_frac = depth_frac
         self.levels = levels
         self.shape = shape
-        self._weights = self._depth_weights(levels, shape)
+        self.decay = decay
+        self._weights = self._depth_weights(levels, shape, decay)
         self.vol_elasticity = vol_elasticity
         self.vol_window = vol_window
         self.participation = participation
@@ -377,17 +415,21 @@ class BookExecutionHandler:
     # ---------- the book ----------
 
     @staticmethod
-    def _depth_weights(levels: int, shape: float) -> np.ndarray:
+    def _depth_weights(levels: int, shape: float,
+                       decay: float | None = None) -> np.ndarray:
         """Share of the book's total size resting at each level, nearest first.
 
-        Proportional to i**shape and normalised to sum to `levels`, so the
-        weight is a MULTIPLE of the flat book's per-level size. shape=0 gives
-        every level a weight of exactly 1, which is the flat book, so the
-        profile is a generalisation of the old behaviour rather than a
-        replacement for it.
+        Proportional to i**shape * exp(-i / decay) and normalised to sum to
+        `levels`, so the weight is a MULTIPLE of the flat book's per-level
+        size. shape=0 with no decay gives every level a weight of exactly 1,
+        which is the flat book, so the profile is a generalisation of the old
+        behaviour rather than a replacement for it. With both set the profile
+        peaks at level shape * decay and thins out past it.
         """
         i = np.arange(1, levels + 1, dtype=float)
         w = i ** shape
+        if decay is not None:
+            w = w * np.exp(-i / decay)
         return w * (levels / w.sum())
 
     def _trailing_vol(self, symbol: str) -> tuple[float, float]:

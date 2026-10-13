@@ -15,7 +15,8 @@ import pandas as pd
 import pytest
 
 from exchange.order import TICK
-from fill_realism import (_weighted, cost_curves, crossover, crossover_by_shape,
+from fill_realism import (_weighted, cost_curves, crossover, crossover_by_decay,
+                          crossover_by_shape,
                           depth_multipliers, interpretable_to)
 
 PRICE = 100.0
@@ -188,6 +189,26 @@ def test_the_crossover_moves_earlier_as_the_book_is_shaped_harder():
 
     assert len(found) >= 2, "expected a crossover at more than one shape"
     assert found == sorted(found, reverse=True)
+
+
+def test_the_crossover_moves_later_as_the_far_book_empties():
+    rows = crossover_by_decay(PRICE, VOLUME, depth_frac=0.001, levels=10,
+                              shape=0.5, decays=(None, 8.0, 4.0, 2.0))
+    found = [r["crossover_frac"] for r in rows if r["crossover_frac"]]
+
+    assert len(found) >= 2, "expected a crossover at more than one decay"
+    assert found == sorted(found)
+    assert rows[0]["peak_level"] == 10          # the ramp peaks at the far edge
+    assert rows[-1]["peak_level"] < rows[0]["peak_level"]
+    assert rows[-1]["far_level_multiple"] < rows[0]["far_level_multiple"]
+
+
+def test_a_decaying_book_is_cheaper_than_the_ramp_at_every_size():
+    ramp = cost_curves(PRICE, VOLUME, depth_frac=0.001, levels=10, shape=0.5)
+    hump = cost_curves(PRICE, VOLUME, depth_frac=0.001, levels=10, shape=0.5,
+                       decay=3.0)
+    for a, b in zip(ramp, hump):
+        assert b["book_bps"] <= a["book_bps"] + 1e-9
 
 
 def test_a_harder_shape_thins_the_touch():

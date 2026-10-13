@@ -32,7 +32,10 @@ and becomes a consequence of depth.
 The first thing that falls out is that the standard assumption is wrong in both
 directions. A flat 2 bps on SPY overcharges a small order by a factor of five
 and undercharges a 23-million-share order by a factor of fourteen; the two
-cross at about 2% of a day's volume. The second thing only shows up once the
+cross at about 2% of a day's volume — or at 0.4%, or at 7%, depending on where
+in the book the depth is assumed to sit, which is a twentyfold error bar on a
+number nothing here can observe and the reason the dearest profile is the one
+that ships. The second thing only shows up once the
 book is allowed to thin when the market gets loud: this strategy's fills land
 at the 64th percentile of realized volatility rather than the 50th, so it meets
 a book a fifth thinner than it was being charged for, and four fifths of the
@@ -43,11 +46,11 @@ above $5bn, because the participation cap stops filling and the statistic ends
 up describing idle cash instead of a strategy. [RESULTS.md](RESULTS.md) has
 all three, and the corrections.
 
-299 tests.
+310 tests.
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                 # 261 passed
+python -m pytest -q                 # 310 passed
 
 # the two halves together
 python fill_realism.py              # fill models compared, the headline result

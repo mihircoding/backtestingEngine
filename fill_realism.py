@@ -70,6 +70,11 @@ DEPTH_FRACS = (0.0002, 0.0005, 0.002, 0.005, 0.02)
 # candidate setting.
 SHAPES = (0.0, 0.25, 0.5, 1.0, 2.0)
 SIZE_FRACS = (0.0001, 0.001, 0.003, 0.01, 0.03, 0.10, 0.30)
+# Where the depth profile turns over, in levels. None is the ramp the handler
+# ships with; 20 puts the peak ten levels out and empties the far book. The
+# sweep exists to show how much the crossover depends on a parameter nothing
+# in this repository can observe, not to pick one.
+DECAYS = (None, 80.0, 40.0, 20.0)
 # 0 is the constant-depth book. 1.0 is the shipped default and the textbook
 # relationship; 2.0 is past anything measured and is there to show the effect
 # growing smoothly rather than as a candidate setting.
@@ -80,7 +85,7 @@ OUT = "results/fill_realism.json"
 # ---------- 1. where the two cost models disagree ----------
 
 def _level_sizes(depth_frac: float, volume: float, levels: int,
-                 shape: float) -> np.ndarray:
+                 shape: float, decay: float | None = None) -> np.ndarray:
     """Resting shares at each level, nearest the touch first.
 
     The weights come from BookExecutionHandler rather than being written out
@@ -89,13 +94,14 @@ def _level_sizes(depth_frac: float, volume: float, levels: int,
     intended, and the profile is the thing under test.
     """
     flat = depth_frac * volume
-    w = BookExecutionHandler._depth_weights(levels, shape)
+    w = BookExecutionHandler._depth_weights(levels, shape, decay)
     return np.maximum((flat * w).astype(int), 1)
 
 
 def cost_curves(price: float, volume: float, depth_frac: float = 0.002,
                 levels: int = 200, slippage_bps: float = 2.0,
-                size_fracs=SIZE_FRACS, shape: float = SHAPE) -> list[dict]:
+                size_fracs=SIZE_FRACS, shape: float = SHAPE,
+                decay: float | None = None) -> list[dict]:
     """Cost per share of one order, under each model, at rising order sizes.
 
     The book cost is computed by actually walking the levels rather than by a
@@ -108,7 +114,7 @@ def cost_curves(price: float, volume: float, depth_frac: float = 0.002,
     models are in the same units as the slippage parameter they replace.
     """
     rows = []
-    sizes = _level_sizes(depth_frac, volume, levels, shape)
+    sizes = _level_sizes(depth_frac, volume, levels, shape, decay)
     capacity = int(sizes.sum())
 
     for frac in size_fracs:
@@ -175,6 +181,49 @@ def crossover_by_shape(price: float, volume: float, depth_frac: float = 0.002,
             "crossover_notional": None if cross is None else cross * volume * price,
             "touch_shares": int(sizes[0]),
             "capacity_shares": int(sizes.sum()),
+        })
+    return rows
+
+
+def crossover_by_decay(price: float, volume: float, depth_frac: float = 0.002,
+                       levels: int = 200, shape: float = SHAPE,
+                       decays=DECAYS, size_fracs=SIZE_FRACS) -> list[dict]:
+    """How far the crossover moves when the far book is allowed to thin out.
+
+    The ramp profile has its heaviest level at the far edge of the book, which
+    is the right shape at the touch and the wrong one everywhere behind it -
+    nobody rests size two dollars from a one-cent market. Letting the profile
+    decay past a peak fixes that, and this measures what fixing it does to
+    the number the first section quotes.
+
+    It does a lot, and in the direction `shape` was expected to go and could
+    not. Holding the total fixed, moving size out of the tail and into the
+    middle raises cumulative depth at every level a mid-sized order reaches,
+    so large orders get cheaper - cheaper than the flat book, past a point.
+    The crossover climbs with it. Which means the crossover is a function of
+    a parameter this repository has no data to pin, and the sweep is here as
+    the error bar on it rather than as a search for the right value.
+    """
+    rows = []
+    for decay in decays:
+        grid = tuple(float(x) for x in np.geomspace(1e-5, 0.5, 120))
+        curve = cost_curves(price, volume, depth_frac=depth_frac, levels=levels,
+                            size_fracs=grid, shape=shape, decay=decay)
+        coarse = cost_curves(price, volume, depth_frac=depth_frac,
+                             levels=levels, size_fracs=size_fracs, shape=shape,
+                             decay=decay)
+        cross = crossover(curve)
+        w = BookExecutionHandler._depth_weights(levels, shape, decay)
+        cumulative = np.cumsum(w) / w.sum()
+        rows.append({
+            "decay": decay,
+            "peak_level": int(np.argmax(w)) + 1,
+            "touch_multiple": float(w[0]),
+            "half_depth_level": int(np.searchsorted(cumulative, 0.5)) + 1,
+            "far_level_multiple": float(w[-1]),
+            "crossover_frac": cross,
+            "crossover_notional": None if cross is None else cross * volume * price,
+            "cost_bps": {f"{r['size_frac']:g}": r["book_bps"] for r in coarse},
         })
     return rows
 
@@ -529,6 +578,38 @@ def print_crossover_by_shape(rows: list[dict], price: float,
         print(f"    reaching past a thinner touch.")
 
 
+def print_crossover_by_decay(rows: list[dict], price: float,
+                             volume: float) -> None:
+    print(f"\n1d. AND WHERE THE FAR BOOK EMPTIES OUT   (shape {SHAPE}, "
+          f"total size held fixed)")
+    print(f"    The ramp's heaviest level is its furthest. Letting the profile "
+          f"decay past a peak:")
+    fracs = list(rows[0]["cost_bps"])
+    print(f"\n{'decay':>7} {'peak lvl':>9} {'touch':>7} {'half depth':>11} "
+          f"{'lvl 200':>8}" + "".join(f"{f'{float(x):.2%}':>9}" for x in fracs)
+          + f" {'crossover':>11}")
+    for r in rows:
+        label = "none" if r["decay"] is None else f"{r['decay']:.0f}"
+        cross = ("never" if r["crossover_frac"] is None
+                 else f"{r['crossover_frac']:.2%}")
+        print(f"{label:>7} {r['peak_level']:>9} {r['touch_multiple']:>6.2f}x "
+              f"{r['half_depth_level']:>11} {r['far_level_multiple']:>7.3f}x"
+              + "".join(f"{r['cost_bps'][x]:>9.2f}" for x in fracs)
+              + f" {cross:>11}")
+    print(f"    (cost in bps per share by order size as a share of the day; "
+          f"touch and lvl 200 as multiples of the flat per-level size)")
+    lo = min(r["crossover_frac"] for r in rows if r["crossover_frac"])
+    hi = max(r["crossover_frac"] for r in rows if r["crossover_frac"])
+    print(f"\n    The crossover runs from {lo:.2%} to {hi:.2%} of a day's "
+          f"volume - ${lo * volume * price / 1e6:,.0f}M to "
+          f"${hi * volume * price / 1e6:,.0f}M of SPY -")
+    print(f"    on a parameter nothing here observes. That {hi / lo:.0f}x "
+          f"range is the error bar on the headline,")
+    print(f"    and the reason the handler ships the ramp: it is the dearest "
+          f"book of the family, so")
+    print(f"    the one number it cannot do is flatter the strategy.")
+
+
 def print_vol_elasticity(study: dict) -> None:
     """Section 1b was about where the depth sits. This is about when."""
     rows = study["rows"]
@@ -642,6 +723,8 @@ def main() -> None:
 
     by_shape = crossover_by_shape(price, volume)
     print_crossover_by_shape(by_shape, price, volume)
+    by_decay = crossover_by_decay(price, volume)
+    print_crossover_by_decay(by_decay, price, volume)
 
     vol_study = vol_elasticity_study(prices, opens, volumes)
     print_vol_elasticity(vol_study)
@@ -666,6 +749,7 @@ def main() -> None:
                    "median_price": price, "median_volume": volume,
                    "cost_curves": curves, "crossover": cross,
                    "shape": SHAPE, "crossover_by_shape": by_shape,
+                   "crossover_by_decay": by_decay,
                    "vol_elasticity": VOL_ELASTICITY,
                    "vol_elasticity_study": vol_study,
                    "capacity": cap, "depth_sweep": sweep, "fees": bill},

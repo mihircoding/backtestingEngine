@@ -304,6 +304,47 @@ def test_a_positive_shape_thins_the_touch_and_thickens_the_back():
     assert np.all(np.diff(w) > 0)   # and monotone in between
 
 
+def test_no_decay_reproduces_the_ramp_exactly():
+    """Every number quoted before the decay existed is still reachable."""
+    ramp = BookExecutionHandler._depth_weights(levels=50, shape=0.5)
+    same = BookExecutionHandler._depth_weights(levels=50, shape=0.5, decay=None)
+
+    np.testing.assert_array_equal(ramp, same)
+
+
+def test_decay_puts_the_peak_at_shape_times_decay_and_thins_past_it():
+    w = BookExecutionHandler._depth_weights(levels=200, shape=0.5, decay=40.0)
+
+    assert int(np.argmax(w)) + 1 == 20
+    assert np.all(np.diff(w[:19]) > 0)     # rising to the peak
+    assert np.all(np.diff(w[20:]) < 0)     # falling past it
+    assert w[-1] < 0.1                     # and the far book is nearly empty
+    assert w.sum() == pytest.approx(200)   # total still held fixed
+
+
+def test_decay_must_be_positive_or_off():
+    handler(decay=None)
+    handler(decay=20.0)
+    with pytest.raises(ValueError):
+        handler(decay=0.0)
+    with pytest.raises(ValueError):
+        handler(decay=-5.0)
+
+
+@pytest.mark.parametrize("size", [300, 1_000, 2_500, 5_000, 7_500, 9_000])
+def test_a_decaying_book_is_never_dearer_than_the_ramp(size):
+    """Moving size forward raises cumulative depth at every level, so the
+    hump book is reached-into less far than the ramp for any order. The
+    mirror image of the shaped-vs-flat test above, which is the whole reason
+    the decay ships off: this knob CAN discount a fill."""
+    d_ramp, h_ramp = handler(shape=1.0)
+    d_hump, h_hump = handler(shape=1.0, decay=3.0)
+    p_ramp = send(d_ramp, h_ramp, size)[0].fill_price
+    p_hump = send(d_hump, h_hump, size)[0].fill_price
+
+    assert p_hump <= p_ramp
+
+
 @pytest.mark.parametrize("size", [300, 1_000, 2_500, 5_000, 7_500, 9_000])
 def test_a_shaped_book_is_never_cheaper_than_a_flat_one(size):
     """The one-sidedness, across the whole range of sizes the book can fill.
