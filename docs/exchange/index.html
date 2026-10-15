@@ -117,8 +117,12 @@ input[type=number]{padding:7px 10px;border:1px solid var(--line2);border-radius:
 <div class="wrap">
   <div class="tagline">The agents flip coins. The market looks real anyway.</div>
   <h1>Limit Order Book &amp; Matching Engine</h1>
-  <p class="lede">A price-time priority matching engine — the piece of infrastructure that <em>is</em> a modern exchange — plus a zero-intelligence order flow simulator to run through it. <strong style="color:var(--ink)">The agents have no strategy at all. The book still produces a realistic spread distribution, concave price impact, and a mid price that mean-reverts at short horizons exactly the way real tick data does.</strong> None of that was programmed in.</p>
+  <p class="lede">The part of an exchange that matches buyers to sellers, built from scratch, plus a crowd of simulated traders who place orders at random. <strong style="color:var(--ink)">The traders have no strategy at all, and the market still comes out with a realistic spread, big orders that move the price less than proportionally, and a price that wobbles back after each trade, the way real tick data does.</strong> None of that was programmed in.</p>
   <p style="font-size:14px;margin:-4px 0 16px"><a href="../">&larr; Market Simulation Stack</a> &middot; the venue half</p>
+  <div class="note blue" style="max-width:70ch">
+    <p><strong>In plain English.</strong> An exchange is mostly a queue. Buyers and sellers post the prices they will accept, the best prices sit at the front, and when somebody agrees to pay the going rate the trade goes to whoever got there first. I built that queue, then pointed thousands of coin-flipping robots at it to see what a market made of pure noise looks like.</p>
+    <p>It looks surprisingly real, and that is the warning this page is about: a lot of patterns that look like trader behaviour are just the matching rules at work. Then I used the engine for questions that only make sense once you have one. What happens to a market maker whose connection is slightly slower than a rival&rsquo;s (it keeps trading, it just trades with the wrong people). Whether the rebates exchanges pay for quoting are what keeps that slower trader in business (they are). And how the opening and closing auctions, where everyone gets one price, differ from the rest of the day.</p>
+  </div>
   <div class="links">
     <a class="btn primary" href="#demo">Trade against the book</a>
     <a class="btn" href="#fees">What the venue charges</a>
