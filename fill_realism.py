@@ -53,8 +53,8 @@ import pandas as pd
 
 from exchange.fees import MAKER_TAKER
 from exchange.order import TICK
-from src.book_execution import (SHAPE, VOL_ELASTICITY, VOL_WINDOW,
-                                BookExecutionHandler)
+from src.book_execution import (PERSISTENCE, RECOVERY, SHAPE, VOL_ELASTICITY,
+                                VOL_WINDOW, BookExecutionHandler)
 from src.data_handler import HistoricalDataHandler
 from src.execution import (NextBarOpenExecutionHandler,
                            ParticipationLimitedExecutionHandler)
@@ -75,6 +75,14 @@ SIZE_FRACS = (0.0001, 0.001, 0.003, 0.01, 0.03, 0.10, 0.30)
 # sweep exists to show how much the crossover depends on a parameter nothing
 # in this repository can observe, not to pick one.
 DECAYS = (None, 80.0, 40.0, 20.0)
+# How much of a slice's displacement the next bar's book still carries. 0 is
+# the memoryless book every section before 5 used; 1 carries all of it, which
+# is past any published estimate and is in the sweep as the ceiling.
+PERSISTENCES = (0.0, 0.33, 0.67, 1.0)
+# Half-life of the carried displacement, in bars. None is Almgren's permanent
+# impact, which the round trip gets back; 5 bars is a book that heals in a
+# week, which it does not; 20 is a month, in between.
+RECOVERIES = (None, 5.0, 20.0)
 # 0 is the constant-depth book. 1.0 is the shipped default and the textbook
 # relationship; 2.0 is past anything measured and is there to show the effect
 # growing smoothly rather than as a candidate setting.
@@ -523,6 +531,95 @@ def fee_bill(prices, opens, volumes, aum: float = 1e9,
     return out
 
 
+# ---------- 5. what the book remembers ----------
+
+def memory_sweep(prices, opens, volumes, aums=(1e9, 5e9),
+                 persistences=PERSISTENCES, recoveries=RECOVERIES,
+                 participation: float = 0.10, depth_frac: float = 0.002,
+                 **kwargs) -> list[dict]:
+    """The sliced order, charged for its own earlier slices.
+
+    Every section above rebuilds the book from scratch each bar, so a slice
+    that walked twenty levels on Monday finds them all refilled at Monday's
+    prices on Tuesday. That is a model with no permanent impact, and it is
+    the one thing the square-root formula in execution.py has that the book
+    did not - which makes it the obvious candidate for why section 2 found
+    the book Sharpe ABOVE the formula's at every AUM.
+
+    `persistence` is the share of each slice's displacement still in the mid
+    at the next bar. Swept from 0 (the memoryless book every earlier table
+    used) to 1 (the whole displacement carried, which is more than any
+    empirical estimate), at the two AUM levels where slicing happens: $1bn
+    is a few slices an order, $5bn is a position that takes weeks to build.
+    `recovery` is the half-life of the carried displacement in bars; None is
+    Almgren's permanent impact, which never decays.
+
+    Each row reports the Sharpe, the share-weighted cost per slice, how much
+    of that cost was the handler's own doing (the carried offset the slice
+    started from), and the square-root model's Sharpe at the same AUM for
+    reference. The question is whether some setting of this knob lands the
+    book on the formula, and the answer is read off the table rather than
+    fitted.
+    """
+    first_price = float(prices.iloc[0, 0])
+    rows = []
+    for aum in aums:
+        shares = max(int(aum / first_price), 1)
+        sqrt_eq = run(prices, MovingAverageCrossStrategy, trade_size=shares,
+                      initial_cash=aum, opens=opens, volumes=volumes,
+                      execution_cls=ParticipationLimitedExecutionHandler,
+                      execution_kwargs={"participation": participation},
+                      **kwargs)
+        sqrt_sharpe = stats(sqrt_eq)["sharpe"]
+        for recovery in recoveries:
+            for persistence in persistences:
+                if persistence == 0.0 and recovery is not None:
+                    continue    # identical to the memoryless row
+                equity = run(prices, MovingAverageCrossStrategy,
+                             trade_size=shares, initial_cash=aum, opens=opens,
+                             volumes=volumes, execution_cls=BookExecutionHandler,
+                             execution_kwargs={"participation": participation,
+                                               "depth_frac": depth_frac,
+                                               "persistence": persistence,
+                                               "recovery": recovery},
+                             **kwargs)
+                ex = equity.attrs["execution"]
+                carried = _weighted(ex.slice_carried_bps, ex.slice_shares)
+                rows.append({
+                    "aum": aum,
+                    "persistence": persistence,
+                    "recovery": recovery,
+                    **stats(equity),
+                    "sqrt_sharpe": sqrt_sharpe,
+                    "slices": ex.slices,
+                    "cost_bps": _weighted(ex.slice_cost_bps, ex.slice_shares),
+                    "carried_bps": carried,
+                    "max_carried_bps": (float(np.max(np.abs(ex.slice_carried_bps)))
+                                        if ex.slice_carried_bps else 0.0),
+                    "max_delay_bars": ex.max_delay_bars,
+                    "deployed": 1.0 - ex.unfilled_shares * first_price / aum,
+                })
+    return rows
+
+
+def memory_closes_the_gap(rows: list[dict]) -> dict:
+    """At each AUM and recovery, the smallest persistence whose Sharpe is at
+    or below the square-root model's. None where even full persistence leaves
+    the book above the formula. Keyed "<aum>/<recovery>" with the recovery
+    spelled "never" for permanent impact."""
+    out = {}
+    for aum in sorted({r["aum"] for r in rows}):
+        for recovery in sorted({r["recovery"] for r in rows},
+                               key=lambda x: (x is not None, x or 0.0)):
+            group = [r for r in rows if r["aum"] == aum and r["recovery"] == recovery]
+            hit = [r for r in group if r["sharpe"] <= r["sqrt_sharpe"]]
+            label = "never" if recovery is None else f"{recovery:g}"
+            out[f"{aum:.0e}/{label}"] = (
+                min(hit, key=lambda r: r["persistence"])["persistence"]
+                if hit else None)
+    return out
+
+
 # ---------- reporting ----------
 
 def print_cost_curves(rows: list[dict], cross: float | None, price: float,
@@ -697,6 +794,31 @@ def print_fees(bill: dict) -> None:
     print(f"   Total taker fees paid: ${-paid['fee_paid'] / 1e6:,.1f}M")
 
 
+def print_memory_sweep(rows: list[dict], closes: dict) -> None:
+    print(f"\n5. WHAT THE BOOK REMEMBERS   the sliced order, charged for its "
+          f"own earlier slices")
+    print(f"\n{'aum':>6} {'persist':>8} {'recovery':>9} {'sharpe':>7} "
+          f"{'sqrt':>6} {'return':>8} {'cost':>7} {'carried':>8} "
+          f"{'max carried':>12} {'slices':>7} {'deployed':>9}")
+    for r in rows:
+        rec = "never" if r["recovery"] is None else f"{r['recovery']:.0f} bars"
+        print(f"{r['aum'] / 1e9:>5.0f}B {r['persistence']:>8.2f} {rec:>9} "
+              f"{r['sharpe']:>7.2f} {r['sqrt_sharpe']:>6.2f} "
+              f"{r['total_return']:>8.1%} {r['cost_bps']:>6.1f}bp "
+              f"{r['carried_bps']:>7.1f}bp {r['max_carried_bps']:>11.1f}bp "
+              f"{r['slices']:>7} {r['deployed']:>9.0%}")
+    for key, p in closes.items():
+        aum, recovery = key.split("/")
+        where = ("with permanent impact" if recovery == "never"
+                 else f"with a {recovery}-bar half-life")
+        if p is None:
+            print(f"   ${float(aum) / 1e9:.0f}bn {where}: no persistence "
+                  f"brings the book down to the square-root model.")
+        else:
+            print(f"   ${float(aum) / 1e9:.0f}bn {where}: at or below the "
+                  f"square-root model from persistence {p:.2f}.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--quick", action="store_true",
@@ -743,6 +865,11 @@ def main() -> None:
     bill = fee_bill(prices, opens, volumes)
     print_fees(bill)
 
+    memory = memory_sweep(prices, opens, volumes,
+                          aums=(1e9, 5e9) if not args.quick else (5e9,))
+    closes = memory_closes_the_gap(memory)
+    print_memory_sweep(memory, closes)
+
     os.makedirs("results", exist_ok=True)
     with open(OUT, "w") as fh:
         json.dump({"symbol": SYMBOL, "start": START, "end": END,
@@ -752,7 +879,9 @@ def main() -> None:
                    "crossover_by_decay": by_decay,
                    "vol_elasticity": VOL_ELASTICITY,
                    "vol_elasticity_study": vol_study,
-                   "capacity": cap, "depth_sweep": sweep, "fees": bill},
+                   "capacity": cap, "depth_sweep": sweep, "fees": bill,
+                   "persistence": PERSISTENCE, "recovery": RECOVERY,
+                   "memory_sweep": memory, "memory_closes_the_gap": closes},
                   fh, indent=1, default=float)
     print(f"\nwrote {OUT}")
 

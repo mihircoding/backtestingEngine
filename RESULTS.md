@@ -404,12 +404,119 @@ is per share and the edge is per holding period, and nothing about the venue
 tells you which one you are. That contrast is only available because both
 strategies now live in the same repository.
 
+### 5. What the book remembers, and why the formula was dearer
+
+Reproduce with: `python fill_realism.py` (section 5 of the printout)
+
+Every table above rebuilds the book from scratch each bar. A slice that walked
+twenty levels on Monday finds all twenty refilled at Monday's prices on
+Tuesday, and nothing the strategy does ever moves the price it trades at next.
+That is the "remembers nothing" line in the list below, and it is also the
+one thing the square-root formula in `execution.py` has that the book did not:
+the permanent half of impact. Almgren's split is that part of what an order
+pays is temporary (the levels it ate, which refill) and part is permanent (the
+price is higher afterwards because the order happened). A fresh book every bar
+is a model with no permanent part at all, which made it the obvious suspect
+for why section 2 found the book Sharpe *above* the formula's at every AUM.
+
+`persistence` is the share of each slice's displacement — its fill price
+against the mid it was sent at — still in the mid when the next bar's book is
+built. The second slice of a large order then pays for the first. `recovery`
+is the half-life of that carried displacement in bars; `None` never decays,
+which is Almgren's permanent impact. One mechanical point that the tests pin:
+a slice is charged half of its own permanent displacement on top of what the
+book printed, because the permanent part accrues while the slice trades. That
+is the trapezoid rule, the half in Almgren's ½γX², and without it a round trip
+nets the permanent impact to a *gain* of one slice — a discretisation artifact
+that the first version of this section had and that showed up as a 10-year
+backtest getting cheaper the more it remembered.
+
+Sweep at the two AUM levels where slicing happens, book at its shipped
+settings otherwise:
+
+| AUM | persistence | recovery | Sharpe | sqrt Sharpe | return | cost/slice | own carry | max carried | slices |
+|---|---|---|---|---|---|---|---|---|---|
+| $1bn | 0 | — | 0.57 | 0.49 | 118% | 16.4 bp | 0.0 | 0 bp | 89 |
+| $1bn | 0.33 | never | 0.57 | 0.49 | 119% | 16.3 | −2.9 | 53 | 89 |
+| $1bn | 1.00 | never | 0.56 | 0.49 | 120% | 15.9 | −8.8 | 164 | 89 |
+| $1bn | 0.33 | 5 bars | 0.55 | 0.49 | 115% | 18.8 | −0.4 | 11 | 89 |
+| $1bn | 1.00 | 5 bars | 0.53 | 0.49 | 109% | 23.6 | −1.1 | 32 | 89 |
+| $5bn | 0 | — | 0.52 | 0.44 | 100% | 21.1 | 0.0 | 0 | 301 |
+| $5bn | 0.33 | never | 0.51 | 0.44 | 100% | 21.3 | −3.2 | 206 | 301 |
+| $5bn | 1.00 | never | 0.47 | 0.44 | 99% | 21.9 | −9.7 | 623 | 301 |
+| $5bn | 0.33 | 5 bars | 0.47 | 0.44 | 90% | 29.3 | +4.8 | 28 | 301 |
+| $5bn | 0.67 | 5 bars | **0.42** | 0.44 | 80% | 37.8 | +9.7 | 56 | 301 |
+| $5bn | 1.00 | 5 bars | 0.38 | 0.44 | 70% | 46.1 | +14.5 | 84 | 301 |
+| $5bn | 1.00 | 20 bars | 0.44 | 0.44 | 83% | 35.3 | +3.6 | 92 | 301 |
+
+"Own carry" is the share-weighted offset each slice started from, signed
+against the order, so a negative number means the handler's own past trading
+had on average pushed the price *toward* the slice. Deployed capital is
+unchanged on every row.
+
+**Permanent impact is not a cost to a round trip, so it cannot be what the
+formula has that the book does not.** With `recovery=None` the cost per slice
+barely moves — 16.4 to 15.9 bps at $1bn, 21.1 to 21.9 at $5bn — and own carry
+is *negative*: the strategy buys a position over weeks, pushing the mid up
+through every slice, then sells it over weeks starting from the mid it pushed
+up to. What the entry paid the exit gets back. That is the textbook result
+(Huberman and Stanzl 2004: with linear permanent impact, round trips are
+free of it) and it is the thing a formula that charges impact per slice,
+both ways, gets wrong. The square-root model charges the full
+displacement on the way in and the full displacement on the way out. The
+book with permanent memory charges it once. **So the gap in section 2 — book
+above formula by 0.03 to 0.08 — is not the book being generous. It is the
+formula charging the permanent half of impact twice.**
+
+**What the formula is actually modelling is a book that heals in about a
+week and keeps half of what you moved.** The transient rows are the ones that
+raise cost, because a mid that has recovered by the time the exit arrives does
+not give the entry's impact back. At $5bn with a 5-bar half-life the book
+crosses the formula between persistence 0.33 and 0.67 (0.47, 0.42 against
+0.44), and at a 20-bar half-life it lands on it exactly at persistence 1.0.
+The formula's one constant, `impact_coef=1.0`, is therefore equivalent to a
+specific pair of book parameters, and that pair is in the plausible range —
+the propagator literature puts the surviving fraction at a day's horizon
+between a third and two thirds (Bouchaud et al. 2004), with a decay that is
+slow but not zero. A constant nobody publishes turns out to be a statement
+about resilience that someone has.
+
+**The permanent rows have a number in them that should not be believed, and
+it is the reason the knob ships off.** Max carried is 164 bps at $1bn and 623
+bps at $5bn — the handler's private mid drifting six percent away from the
+tape over a decade, because buys and sells happen into different depth and
+the displacements do not cancel. That is not a market; it is what a
+never-decaying offset on top of *observed* prices does, and the observed
+prices already contain the permanent impact of everything that actually
+traded. What a backtest can honestly add is the strategy's own displacement
+over the horizon the tape could not have seen it, which is days, not years.
+So the transient model is the right one and the permanent one is a limiting
+case — but the transient model's two parameters are exactly as unobservable
+as `decay` was in 1d, and for the same reason `persistence` ships at 0: the
+memoryless book is the one setting that cannot be accused of a chosen
+number, and the sweep is the error bar. The direction is at least
+one-sided, like `shape` — a positive persistence can only make a one-way
+order dearer, and `tests/test_book_execution.py` pins that.
+
+**And, for the fourth time, deployed capital did not move.** Shape, vol
+elasticity, decay, now memory: four corrections to the cost of a fill, and
+the capacity cap is the same 41% at $5bn on every row of every table. The
+participation cap does not know what the book looks like. The number that is
+robust to the cost model is the one that was never about cost, and it is the
+number to lead with.
+
 ### What this still does not model
 
 - One bar is one book. A day's liquidity is pooled into a single snapshot at
   the open, which overstates what is at the touch in any instant and
   understates how long working an order really takes.
-- The book is rebuilt every bar and remembers nothing between them.
+- ~~The book is rebuilt every bar and remembers nothing between them.~~
+  Section 5. `persistence` carries a share of each slice's displacement into
+  the next bar's mid and `recovery` lets it heal. Permanent impact nets out on
+  the round trip and the transient version lands on the square-root formula at
+  a half-life of a week, which says what the formula's constant was. Ships at
+  0 because both parameters are unobserved here and the memoryless book is
+  the one setting nobody chose.
 - Every order is a taker. Passive execution is deliberately absent, and the
   reason is a measurement: pooling a day's volume puts ~153,000 shares at the
   touch, and section 8 of notes/exchange.md already showed that an order

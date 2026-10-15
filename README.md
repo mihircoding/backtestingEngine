@@ -46,11 +46,11 @@ above $5bn, because the participation cap stops filling and the statistic ends
 up describing idle cash instead of a strategy. [RESULTS.md](RESULTS.md) has
 all three, and the corrections.
 
-310 tests.
+327 tests.
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                 # 310 passed
+python -m pytest -q                 # 327 passed
 
 # the two halves together
 python fill_realism.py              # fill models compared, the headline result

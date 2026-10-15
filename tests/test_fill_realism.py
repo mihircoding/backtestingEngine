@@ -16,8 +16,8 @@ import pytest
 
 from exchange.order import TICK
 from fill_realism import (_weighted, cost_curves, crossover, crossover_by_decay,
-                          crossover_by_shape,
-                          depth_multipliers, interpretable_to)
+                          crossover_by_shape, depth_multipliers,
+                          interpretable_to, memory_closes_the_gap)
 
 PRICE = 100.0
 VOLUME = 1_000_000.0
@@ -292,3 +292,40 @@ def test_slices_the_estimator_could_not_score_are_left_out():
 def test_nothing_to_average_is_not_an_error():
     assert np.isnan(_weighted([], []))
     assert np.isnan(_weighted([float("nan")], [10]))
+
+
+# ---------- 5. what the book remembers ----------
+
+def memory_rows(aum=5e9, sqrt=0.44, **sharpes):
+    """Rows the way memory_sweep() lays them out, keyed recovery -> list of
+    (persistence, sharpe). None is permanent impact."""
+    rows = []
+    for recovery, points in sharpes.items():
+        rec = None if recovery == "never" else float(recovery.lstrip("r"))
+        for persistence, sharpe in points:
+            rows.append({"aum": aum, "persistence": persistence,
+                         "recovery": rec, "sharpe": sharpe, "sqrt_sharpe": sqrt})
+    return rows
+
+
+def test_the_gap_closes_at_the_first_persistence_at_or_below_the_formula():
+    rows = memory_rows(r5=[(0.0, 0.52), (0.33, 0.47), (0.67, 0.42), (1.0, 0.38)])
+    assert memory_closes_the_gap(rows) == {"5e+09/5": 0.67}
+
+
+def test_permanent_rows_that_never_reach_the_formula_report_none():
+    rows = memory_rows(never=[(0.0, 0.52), (0.33, 0.51), (1.0, 0.47)])
+    assert memory_closes_the_gap(rows) == {"5e+09/never": None}
+
+
+def test_each_recovery_is_judged_on_its_own():
+    rows = memory_rows(never=[(0.0, 0.52), (1.0, 0.47)],
+                       r5=[(0.33, 0.47), (0.67, 0.42)],
+                       r20=[(0.33, 0.49), (1.0, 0.44)])
+    out = memory_closes_the_gap(rows)
+    assert out == {"5e+09/never": None, "5e+09/5": 0.67, "5e+09/20": 1.0}
+
+
+def test_equal_to_the_formula_counts_as_closing_it():
+    rows = memory_rows(r20=[(0.33, 0.49), (1.0, 0.44)], sqrt=0.44)
+    assert memory_closes_the_gap(rows)["5e+09/20"] == 1.0

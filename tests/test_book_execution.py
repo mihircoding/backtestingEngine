@@ -584,3 +584,123 @@ def test_nonsense_vol_settings_are_refused_at_construction(bad):
                                       {"AAA": [VOLUME]})
     with pytest.raises(ValueError):
         BookExecutionHandler(data, **bad)
+
+
+# ---------- what the book remembers ----------
+#
+# Flat book, 1,000 shares a level, participation capped at 2,500 shares a
+# bar, so a 5,000-share order is two slices. The first slice takes 1,000 at
+# .01, 1,000 at .02 and 500 at .03: a VWAP of 100.018, which is 1.8 cents
+# off the mid. With persistence p the slice is charged half of its own
+# permanent displacement on top (it accrues while the slice trades), and
+# the next bar's book is centred p * 1.8 cents higher.
+
+def sliced(persistence, recovery=None, quantity=5_000, bars=2, n=12):
+    data, ex = handler(n=n, participation=0.0025, persistence=persistence,
+                       recovery=recovery)
+    return data, ex, send(data, ex, quantity, bars=bars)
+
+
+def test_a_memoryless_book_charges_every_slice_the_same():
+    _, ex, fills = sliced(persistence=0.0)
+    assert [f.fill_price for f in fills] == [pytest.approx(100.018)] * 2
+    assert ex.carried_offset("AAA") == 0.0
+    assert ex.slice_carried_bps == [0.0, 0.0]
+
+
+def test_persistence_zero_is_the_default_and_touches_nothing():
+    """Every number before this parameter existed has to be reachable."""
+    data, ex = handler()
+    assert ex.persistence == 0.0 and ex.recovery is None
+    assert send(data, ex, 2_500)[0].fill_price == pytest.approx(100.018)
+
+
+def test_full_persistence_makes_the_second_slice_pay_for_the_first():
+    """First slice: the book's 100.018 plus half its own 1.8 cents, 100.027.
+    Second slice: a book centred 1.8 cents up, so levels at .03, .04, .05
+    print 100.038, plus half of its own 2.0 cents (1.8 snapped to the grid
+    moved the levels by 2), 100.048."""
+    _, ex, fills = sliced(persistence=1.0)
+    first, second = (f.fill_price for f in fills)
+    assert first == pytest.approx(100.027)
+    assert second == pytest.approx(100.048)
+    assert ex.slice_carried_bps[0] == 0.0
+    assert ex.slice_carried_bps[1] == pytest.approx(1.8)
+
+
+def test_half_persistence_carries_half_the_displacement():
+    _, ex, fills = sliced(persistence=0.5)
+    # book centred 0.9 cents up: levels snap to .02, .03, .04 -> 100.028,
+    # displacement 1.9 cents, a quarter of which is the slice's own share
+    assert fills[1].fill_price == pytest.approx(100.028 + 0.25 * 0.019)
+    assert ex.carried_offset("AAA") == pytest.approx(0.009 + 0.5 * 0.019)
+
+
+def test_permanent_impact_is_not_a_cost_to_the_round_trip():
+    """Buy 2,500, then sell 2,500 into a book that remembers the buy. The
+    buy paid half its own displacement on top of the book; the sell starts
+    from a mid 1.8 cents up and gets that back. Net, the round trip costs
+    what it cost in the memoryless book, to within the tick the carried mid
+    gets snapped to. That is the Almgren result - permanent impact is a cost
+    to the slices of one order and not to the round trip - and a model that
+    charged it both ways would be charging the strategy for moving a price
+    it later gets to sell at."""
+    data, ex = handler(n=12, participation=0.0025, persistence=1.0)
+    buy = send(data, ex, 2_500)[0].fill_price
+    sell = send(data, ex, -2_500)[0].fill_price
+    memoryless = 2 * 0.018
+    assert buy == pytest.approx(100.027)
+    assert buy - sell == pytest.approx(memoryless, abs=TICK)
+    assert abs(ex.carried_offset("AAA")) < TICK
+
+
+def test_recovery_halves_the_carried_offset_every_bar():
+    data, ex = handler(n=12, participation=0.0025, persistence=1.0, recovery=1.0)
+    send(data, ex, 2_500)
+    assert ex.carried_offset("AAA") == pytest.approx(0.018)
+    data.next_bar()
+    ex.pop_settled_fills(data.current_time())
+    assert ex.carried_offset("AAA") == pytest.approx(0.009)
+    for _ in range(8):
+        data.next_bar()
+        ex.pop_settled_fills(data.current_time())
+    assert ex.carried_offset("AAA") == 0.0   # swept once under a hundredth of a tick
+
+
+def test_a_book_that_recovers_charges_the_round_trip_twice():
+    """Same round trip, but the mid has healed by the time the sell arrives.
+    Now the buy's permanent half is never given back, and the round trip is
+    dearer than the memoryless one by exactly the halves both legs paid."""
+    data, ex = handler(n=30, participation=0.0025, persistence=1.0, recovery=0.5)
+    buy = send(data, ex, 2_500)[0].fill_price
+    for _ in range(10):
+        data.next_bar()
+        ex.pop_settled_fills(data.current_time())
+    assert ex.carried_offset("AAA") == 0.0
+    sell = send(data, ex, -2_500)[0].fill_price
+    assert buy - sell == pytest.approx(2 * 0.018 + 2 * 0.009)
+
+
+def test_recovery_only_matters_between_bars_not_inside_one():
+    """Two slices on consecutive bars, half-life of one bar: the second
+    slice's book is centred half the displacement up, as with persistence
+    0.5 and no decay - but it still pays half of its own full displacement."""
+    _, _, fills = sliced(persistence=1.0, recovery=1.0)
+    assert fills[1].fill_price == pytest.approx(100.028 + 0.5 * 0.019)
+
+
+def test_persistence_can_only_make_a_one_way_order_dearer():
+    """One-sided, like shape: at every setting the sliced order's average
+    fill is at least the memoryless one. The knob cannot flatter a backtest."""
+    base = np.mean([f.fill_price for f in sliced(0.0)[2]])
+    for p in (0.1, 0.3, 0.6, 1.0):
+        assert np.mean([f.fill_price for f in sliced(p)[2]]) >= base
+
+
+@pytest.mark.parametrize("bad", [{"persistence": -0.1}, {"persistence": 1.5},
+                                 {"recovery": 0.0}, {"recovery": -3.0}])
+def test_nonsense_memory_settings_are_refused_at_construction(bad):
+    data = make_handler_with_volumes({"AAA": [OPEN]}, {"AAA": [OPEN]},
+                                      {"AAA": [VOLUME]})
+    with pytest.raises(ValueError):
+        BookExecutionHandler(data, **bad)

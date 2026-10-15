@@ -219,6 +219,42 @@ VOL_ELASTICITY = 1.0
 # extrapolated off the end of it.
 MULTIPLIER_BAND = (0.25, 4.0)
 
+# What the book remembers from one bar to the next. Every bar the handler
+# builds a fresh book centred on the open, so a slice that walked twenty
+# levels on Monday finds all twenty refilled at Monday's prices on Tuesday,
+# and the strategy's own trading never moves the price it trades at next.
+# That is the "book remembers nothing" limitation in notes/backtester.md, and
+# it is also the one thing the square-root model in execution.py has that
+# this handler did not: the permanent half of impact. Almgren's split is that
+# part of what an order pays is temporary - the levels it ate, which refill -
+# and part is permanent - the price is higher afterwards because the order
+# happened. A fresh book every bar is a model with no permanent part at all.
+#
+# PERSISTENCE is the share of each slice's displacement (its fill price
+# against the mid it was sent at) that is still in the mid when the next bar
+# opens. The book is centred on the open PLUS that carried offset, so the
+# second slice of a large order pays for the first. 0 is the memoryless book
+# this handler shipped with, and the tests pin that it reproduces every old
+# number. 1 carries the whole displacement, which is more than any empirical
+# estimate: the propagator literature (Bouchaud et al. 2004; Obizhaeva and
+# Wang 2013) puts the surviving fraction at a day's horizon somewhere between
+# a third and two thirds, and the sweep in fill_realism.py covers both ends.
+#
+# Ships at 0, for the same reason DECAY does. A positive value makes a
+# sliced order DEARER, which is the safe direction - but how much dearer is
+# set by a number this repository cannot observe, and the honest output is
+# the range, not a point inside it.
+PERSISTENCE = 0.0
+
+# Bars for the carried offset to halve. None is permanent impact in Almgren's
+# sense - the displacement never decays, so a round trip nets it out and only
+# the slices of one order pay for each other. A finite value is the transient
+# version, where the book recovers at a rate. On daily bars the distinction
+# is mostly academic, because the trend follower this is measured on holds
+# for months, and an offset that has halved in five days is gone by the time
+# the position is closed either way.
+RECOVERY = None
+
 
 class BookExecutionHandler:
     """Routes orders into the matching engine and reports the fills it printed.
@@ -252,6 +288,15 @@ class BookExecutionHandler:
                   deeper book than before - so whether it helps or hurts a
                   given strategy is a measurement, not a property of the knob.
     vol_window  : bars in that trailing volatility estimate. 20 is a month.
+    persistence : share of each slice's displacement from the mid that is
+                  still there when the next bar's book is built. 0 is a book
+                  that refills completely between bars, which is what this
+                  handler did before; a positive value is permanent impact,
+                  and the next slice of the same order starts from a worse
+                  price because of the last one. One-sided like `shape`: it
+                  can only make a sliced order dearer.
+    recovery    : bars for that carried displacement to halve. None means it
+                  never does, which is the Almgren permanent-impact model.
     participation : cap on the share of a bar's volume one order may take.
                   Identical in meaning to the participation handler's, so the
                   two differ only in how the price is formed.
@@ -270,7 +315,9 @@ class BookExecutionHandler:
                  fees: FeeSchedule = FLAT, commission_per_share: float = 0.005,
                  shape: float = SHAPE, vol_elasticity: float = VOL_ELASTICITY,
                  vol_window: int = VOL_WINDOW,
-                 decay: float | None = DECAY):
+                 decay: float | None = DECAY,
+                 persistence: float = PERSISTENCE,
+                 recovery: float | None = RECOVERY):
         if not 0 < participation <= 1:
             raise ValueError("participation must be in (0, 1]")
         if depth_frac <= 0:
@@ -285,6 +332,10 @@ class BookExecutionHandler:
             raise ValueError("vol_elasticity must be non-negative")
         if vol_window < 2:
             raise ValueError("vol_window must be at least 2 bars")
+        if not 0 <= persistence <= 1:
+            raise ValueError("persistence must be in [0, 1]")
+        if recovery is not None and recovery <= 0:
+            raise ValueError("recovery must be positive, or None for permanent")
 
         self.data = data
         self.depth_frac = depth_frac
@@ -297,9 +348,14 @@ class BookExecutionHandler:
         self.participation = participation
         self.fees = fees
         self.commission_per_share = commission_per_share
+        self.persistence = persistence
+        self.recovery = recovery
 
         self._working: dict[str, int] = {}
         self._age: dict[str, int] = {}
+        # Displacement of the mid, in dollars, that the handler's own earlier
+        # slices left behind. Signed: positive means the price was pushed up.
+        self._offset: dict[str, float] = {}
         self._pending_vol: tuple[float, float] = (1.0, float("nan"))
 
         # Diagnostics. Same contract as the participation handler: this handler
@@ -320,6 +376,7 @@ class BookExecutionHandler:
         self.slice_cost_bps: list[float] = []  # vwap vs the bar's open, signed
         self.slice_vol_pct: list[float] = []   # where that bar's vol sat, 0-1
         self.slice_multiplier: list[float] = []  # depth multiplier applied
+        self.slice_carried_bps: list[float] = []  # offset the slice started from
 
         # Cache for the trailing-vol calculation, keyed on how many bars have
         # been released. Every working symbol on a bar asks the same question
@@ -347,6 +404,7 @@ class BookExecutionHandler:
     def pop_settled_fills(self, time) -> list[FillEvent]:
         """Send one bar's worth of every working order to the book."""
         fills = []
+        self._recover()
 
         for symbol in list(self._working):
             remaining = self._working[symbol]
@@ -358,6 +416,8 @@ class BookExecutionHandler:
             if slice_size == 0:
                 continue      # no volume, or a cap below one share: it waits
 
+            open_px = self.data.current_open(symbol)
+            carried = self._offset.get(symbol, 0.0)
             filled, vwap, walked = self._route(symbol, slice_size, volume)
 
             if filled == 0:
@@ -375,21 +435,32 @@ class BookExecutionHandler:
             # FillEvent.commission is a charge.
             commission = abs(filled) * self.commission_per_share - fee
 
+            # What the book printed is the price against the mid it was
+            # built on. The permanent part of this slice's own displacement
+            # accrues while the slice trades, so on average the slice pays
+            # half of it - the trapezoid rule, and the reason Almgren's cost
+            # of a program carries a half on the permanent term. Without the
+            # half a round trip would net the permanent impact to a GAIN of
+            # one slice, which is a discretisation artifact and not a market.
+            displacement = vwap - (open_px + carried)
+            price = vwap + self.persistence * displacement / 2.0
+
             fills.append(FillEvent(time=time, symbol=symbol, quantity=filled,
-                                    fill_price=vwap, commission=commission))
+                                    fill_price=price, commission=commission))
             self.slices += 1
             self.levels_walked.append(walked)
 
             # Cost of this slice against the price it was sent at, signed so
             # positive always means the fill went against the order whichever
             # way it was pointing.
-            open_px = self.data.current_open(symbol)
-            adverse = (vwap - open_px) if filled > 0 else (open_px - vwap)
+            adverse = (price - open_px) if filled > 0 else (open_px - price)
             multiplier, percentile = self._pending_vol
             self.slice_shares.append(abs(filled))
             self.slice_cost_bps.append(adverse / open_px * 10_000)
             self.slice_vol_pct.append(percentile)
             self.slice_multiplier.append(multiplier)
+            self.slice_carried_bps.append(carried * np.sign(filled) / open_px * 10_000)
+            self._remember(symbol, displacement)
             if abs(filled) < abs(slice_size):
                 self.exhausted_slices += 1
 
@@ -411,6 +482,29 @@ class BookExecutionHandler:
         thinks it has and does not.
         """
         self.unfilled_shares = sum(abs(q) for q in self._working.values())
+
+    # ---------- what the book remembers ----------
+
+    def _remember(self, symbol: str, displacement: float) -> None:
+        """Carry `persistence` of this slice's displacement into the next bar."""
+        if self.persistence == 0.0:
+            return
+        self._offset[symbol] = (self._offset.get(symbol, 0.0)
+                                + self.persistence * displacement)
+
+    def _recover(self) -> None:
+        """One bar of the book healing. Called once per bar, before routing."""
+        if self.recovery is None or not self._offset:
+            return
+        keep = 0.5 ** (1.0 / self.recovery)
+        for symbol in list(self._offset):
+            self._offset[symbol] *= keep
+            if abs(self._offset[symbol]) < TICK / 100:
+                del self._offset[symbol]
+
+    def carried_offset(self, symbol: str) -> float:
+        """Dollars the mid is displaced by the handler's own past slices."""
+        return self._offset.get(symbol, 0.0)
 
     # ---------- the book ----------
 
@@ -492,7 +586,7 @@ class BookExecutionHandler:
         have paid for.
         """
         book = LimitOrderBook()
-        mid = self.data.current_open(symbol)
+        mid = self.data.current_open(symbol) + self._offset.get(symbol, 0.0)
         multiplier, percentile = self._trailing_vol(symbol)
         self._pending_vol = (multiplier, percentile)
         flat = self.depth_frac * volume * multiplier
