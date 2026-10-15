@@ -95,9 +95,13 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
 
 <header>
 <div class="wrap">
-  <div class="tagline">Two halves of one question: what did the order actually fill at?</div>
+  <div class="tagline">One question: what price did the trade actually get?</div>
   <h1>Market Simulation Stack</h1>
-  <p class="lede">An event-driven backtester, a price-time priority matching engine, and a bridge between them. Every backtester decides your fill price with a formula; this one can ask a real order book instead. <strong style="color:var(--ink)">The standard flat-slippage assumption turns out to be five times too expensive for a small order and fourteen times too cheap for a large one.</strong> 327 tests.</p>
+  <p class="lede">A backtester and a simulated exchange, wired together. Most backtesters guess what a trade costs with a formula. This one sends the order into an order book and reads off what it got. <strong style="color:var(--ink)">The usual flat slippage guess is about 5x too expensive for small orders and 14x too cheap for big ones.</strong> 327 tests.</p>
+  <div class="note blue" style="max-width:70ch">
+    <p><strong>In plain English.</strong> A backtester replays history and asks "what if I had traded this way?" The weak spot is always the price you assume you got, because in real life a big order moves the price against you. I built the matching part of an exchange from scratch, then made the backtester trade through it, so the cost of each trade comes from how much is actually for sale at each price instead of from a number I picked.</p>
+    <p>Then I made the simulated book more realistic one step at a time (thin at the best price, shallower on wild days, emptier far out, and able to remember yesterday's trades). Each step changed the cost of trading. None of them changed how much money the strategy could run, which told me which number on this page was the solid one.</p>
+  </div>
   <div class="links">
     <a class="btn primary" href="#fills">The fill result</a>
     <a class="btn" href="#results">Strategy results</a>
@@ -113,8 +117,8 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
 <div class="wrap">
   <div class="eyebrow">The result that needed both halves</div>
   <h2>Fills simulated, not assumed</h2>
-  <p class="lede">Every execution handler here used to price its own fills — a flat <span class="mono">slippage_bps</span>, or a square-root impact law whose constant every firm calibrates on its own fills and nobody publishes. So a cost figure was quoted in a number the reader cannot check. <strong style="color:var(--ink)">The matching engine in <span class="mono">exchange/</span> does not need a formula: it knows what the fill was, because it printed it.</strong></p>
-  <p><span class="mono">src/book_execution.py</span> builds a book from each bar's volume, walks it, and takes the volume-weighted price of the resting orders the order actually consumed. Cost stops being a parameter and becomes a consequence of depth.</p>
+  <p class="lede">The backtester used to price every trade with a formula: a flat charge, or a square-root rule with a constant that every firm tunes privately and nobody publishes. So any cost on this page was a number the reader could not check. <strong style="color:var(--ink)">The matching engine in <span class="mono">exchange/</span> does not need a formula. It knows what the trade got, because it filled it.</strong></p>
+  <p><span class="mono">src/book_execution.py</span> builds an order book out of each day's volume, sends the order into it, and takes the average price of what the order actually consumed. Cost stops being a setting and becomes a result.</p>
 
   <h3 style="margin-top:28px">Cost per share on SPY, four models</h3>
   <table>
