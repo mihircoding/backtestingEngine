@@ -505,6 +505,141 @@ participation cap does not know what the book looks like. The number that is
 robust to the cost model is the one that was never about cost, and it is the
 number to lead with.
 
+### 6. The square root was in the slice, not the order
+
+Reproduce with: `python fill_realism.py` (section 6 of the printout)
+
+Section 5 ended with a sentence I wanted to be able to say: that the formula's
+constant is equivalent to a pair of book parameters, so the two execution
+handlers are one model in two parametrisations. It was true at one AUM. This
+section is what happened when I tried to make it true across sizes, and the
+reason it cannot be is a flaw in the formula handler that has been there since
+the first commit.
+
+**What `execution.py` actually charges.** The participation handler's docstring
+says cost follows a square-root law and cites Almgren. The law in the
+literature is a statement about a whole order: an order of Q shares worked
+over a day or a week costs about σ√(Q/V) per share, where V is a day's volume
+(Almgren et al. 2005, Tóth et al. 2011). What the handler charges is
+σ√(q/V) per *slice*, where q is one bar's slice. Those are the same number
+only while the order fits in one bar. Past that, every slice is the
+participation cap, every slice costs the same, and the cost per share of the
+whole order stops depending on how big the whole order is. A position that
+takes a day to build and one that takes a month cost the same per share.
+That is not the square-root law. It is a flat charge with a square root in
+its name.
+
+**The test.** One order of Q shares, from a hundredth of a day's volume up to
+three days of it, worked to completion at 10% participation into a book on a
+flat tape — same open and same volume every bar, no volatility — so the only
+thing that can move the price between slices is what the book remembers of
+its own earlier slices. The number reported is implementation shortfall: the
+share-weighted fill against the mid the order arrived at. Next to it, what the
+formula handler charges the same order, and what the law it is named after
+says. Cost in basis points per share, SPY at $271 and 77M shares a day:
+
+| days of volume | 0.01 | 0.02 | 0.05 | 0.10 | 0.20 | 0.50 | 1.0 | 2.0 | 3.0 |
+|---|---|---|---|---|---|---|---|---|---|
+| book, memoryless (ships) | 3.6 | 5.9 | 10.9 | 17.5 | 17.5 | 17.5 | 17.5 | 17.5 | 17.5 |
+| book, persistence 0.33, permanent | 4.3 | 6.8 | 12.7 | 20.3 | 23.3 | 32.2 | 46.7 | 75.9 | 105.0 |
+| book, persistence 1.00, permanent | 5.5 | 8.8 | 16.4 | 26.2 | 35.1 | 61.7 | 106.0 | 194.5 | 283.1 |
+| book, persistence 0.33, 5-bar half-life | 4.3 | 6.8 | 12.7 | 20.3 | 22.9 | 29.3 | 36.8 | 45.4 | 49.7 |
+| book, persistence 1.00, 5-bar half-life | 5.5 | 8.8 | 16.4 | 26.2 | 34.0 | 53.3 | 76.3 | 102.1 | 114.9 |
+| book, persistence 1.00, 20-bar half-life | 5.5 | 8.8 | 16.4 | 26.2 | 34.7 | 59.3 | 96.4 | 159.4 | 210.0 |
+| **formula, as coded** | 13.0 | 17.6 | 26.6 | 36.8 | **36.8** | **36.8** | **36.8** | **36.8** | **36.8** |
+| square-root law, Y = 1 | 11.0 | 15.6 | 24.6 | 34.8 | 49.2 | 77.8 | 110.0 | 155.6 | 190.5 |
+
+Orders up to 0.10 of a day fit in one slice; everything to the right is
+sliced. Read across the formula row: 36.8 bps from a tenth of a day to three
+days of volume, while the law it cites goes from 35 to 190. The memoryless
+book, which is what ships, does the same thing at 17.5. Neither of the two
+handlers this repository compares has a cost that grows with the size of a
+sliced order, and section 2's capacity ladder was built with both of them.
+
+**The exponent.** Slope of log cost on log size, fitted separately on the
+orders that fit in one bar and on the ones that are sliced, because the two
+regimes have different causes:
+
+| memory | book, one bar | book, sliced | formula, sliced | law, sliced | implied Y |
+|---|---|---|---|---|---|
+| none (ships) | 0.68 | **0.00** | **0.00** | 0.50 | 0.20 |
+| 0.33, permanent | 0.68 | **0.48** | 0.00 | 0.50 | **0.49** |
+| 0.67, permanent | 0.68 | 0.63 | 0.00 | 0.50 | 0.73 |
+| 1.00, permanent | 0.68 | 0.71 | 0.00 | 0.50 | 0.96 |
+| 0.33, 5-bar half-life | 0.68 | 0.27 | 0.00 | 0.50 | 0.37 |
+| 0.67, 5-bar | 0.68 | 0.39 | 0.00 | 0.50 | 0.53 |
+| 1.00, 5-bar | 0.68 | 0.45 | 0.00 | 0.50 | 0.68 |
+| 0.33, 20-bar | 0.68 | 0.41 | 0.00 | 0.50 | 0.44 |
+| 0.67, 20-bar | 0.68 | 0.55 | 0.00 | 0.50 | 0.66 |
+| 1.00, 20-bar | 0.68 | 0.63 | 0.00 | 0.50 | 0.86 |
+
+Inside one bar the exponent is 0.68 whatever the memory setting, and it is set
+by the depth profile: with `shape=0.5` cumulative depth grows like the
+levels walked to the 1.5, so cost grows like size to the 1/1.5. The flat book
+would give 1.0 (the test pins that) and the law gives 0.5; the shipped
+profile sits between them, a little steeper than the law. Across bars the
+profile drops out entirely and memory is the only thing left. A book that
+refills completely has an exponent of exactly zero, and so does the formula.
+
+**Persistence 0.33 with no recovery is the square-root law.** Exponent 0.48
+against the law's 0.50, and the implied coefficient — book cost over
+σ√(Q/V), geometric mean across the sliced orders — is 0.49. The literature
+puts Y between a half and one, with Tóth et al.'s estimate near the bottom
+of that range. So a book that keeps a third of each slice's displacement and
+never gives it back reproduces the empirical impact law in both exponent and
+level, on a parameter grid that was chosen in section 5 for a different
+purpose. The other permanent rows are too steep (0.63, 0.71: a book that
+keeps everything is on its way to linear, which is Almgren's permanent term
+on its own) and the 5-bar rows are too shallow (0.27 to 0.45: a book that has
+forgotten the first slice by the sixth cannot charge the thirtieth for it).
+The 20-bar rows bracket the law, which is what a half-life comparable to the
+order's own duration should do.
+
+**So the section 5 sentence has to be weakened, and here is the right
+version.** Section 5 found that the formula's Sharpe at $5bn is matched by a
+book with a 5-bar half-life and persistence between 0.33 and 0.67. That
+equivalence held at one AUM because it had to: the formula is flat in order
+size and the book is not, so two curves with different exponents cross once
+and are not the same curve. The pair of parameters that reproduces the
+*shape* of the law is a different pair — permanent, and a third — and it
+charges a three-day order 105 bps where the formula charges 37. The two
+handlers are not one model in two parametrisations. One of them is a model
+of impact and the other is a constant with a square root in it, and the
+5-bar book "matched" it by being wrong in the same amount at one size.
+
+This also reopens section 5's verdict on the permanent rows. They were set
+aside there because of the 623-bps drift of the handler's private mid over a
+decade, and that argument stands for a *backtest*, where the tape already
+contains the permanent impact of everything that actually traded. It does
+not stand for a single order over its own execution horizon, which is what
+the square-root law describes and what this section measures. The honest
+position is that the law is a statement about days and the drift is a
+statement about years, and a book whose memory decays on a scale between
+the two — the 20-bar rows — is the one that is defensible for both. Its
+exponent is 0.55 to 0.63 at the shipped and full persistence, which is a
+little above the law, and its Y of 0.66 to 0.86 is in the published range.
+
+**What this changes in the earlier sections.** The capacity ladder in
+section 2 compared the square-root handler against a memoryless book. Both
+charge a $5bn position the same per share as a $100M one, once sliced, which
+means the "book Sharpe" column and the "sqrt Sharpe" column agree about the
+one thing that the square-root law says matters most — that a big order is
+dearer per share than a small one — by both leaving it out. The deployed-
+capital cap is unaffected, for the fifth time: it is set by participation,
+not cost. But the Sharpe at $5bn under a book that obeys the law is the
+section 5 row with persistence 0.33 and permanent memory, 0.51, not the
+memoryless 0.52 — a difference of 0.01, because the strategy's orders at
+$5bn are 301 slices spread across a decade and the law bites per order, not
+per decade. Which is the right place to end: the fill model that was wrong
+about the law was wrong by a basis point of Sharpe for this strategy, and
+would be wrong by much more for a strategy that built a position fast.
+
+`metaorder_cost` drives the handler's own book on the flat tape rather than
+re-implementing the arithmetic, for the reason every other section gives:
+two copies of the mechanism would agree while both drifting. Ten tests, one
+of which works the two-slice permanent case by hand to the quarter of a
+basis point.
+
 ### What this still does not model
 
 - One bar is one book. A day's liquidity is pooled into a single snapshot at
@@ -517,6 +652,14 @@ number to lead with.
   a half-life of a week, which says what the formula's constant was. Ships at
   0 because both parameters are unobserved here and the memoryless book is
   the one setting nobody chose.
+- **The memoryless book that ships does not obey the square-root law, and
+  neither does the formula it is compared against.** Section 6. Both charge
+  a sliced order the same per share whatever its total size; the law says
+  cost grows with the root of it. A book with persistence 0.33 and no
+  recovery reproduces the law's exponent and coefficient. It still ships at
+  0, for the drift reason in section 5, and the gap this leaves is stated
+  rather than tuned away: a strategy that builds a position fast is
+  undercharged by every handler here.
 - Every order is a taker. Passive execution is deliberately absent, and the
   reason is a measurement: pooling a day's volume puts ~153,000 shares at the
   touch, and section 8 of notes/exchange.md already showed that an order

@@ -56,6 +56,7 @@ from exchange.order import TICK
 from src.book_execution import (PERSISTENCE, RECOVERY, SHAPE, VOL_ELASTICITY,
                                 VOL_WINDOW, BookExecutionHandler)
 from src.data_handler import HistoricalDataHandler
+from src.events import OrderEvent
 from src.execution import (NextBarOpenExecutionHandler,
                            ParticipationLimitedExecutionHandler)
 from src.strategy import MovingAverageCrossStrategy
@@ -87,6 +88,10 @@ RECOVERIES = (None, 5.0, 20.0)
 # relationship; 2.0 is past anything measured and is there to show the effect
 # growing smoothly rather than as a candidate setting.
 ELASTICITIES = (0.0, 0.5, 1.0, 2.0)
+# Whole orders as multiples of a day's volume, for section 6. Up to 0.1 fits
+# in one bar at 10% participation; 3.0 is thirty slices, which is the $5bn
+# position from section 2 being built.
+METAORDER_FRACS = (0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 3.0)
 OUT = "results/fill_realism.json"
 
 
@@ -620,6 +625,181 @@ def memory_closes_the_gap(rows: list[dict]) -> dict:
     return out
 
 
+# ---------- 6. the square root was in the slice, not the order ----------
+
+def metaorder_cost(price: float, volume: float, total_frac: float,
+                   persistence: float = PERSISTENCE,
+                   recovery: float | None = RECOVERY,
+                   participation: float = 0.10, depth_frac: float = 0.002,
+                   shape: float = SHAPE, levels: int = 200,
+                   slippage_bps: float = 2.0) -> dict:
+    """One order, worked to completion into a book that does not otherwise move.
+
+    `total_frac` is the whole order as a multiple of a day's volume; at 10%
+    participation an order of 0.3 days takes three bars and an order of three
+    days takes thirty. The book is the handler's own, driven on a flat tape -
+    the same open and the same volume every bar, no volatility - so that the
+    only thing moving the price between slices is what the handler remembers
+    of its own earlier slices. The number that comes out is implementation
+    shortfall: the share-weighted fill against the mid the order arrived at,
+    in basis points, which is the quantity the square-root law is a law
+    about.
+
+    Beside it, two formulas. `sqrt_slice_bps` is what execution.py charges for
+    the same order: slippage plus sigma times the root of each SLICE's share
+    of the bar, share-weighted across the slices. `sqrt_order_bps` is the law
+    the handler is named after, sigma times the root of the whole ORDER's
+    share of a day's volume (Almgren et al. 2005, Toth et al. 2011), with the
+    same unit coefficient. The two agree only while the order fits in one
+    slice; the point of the section is what happens after that.
+    """
+    shares = max(int(total_frac * volume), 1)
+    cap = max(int(participation * volume), 1)
+    bars = -(-shares // cap) + 4
+    idx = pd.bdate_range("2023-01-02", periods=bars)
+    flat = pd.DataFrame({SYMBOL: [price] * bars}, index=idx)
+    data = HistoricalDataHandler(flat, opens=flat.copy(),
+                                 volumes=pd.DataFrame({SYMBOL: [volume] * bars},
+                                                      index=idx))
+    ex = BookExecutionHandler(data, depth_frac=depth_frac, levels=levels,
+                              participation=participation, shape=shape,
+                              vol_elasticity=0.0, persistence=persistence,
+                              recovery=recovery)
+    data.next_bar()
+    ex.execute(OrderEvent(time=data.current_time(), symbol=SYMBOL,
+                          quantity=shares))
+    fills = []
+    while ex.working_quantity(SYMBOL) and data.has_more():
+        data.next_bar()
+        fills.extend(ex.pop_settled_fills(data.current_time()))
+    ex.finalize()
+
+    filled = sum(f.quantity for f in fills)
+    avg = sum(f.fill_price * f.quantity for f in fills) / filled if filled else price
+    sigma = _daily_vol_bps()
+    slices = [cap] * (shares // cap) + ([shares % cap] if shares % cap else [])
+    sqrt_slice = sum(q * (slippage_bps + sigma * np.sqrt(q / volume))
+                     for q in slices) / shares
+    return {
+        "total_frac": total_frac, "shares": shares,
+        "slices": len(fills), "filled_frac": filled / shares,
+        "book_bps": (avg - price) / price * 10_000,
+        "sqrt_slice_bps": sqrt_slice,
+        "sqrt_order_bps": sigma * np.sqrt(total_frac),
+    }
+
+
+def metaorder_curves(price: float, volume: float,
+                     persistences=PERSISTENCES, recoveries=RECOVERIES,
+                     total_fracs=METAORDER_FRACS, **kwargs) -> list[dict]:
+    """metaorder_cost at every size, for every memory setting in the sweep."""
+    rows = []
+    for recovery in recoveries:
+        for persistence in persistences:
+            if persistence == 0.0 and recovery is not None:
+                continue
+            for frac in total_fracs:
+                rows.append({"persistence": persistence, "recovery": recovery,
+                             **metaorder_cost(price, volume, frac,
+                                              persistence=persistence,
+                                              recovery=recovery, **kwargs)})
+    return rows
+
+
+def impact_exponent(sizes, costs) -> float:
+    """Slope of log cost against log size: 0 is flat, 0.5 is the square-root
+    law, 1 is linear. Least squares on the logs, so every point counts once
+    whatever the spacing of the grid."""
+    x = np.log(np.asarray(sizes, dtype=float))
+    y = np.log(np.asarray(costs, dtype=float))
+    x = x - x.mean()
+    return float((x @ (y - y.mean())) / (x @ x))
+
+
+def exponents_by_setting(rows: list[dict], participation: float = 0.10) -> list[dict]:
+    """The impact exponent of each cost model, inside one slice and across many.
+
+    Fitted separately on the orders that fit in a single bar and on the ones
+    that have to be sliced, because the two regimes have different causes.
+    Inside a bar the exponent is set by the depth profile - how fast
+    cumulative depth grows as the order walks out. Across bars it is set by
+    memory alone: a book that refills completely between slices charges
+    every slice the same, so the exponent is zero whatever the profile.
+    """
+    out = []
+    settings = []
+    for r in rows:
+        key = (r["persistence"], r["recovery"])
+        if key not in settings:
+            settings.append(key)
+    for persistence, recovery in settings:
+        group = [r for r in rows if (r["persistence"], r["recovery"])
+                 == (persistence, recovery)]
+        single = [r for r in group if r["total_frac"] <= participation]
+        sliced = [r for r in group if r["total_frac"] >= participation]
+        row = {"persistence": persistence, "recovery": recovery}
+        for name in ("book_bps", "sqrt_slice_bps", "sqrt_order_bps"):
+            row[f"{name}_single"] = impact_exponent(
+                [r["total_frac"] for r in single], [r[name] for r in single])
+            row[f"{name}_sliced"] = impact_exponent(
+                [r["total_frac"] for r in sliced], [r[name] for r in sliced])
+        # The law's coefficient this book implies: the geometric mean of
+        # book cost over sigma * sqrt(size) across the sliced orders. The
+        # literature puts it between a half and one.
+        row["y_sliced"] = float(np.exp(np.mean(
+            [np.log(r["book_bps"] / r["sqrt_order_bps"]) for r in sliced])))
+        out.append(row)
+    return out
+
+
+def closest_to_square_root(exponents: list[dict]) -> dict:
+    """The memory setting whose sliced-order exponent is nearest one half."""
+    return min(exponents, key=lambda e: abs(e["book_bps_sliced"] - 0.5))
+
+
+def print_metaorders(rows: list[dict], exponents: list[dict],
+                     best: dict, participation: float = 0.10) -> None:
+    print(f"\n6. THE SQUARE ROOT WAS IN THE SLICE, NOT THE ORDER   one order, "
+          f"worked to completion on a flat tape")
+    print(f"   Cost is implementation shortfall in bps against the arrival "
+          f"mid. '{'formula':>7}' is what execution.py charges")
+    print(f"   for the same order; 'sqrt law' is sigma * sqrt(order / day's "
+          f"volume), which is what the formula is named after.")
+    settings = [(e["persistence"], e["recovery"]) for e in exponents]
+    fracs = sorted({r["total_frac"] for r in rows})
+    head = " ".join(f"{f:>7.2f}" for f in fracs)
+    print(f"\n{'persist':>8} {'recovery':>9} | {'days of volume:':>15} {head}")
+    for persistence, recovery in settings:
+        group = {r["total_frac"]: r for r in rows
+                 if (r["persistence"], r["recovery"]) == (persistence, recovery)}
+        rec = "never" if recovery is None else f"{recovery:.0f} bars"
+        cells = " ".join(f"{group[f]['book_bps']:>7.1f}" for f in fracs)
+        print(f"{persistence:>8.2f} {rec:>9} | {'book':>15} {cells}")
+    first = {r["total_frac"]: r for r in rows
+             if (r["persistence"], r["recovery"]) == settings[0]}
+    print(f"{'':>8} {'':>9} | {'formula':>15} "
+          + " ".join(f"{first[f]['sqrt_slice_bps']:>7.1f}" for f in fracs))
+    print(f"{'':>8} {'':>9} | {'sqrt law':>15} "
+          + " ".join(f"{first[f]['sqrt_order_bps']:>7.1f}" for f in fracs))
+
+    print(f"\n   Impact exponent (slope of log cost on log size), orders that "
+          f"fit in one bar | orders that are sliced:")
+    print(f"{'persist':>8} {'recovery':>9} {'book':>14} {'formula':>14} "
+          f"{'sqrt law':>14} {'implied Y':>10}")
+    for e in exponents:
+        rec = "never" if e["recovery"] is None else f"{e['recovery']:.0f} bars"
+        print(f"{e['persistence']:>8.2f} {rec:>9} "
+              f"{e['book_bps_single']:>6.2f} | {e['book_bps_sliced']:>5.2f} "
+              f"{e['sqrt_slice_bps_single']:>6.2f} | {e['sqrt_slice_bps_sliced']:>5.2f} "
+              f"{e['sqrt_order_bps_single']:>6.2f} | {e['sqrt_order_bps_sliced']:>5.2f} "
+              f"{e['y_sliced']:>10.2f}")
+    rec = "never" if best["recovery"] is None else f"{best['recovery']:.0f} bars"
+    print(f"\n   Nearest to the square-root law across sliced orders: "
+          f"persistence {best['persistence']:.2f}, recovery {rec}, "
+          f"exponent {best['book_bps_sliced']:.2f}, implied Y "
+          f"{best['y_sliced']:.2f}.")
+
+
 # ---------- reporting ----------
 
 def print_cost_curves(rows: list[dict], cross: float | None, price: float,
@@ -870,6 +1050,11 @@ def main() -> None:
     closes = memory_closes_the_gap(memory)
     print_memory_sweep(memory, closes)
 
+    metaorders = metaorder_curves(price, volume)
+    exponents = exponents_by_setting(metaorders)
+    nearest = closest_to_square_root(exponents)
+    print_metaorders(metaorders, exponents, nearest)
+
     os.makedirs("results", exist_ok=True)
     with open(OUT, "w") as fh:
         json.dump({"symbol": SYMBOL, "start": START, "end": END,
@@ -881,7 +1066,9 @@ def main() -> None:
                    "vol_elasticity_study": vol_study,
                    "capacity": cap, "depth_sweep": sweep, "fees": bill,
                    "persistence": PERSISTENCE, "recovery": RECOVERY,
-                   "memory_sweep": memory, "memory_closes_the_gap": closes},
+                   "memory_sweep": memory, "memory_closes_the_gap": closes,
+                   "metaorders": metaorders, "impact_exponents": exponents,
+                   "closest_to_square_root": nearest},
                   fh, indent=1, default=float)
     print(f"\nwrote {OUT}")
 

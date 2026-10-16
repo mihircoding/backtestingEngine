@@ -43,14 +43,20 @@ extra cost is the timing rather than the size. A moving-average crossover fires
 when a trend breaks, and a trend breaking is a volatility event. The third is a
 flaw the comparison exposed in the capacity study that was already here — its Sharpe ratio *rises*
 above $5bn, because the participation cap stops filling and the statistic ends
-up describing idle cash instead of a strategy. [RESULTS.md](RESULTS.md) has
-all three, and the corrections.
+up describing idle cash instead of a strategy. The fourth is about the formula
+itself: it charges a square root of each *slice's* share of volume, so once an
+order is sliced it costs the same per share at any size, and the law it is
+named after says otherwise. A book that keeps a third of what each slice moved
+reproduces that law in both exponent (0.48) and coefficient (0.49) — which
+is to say the matching engine, given one parameter, produces the empirical
+impact law that the formula only cites. [RESULTS.md](RESULTS.md) has all four,
+and the corrections.
 
-327 tests.
+337 tests.
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                 # 327 passed
+python -m pytest -q                 # 337 passed
 
 # the two halves together
 python fill_realism.py              # fill models compared, the headline result

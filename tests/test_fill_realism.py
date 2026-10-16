@@ -329,3 +329,110 @@ def test_each_recovery_is_judged_on_its_own():
 def test_equal_to_the_formula_counts_as_closing_it():
     rows = memory_rows(r20=[(0.33, 0.49), (1.0, 0.44)], sqrt=0.44)
     assert memory_closes_the_gap(rows)["5e+09/20"] == 1.0
+
+
+# ---------- 6. the square root was in the slice, not the order ----------
+
+from fill_realism import (closest_to_square_root, exponents_by_setting,
+                          impact_exponent, metaorder_cost, metaorder_curves)
+
+
+def meta(frac, **kwargs):
+    """A flat book, 1,000 shares a level, 10% participation: an order of
+    0.1 days is 100,000 shares and walks 100 levels in one bar. Flat so the
+    cost of one slice is arithmetic on the levels it took."""
+    defaults = dict(depth_frac=0.001, shape=0.0, levels=200, participation=0.10)
+    defaults.update(kwargs)
+    return metaorder_cost(PRICE, VOLUME, frac, **defaults)
+
+
+def test_an_order_inside_one_slice_pays_the_levels_it_walked():
+    """2,000 shares take 1,000 at 100.01 and 1,000 at 100.02: 1.5 bps."""
+    row = meta(0.002)
+    assert row["slices"] == 1
+    assert row["filled_frac"] == 1.0
+    assert row["book_bps"] == pytest.approx(1.5, abs=1e-6)
+
+
+def test_a_memoryless_book_charges_a_sliced_order_what_it_charges_one_slice():
+    """Three slices into a book that refills completely between them cost
+    exactly what one slice does. That is the exponent of zero."""
+    one = meta(0.10)
+    three = meta(0.30)
+    assert three["slices"] == 3
+    assert three["book_bps"] == pytest.approx(one["book_bps"], abs=1e-9)
+
+
+def test_the_formula_as_coded_is_also_flat_once_the_order_is_sliced():
+    """execution.py charges sqrt(slice / volume) per slice, and every slice
+    is the participation cap, so a 3-day order costs what a 1-bar one does."""
+    assert meta(0.30)["sqrt_slice_bps"] == pytest.approx(meta(0.10)["sqrt_slice_bps"])
+    assert meta(0.30)["sqrt_order_bps"] == pytest.approx(
+        meta(0.10)["sqrt_order_bps"] * np.sqrt(3))
+
+
+def test_the_formula_and_the_law_agree_only_inside_one_slice():
+    row = meta(0.05, slippage_bps=0.0)
+    assert row["sqrt_slice_bps"] == pytest.approx(row["sqrt_order_bps"])
+    row = meta(0.50, slippage_bps=0.0)
+    assert row["sqrt_slice_bps"] < row["sqrt_order_bps"]
+
+
+def test_permanent_memory_makes_each_slice_dearer_than_the_last():
+    """Full persistence, no recovery, flat book: slice k starts one slice's
+    displacement higher than slice k-1, plus the half it is charged for its
+    own. Cost grows with the number of slices and never stops."""
+    one, two, three = (meta(f, persistence=1.0, recovery=None)
+                       for f in (0.10, 0.20, 0.30))
+    assert one["book_bps"] < two["book_bps"] < three["book_bps"]
+    # Worked by hand. One slice walks 100 levels, so its vwap is 50.5 ticks
+    # out, which at $100 is 50.5 bps; it is charged half of that again for
+    # its own permanent part, 75.75 bps. The second slice starts 50.5 bps
+    # higher and pays 126.25. The average of the two is 101, which is 25.25
+    # above the single slice.
+    assert one["book_bps"] == pytest.approx(75.75, abs=0.5)
+    assert two["book_bps"] - one["book_bps"] == pytest.approx(25.25, abs=0.5)
+
+
+def test_a_book_that_heals_charges_less_than_one_that_does_not():
+    permanent = meta(1.0, persistence=1.0, recovery=None)
+    healing = meta(1.0, persistence=1.0, recovery=2.0)
+    assert healing["book_bps"] < permanent["book_bps"]
+    assert healing["book_bps"] > meta(1.0)["book_bps"]
+
+
+def test_the_order_fills_completely_when_the_book_is_deep_enough():
+    row = meta(3.0, persistence=0.5, recovery=5.0)
+    assert row["slices"] == 30
+    assert row["filled_frac"] == 1.0
+
+
+def test_impact_exponent_reads_a_power_law_back():
+    sizes = [0.1, 0.2, 0.5, 1.0, 3.0]
+    assert impact_exponent(sizes, [4 * s ** 0.5 for s in sizes]) == pytest.approx(0.5)
+    assert impact_exponent(sizes, [7.0] * 5) == pytest.approx(0.0)
+    assert impact_exponent(sizes, [2 * s for s in sizes]) == pytest.approx(1.0)
+
+
+def test_exponents_split_the_one_bar_orders_from_the_sliced_ones():
+    rows = metaorder_curves(PRICE, VOLUME, persistences=(0.0, 1.0),
+                            recoveries=(None,), depth_frac=0.001, shape=0.0,
+                            levels=400,
+                            total_fracs=(0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0))
+    out = exponents_by_setting(rows)
+    assert [(e["persistence"], e["recovery"]) for e in out] == [(0.0, None), (1.0, None)]
+    memoryless, permanent = out
+    # a flat book is linear inside a slice: cost is half the levels walked
+    assert memoryless["book_bps_single"] == pytest.approx(1.0, abs=0.05)
+    assert memoryless["book_bps_sliced"] == pytest.approx(0.0, abs=1e-6)
+    assert permanent["book_bps_sliced"] > 0.5
+    assert memoryless["sqrt_order_bps_sliced"] == pytest.approx(0.5)
+    assert memoryless["sqrt_slice_bps_sliced"] == pytest.approx(0.0, abs=1e-6)
+    assert permanent["y_sliced"] > memoryless["y_sliced"]
+
+
+def test_the_nearest_setting_to_the_law_is_the_one_closest_to_a_half():
+    out = [{"persistence": 0.0, "recovery": None, "book_bps_sliced": 0.0},
+           {"persistence": 0.33, "recovery": None, "book_bps_sliced": 0.48},
+           {"persistence": 1.0, "recovery": 5.0, "book_bps_sliced": 0.55}]
+    assert closest_to_square_root(out)["persistence"] == 0.33
