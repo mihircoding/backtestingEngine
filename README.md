@@ -49,14 +49,20 @@ order is sliced it costs the same per share at any size, and the law it is
 named after says otherwise. A book that keeps a third of what each slice moved
 reproduces that law in both exponent (0.48) and coefficient (0.49) — which
 is to say the matching engine, given one parameter, produces the empirical
-impact law that the formula only cites. [RESULTS.md](RESULTS.md) has all four,
-and the corrections.
+impact law that the formula only cites. Give the formula the law's form
+(`impact_on="order"`) and it lands on that book at $1bn — 0.57 Sharpe against
+0.57, 15 bps a slice against 16 — and the reason turns out to be the
+coefficient rather than the slicing: at $1bn every order fits in a bar or
+two, and the shipped Y of 1 is twice the empirical value. Above that the two
+come apart, because most of the order never fills and a law measured on
+completed metaorders has nothing to say about one that is 90% never sent.
+[RESULTS.md](RESULTS.md) has all of it, and the corrections.
 
-337 tests.
+353 tests.
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                 # 337 passed
+python -m pytest -q                 # 353 passed
 
 # the two halves together
 python fill_realism.py              # fill models compared, the headline result

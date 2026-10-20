@@ -640,6 +640,106 @@ two copies of the mechanism would agree while both drifting. Ten tests, one
 of which works the two-slice permanent case by hand to the quarter of a
 basis point.
 
+### 7. Charge the order, and the formula lands on the book — at the one AUM where either describes a trade
+
+Reproduce with: `python fill_realism.py` (section 7 of the printout)
+
+Section 6 found the flaw and ended on a prediction. Fix the formula so it
+charges the root of the whole order rather than the slice, and the book
+whose exponent and coefficient matched the law — persistence 0.33, permanent
+memory — should land on it at every AUM, not at the one where two curves with
+different exponents happened to cross. This section does the fix and runs
+the prediction. The prediction was half right, and the half that was wrong
+is the more useful half.
+
+**The fix.** `ParticipationLimitedExecutionHandler` takes `impact_on`.
+`"slice"` is what shipped: σ√(q/V) on each bar's slice against that bar's
+volume. `"order"` is the law as published: σ√(Q/ADV), where Q is the whole
+working order and ADV the trailing 20-day volume, both read once when the
+order arrives, charged on every slice until it is done. The coefficient is
+left to the caller and the studies use Y = 0.5, which is where Tóth et al.
+put it; the shipped default of 1.0 on the slice is unchanged, because every
+earlier table was run on it and this section is about what changes. A
+handler that estimates σ from a tape with no volatility would charge nothing,
+so `sigma_bps` can now be fixed, and the flat-tape test of section 6 is
+rerun from the handler itself rather than from the arithmetic replica that
+section wrote beside the book. The replica and the handler agree to nine
+figures at every size, which is the "two copies of the mechanism" objection
+that section ended on, closed.
+
+| days of volume | 0.01 | 0.02 | 0.05 | 0.10 | 0.20 | 0.50 | 1.0 | 2.0 | 3.0 |
+|---|---|---|---|---|---|---|---|---|---|
+| formula on the slice, Y = 1 (ships) | 13.0 | 17.6 | 26.6 | 36.8 | 36.8 | 36.8 | 36.8 | 36.8 | 36.8 |
+| formula on the order, Y = 0.5 | 7.5 | 9.8 | 14.3 | 19.4 | 26.6 | 40.9 | 57.0 | 79.8 | 97.3 |
+| book, persistence 0.33, permanent (section 6) | 4.3 | 6.8 | 12.7 | 20.3 | 23.3 | 32.2 | 46.7 | 75.9 | 105.0 |
+
+Exponent across sliced orders: 0.00 on the slice, 0.47 on the order. Not
+0.50, because the 2 bps of slippage does not scale with size and pulls the
+fitted slope down; with slippage off it is 0.50 to two decimals and a test
+pins it. The order form and the book now run within 15% of each other from a
+fifth of a day to three days, which they should, since the book's exponent
+and implied Y were fitted to be this line. Inside one bar the book is
+cheaper — 4.3 bps against 7.5 at a hundredth of a day — because the touch
+is deep for a small order and the formula has no touch.
+
+**The ladder.** Section 2 again, under three handlers that are now distinct:
+the formula as coded, the formula as the law, and the book that matched it.
+Cost is the share-weighted charge per slice in basis points.
+
+| AUM | deployed | Sharpe: slice | order | book | cost: slice | order | book |
+|---|---|---|---|---|---|---|---|
+| $0.1bn | 100% | 0.60 | 0.63 | 0.64 | 10.6 | 6.2 | 3.7 |
+| $1bn | 100% | 0.49 | **0.57** | **0.57** | 28.2 | **15.1** | **16.3** |
+| $5bn | 41% | 0.44 | 0.45 | 0.51 | 33.4 | 31.3 | 21.3 |
+| $20bn | 10% | 0.55 | 0.41 | 0.59 | 34.0 | 59.5 | 24.6 |
+| $100bn | 2% | 0.73 | 0.57 | 0.70 | 37.4 | 119.4 | 47.6 |
+
+At $1bn the law and the book land on each other: 0.57 and 0.57, 15 bps and
+16. That is the prediction holding — and it holds for a reason section 6
+did not expect. At $1bn the longest order in the run took two bars and most
+took one, so the slice and the order are the same quantity and the two
+forms of the formula differ only in Y. **The gap section 2 found between
+the formula and the book at the readable AUMs was never the slicing. It was
+the coefficient.** Y = 1 is twice the empirical value, and at Y = 0.5 the
+formula charges a $1bn book 15 bps a slice where the shipped version charged
+28, which is 0.08 of Sharpe — the whole of section 2's gap at that AUM.
+Section 5 looked for that gap in the book's memory and found a 5-bar
+half-life that reproduced it; section 6 showed that match was two different
+curves crossing; this is what they were crossing *at*. The book with a third
+of persistence and permanent memory, which section 6 chose for its exponent,
+also has the law's coefficient, so it agrees with the law at the one AUM
+where the law and the book are both describing an order that completes.
+
+Above $1bn they come apart, and the way they come apart is the finding.
+At $5bn the law charges 31 bps and the book 21; at $20bn, 60 against 25; at
+$100bn, 119 against 48, with the law's Sharpe falling while the book's rises.
+The law form charges every slice for the root of the *arrival* size, and at
+$20bn the arrival size is a position that takes 41 bars to build and is 90%
+never built — the deployed column. A square-root law is an empirical fact
+about metaorders that were executed, over a day or a few; applied to an
+order of which a tenth ever reaches the market, it charges the tenth that
+filled for the nine tenths that did not. The book charges the slices that
+happened, and remembers them. Neither is right about an order that does not
+complete, because nothing measured on completed orders can be, and section 2
+already said those rows are not Sharpe ratios. Which leaves a choice the
+handler had to make and the docstring states: the law is applied to the size
+the desk committed to when it sent the order, re-based if the order changes
+while working. A desk that knew in advance it would get a tenth done would
+have sent a tenth, and that is a strategy-sizing question, not a fill-model
+one.
+
+**What this changes in the earlier sections.** Section 2's "square-root
+Sharpe" column at the readable AUMs was a coefficient of 1 on a slice, and
+the right number for $1bn is 0.57, not 0.49: the shipped formula overcharged
+a billion-dollar book by 13 bps a trade. The deployed-capital cap is
+unaffected, for the sixth time. Section 5's "why the formula was dearer" has
+its answer in one word, and the word is Y. And the sentence section 5 wanted
+to say — that the two handlers are one model in two parametrisations — is
+true at exactly one AUM and for one reason, and the reason is not the one
+that section proposed. Nothing ships differently: `impact_on` defaults to
+`"slice"` and `impact_coef` to 1.0, because changing a default changes every
+table above it, and the gap is now measured rather than hidden.
+
 ### What this still does not model
 
 - One bar is one book. A day's liquidity is pooled into a single snapshot at
@@ -659,7 +759,16 @@ basis point.
   recovery reproduces the law's exponent and coefficient. It still ships at
   0, for the drift reason in section 5, and the gap this leaves is stated
   rather than tuned away: a strategy that builds a position fast is
-  undercharged by every handler here.
+  undercharged by every handler here. Section 7 gives the formula handler
+  the law's form (`impact_on="order"`) and finds it lands on that book at
+  $1bn, for the coefficient rather than the slicing, and that above $1bn no
+  handler here describes an order that completes.
+- **The law is applied to the order that was sent, not the one that got
+  done.** Section 7. Above $1bn most of an order never fills, and the
+  order-form charge is the root of a size that was never traded. A model of
+  what a partially executed metaorder costs would need the literature on
+  cancelled metaorders, which is thin, and intraday data, which section 1
+  does not have.
 - Every order is a taker. Passive execution is deliberately absent, and the
   reason is a measurement: pooling a day's volume puts ~153,000 shares at the
   touch, and section 8 of notes/exchange.md already showed that an order

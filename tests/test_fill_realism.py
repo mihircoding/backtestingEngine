@@ -436,3 +436,86 @@ def test_the_nearest_setting_to_the_law_is_the_one_closest_to_a_half():
            {"persistence": 0.33, "recovery": None, "book_bps_sliced": 0.48},
            {"persistence": 1.0, "recovery": 5.0, "book_bps_sliced": 0.55}]
     assert closest_to_square_root(out)["persistence"] == 0.33
+
+
+# ---------- 7. charge the order, not the slice ----------
+
+from fill_realism import (formula_curves, formula_exponents, formula_metaorder_cost,
+                          law_ladder)
+
+
+def test_the_handler_on_the_slice_is_the_replica_section_6_wrote_beside_it():
+    """Section 6 compared the book against an arithmetic copy of the formula.
+    The handler itself, driven on the same flat tape, charges the same at
+    every size - which is what makes that section's formula row a fact about
+    execution.py rather than about the copy."""
+    for frac in (0.01, 0.05, 0.10, 0.30, 1.0, 3.0):
+        handler = formula_metaorder_cost(PRICE, VOLUME, frac, impact_on="slice")
+        replica = metaorder_cost(PRICE, VOLUME, frac, persistence=0.0,
+                                 recovery=None)
+        assert handler["bps"] == pytest.approx(replica["sqrt_slice_bps"], rel=1e-9)
+        assert handler["slices"] == replica["slices"]
+
+
+def test_the_handler_on_the_order_is_the_law_at_every_size():
+    for frac in (0.01, 0.10, 0.30, 1.0, 3.0):
+        row = formula_metaorder_cost(PRICE, VOLUME, frac, impact_on="order",
+                                     impact_coef=0.5, slippage_bps=0.0,
+                                     sigma_bps=110.0)
+        assert row["filled_frac"] == 1.0
+        assert row["bps"] == pytest.approx(0.5 * 110.0 * np.sqrt(row["shares"] / VOLUME))
+
+
+def test_the_two_forms_agree_inside_one_bar_once_the_coefficient_matches():
+    """With the same Y the forms differ only by what they divide by: the
+    slice over the bar, or the order over the day. Inside one bar those are
+    the same ratio."""
+    slice_ = formula_metaorder_cost(PRICE, VOLUME, 0.05, impact_on="slice",
+                                    impact_coef=0.5, slippage_bps=0.0)
+    order = formula_metaorder_cost(PRICE, VOLUME, 0.05, impact_on="order",
+                                   impact_coef=0.5, slippage_bps=0.0)
+    assert slice_["bps"] == pytest.approx(order["bps"], rel=1e-9)
+
+
+def test_exponents_are_zero_on_the_slice_and_a_half_on_the_order():
+    curves = formula_curves(PRICE, VOLUME, slippage_bps=0.0,
+                            total_fracs=(0.05, 0.1, 0.2, 0.5, 1.0, 2.0))
+    exps = {e["impact_on"]: e for e in formula_exponents(curves)}
+    assert exps["slice"]["sliced"] == pytest.approx(0.0, abs=1e-9)
+    assert exps["order"]["sliced"] == pytest.approx(0.5, abs=0.01)
+    assert exps["order"]["impact_coef"] == 0.5
+
+
+def test_slippage_flattens_the_orders_exponent_a_little():
+    """2 bps that does not scale with size on top of a square root pulls the
+    fitted slope below a half. That is why the printout says 0.47."""
+    with_slip = formula_curves(PRICE, VOLUME, slippage_bps=2.0)
+    without = formula_curves(PRICE, VOLUME, slippage_bps=0.0)
+    a = {e["impact_on"]: e for e in formula_exponents(with_slip)}["order"]["sliced"]
+    b = {e["impact_on"]: e for e in formula_exponents(without)}["order"]["sliced"]
+    assert b == pytest.approx(0.5, abs=0.01)
+    assert 0.4 < a < b
+
+
+def test_the_ladder_slices_identically_under_all_three_handlers():
+    """Participation sets the slicing and all three share it, so a row's
+    three handlers report the same slice count and the same deployment -
+    the only thing that differs between them is what a slice costs."""
+    n = 320
+    idx = pd.bdate_range("2020-01-01", periods=n)
+    rng = np.random.default_rng(4)
+    closes = pd.Series(100 * np.exp(np.cumsum(rng.normal(0, 0.01, n))), index=idx)
+    prices = closes.to_frame("SPY")
+    opens = (closes * (1 + rng.normal(0, 0.001, n))).to_frame("SPY")
+    volumes = pd.DataFrame({"SPY": [1e6] * n}, index=idx)
+    rows = law_ladder(prices, opens, volumes, aums=(1e7, 1e8),
+                      short_window=10, long_window=30)
+    assert [r["aum"] for r in rows] == [1e7, 1e8]
+    for r in rows:
+        assert r["slice"]["slices"] == r["order"]["slices"] == r["book"]["slices"]
+        assert r["slice"]["deployed"] == pytest.approx(r["order"]["deployed"])
+        assert set(r["order"]) >= {"sharpe", "cost_bps", "slices", "deployed"}
+    big = rows[1]
+    # a $100M position on a $100M-a-day tape is a day of volume, which the
+    # law charges for and the slice form does not
+    assert big["order"]["cost_bps"] > big["slice"]["cost_bps"]

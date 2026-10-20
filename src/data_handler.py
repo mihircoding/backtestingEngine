@@ -90,5 +90,21 @@ class HistoricalDataHandler:
             )
         return float(self.volumes[symbol].iloc[self._cursor - 1])
 
+    def get_latest_volumes(self, symbol: str, n: int = 1) -> pd.Series:
+        """Up to the last n *released* bar volumes for symbol.
+
+        Same contract as get_latest(): nothing past the cursor, fewer than n
+        values during warmup, and the same hard failure as current_volume()
+        when no volumes were supplied.
+        """
+        if self.volumes is None:
+            raise ValueError(
+                "this HistoricalDataHandler has no volume data — pass "
+                "volumes=... to the constructor to use participation limits"
+            )
+        if self._cursor == 0:
+            return pd.Series(dtype=float)
+        return self.volumes[symbol].iloc[max(0, self._cursor - n) : self._cursor]
+
     def current_time(self) -> pd.Timestamp:
         return self.prices.index[self._cursor - 1]

@@ -210,3 +210,149 @@ def test_volume_data_is_required():
     data.next_bar()
     with pytest.raises(ValueError):
         data.current_volume("AAA")
+
+
+# ---------- impact on the order, not the slice ----------
+
+SIGMA = 100.0   # 1% daily vol, in bps, fixed so the tape can be flat
+
+
+def work(ex, data, symbol="AAA"):
+    """Drive one working order to completion, returning its fills."""
+    fills = []
+    while ex.working_quantity(symbol) != 0 and data.has_more():
+        data.next_bar()
+        fills.extend(ex.pop_settled_fills(data.current_time()))
+    return fills
+
+
+def test_impact_on_takes_only_the_two_forms():
+    with pytest.raises(ValueError):
+        handler(impact_on="metaorder")
+
+
+def test_the_order_form_charges_every_slice_the_root_of_the_whole_order():
+    """500 shares at a 100-share cap is five slices. Each one costs slippage
+    plus Y * sigma * sqrt(500 / 1000), whatever slice it is."""
+    data, ex = handler(volume=1000.0, n=12, slippage_bps=2.0, impact_coef=0.5,
+                       impact_on="order", sigma_bps=SIGMA)
+    data.next_bar()
+    ex.execute(OrderEvent(time=data.current_time(), symbol="AAA", quantity=500))
+    fills = work(ex, data)
+    assert len(fills) == 5
+    expected = 2.0 + 0.5 * SIGMA * np.sqrt(500 / 1000)
+    for fill in fills:
+        assert (fill.fill_price / 100.0 - 1) * 10_000 == pytest.approx(expected)
+    assert ex.slice_cost_bps == pytest.approx([expected] * 5)
+    assert ex.slice_shares == [100] * 5
+
+
+def test_the_slice_form_charges_every_slice_the_root_of_the_cap():
+    """The original behaviour: the same five slices cost slippage plus
+    sigma * sqrt(100 / 1000) each, and would for an order of any size."""
+    data, ex = handler(volume=1000.0, n=12, slippage_bps=2.0, impact_coef=1.0,
+                       impact_on="slice", sigma_bps=SIGMA)
+    data.next_bar()
+    ex.execute(OrderEvent(time=data.current_time(), symbol="AAA", quantity=500))
+    fills = work(ex, data)
+    expected = 2.0 + SIGMA * np.sqrt(100 / 1000)
+    assert ex.slice_cost_bps == pytest.approx([expected] * 5)
+
+
+def test_only_the_order_form_charges_a_bigger_sliced_order_more():
+    def cost(impact_on, quantity):
+        data, ex = handler(volume=1000.0, n=40, slippage_bps=0.0,
+                           impact_on=impact_on, sigma_bps=SIGMA)
+        data.next_bar()
+        ex.execute(OrderEvent(time=data.current_time(), symbol="AAA",
+                              quantity=quantity))
+        work(ex, data)
+        return np.average(ex.slice_cost_bps, weights=ex.slice_shares)
+
+    assert cost("slice", 900) == pytest.approx(cost("slice", 300))
+    assert cost("order", 900) == pytest.approx(cost("order", 300) * np.sqrt(3))
+
+
+def test_a_fixed_sigma_is_used_even_during_warmup():
+    """Without the override the first vol_window bars charge no impact. With
+    it, bar two of a twelve-bar tape is charged like any other."""
+    data, ex = handler(volume=10_000.0, n=12, slippage_bps=0.0, sigma_bps=SIGMA)
+    data.next_bar()
+    ex.execute(OrderEvent(time=data.current_time(), symbol="AAA", quantity=100))
+    fills = work(ex, data)
+    assert ex.slice_cost_bps[0] == pytest.approx(SIGMA * np.sqrt(100 / 10_000))
+
+    data, ex = handler(volume=10_000.0, n=12, slippage_bps=0.0)
+    data.next_bar()
+    ex.execute(OrderEvent(time=data.current_time(), symbol="AAA", quantity=100))
+    work(ex, data)
+    assert ex.slice_cost_bps[0] == 0.0
+
+
+def test_the_order_forms_volume_is_the_trailing_average_of_released_bars():
+    """Volume 1,000 for ten bars, then 9,000. An order arriving on the bar
+    after the jump, with a 5-bar window, sees (1000*4 + 9000) / 5 = 2,600 -
+    not the 9,000 of the bar it arrived on and not the 1,000 before it."""
+    vols = [1000.0] * 10 + [9000.0] * 10
+    data = make_handler_with_volumes({"AAA": [100.0] * 20}, {"AAA": [100.0] * 20},
+                                     {"AAA": vols})
+    ex = ParticipationLimitedExecutionHandler(data, participation=1.0,
+                                              slippage_bps=0.0, impact_coef=1.0,
+                                              impact_on="order", vol_window=5,
+                                              sigma_bps=SIGMA)
+    for _ in range(11):
+        data.next_bar()
+    ex.execute(OrderEvent(time=data.current_time(), symbol="AAA", quantity=260))
+    work(ex, data)
+    assert ex.slice_cost_bps[0] == pytest.approx(SIGMA * np.sqrt(260 / 2600))
+
+
+def test_get_latest_volumes_never_reaches_past_the_cursor():
+    data = make_handler_with_volumes({"AAA": [100.0] * 6}, {"AAA": [100.0] * 6},
+                                     {"AAA": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]})
+    assert len(data.get_latest_volumes("AAA", 3)) == 0
+    data.next_bar()
+    data.next_bar()
+    assert list(data.get_latest_volumes("AAA", 3)) == [1.0, 2.0]
+    data.next_bar()
+    data.next_bar()
+    assert list(data.get_latest_volumes("AAA", 3)) == [2.0, 3.0, 4.0]
+
+
+def test_a_topped_up_order_is_rebased_to_what_is_left_to_work():
+    """200 shares arrive, one slice of 100 fills, then 300 more arrive. The
+    400 still working is the order the law is applied to from then on."""
+    data, ex = handler(volume=1000.0, n=20, slippage_bps=0.0, impact_coef=1.0,
+                       impact_on="order", sigma_bps=SIGMA)
+    data.next_bar()
+    ex.execute(OrderEvent(time=data.current_time(), symbol="AAA", quantity=200))
+    data.next_bar()
+    ex.pop_settled_fills(data.current_time())
+    assert ex.slice_cost_bps[-1] == pytest.approx(SIGMA * np.sqrt(200 / 1000))
+    ex.execute(OrderEvent(time=data.current_time(), symbol="AAA", quantity=300))
+    assert ex.working_quantity("AAA") == 400
+    data.next_bar()
+    ex.pop_settled_fills(data.current_time())
+    assert ex.slice_cost_bps[-1] == pytest.approx(SIGMA * np.sqrt(400 / 1000))
+
+
+def test_a_completed_order_leaves_nothing_behind_for_the_next_one():
+    data, ex = handler(volume=1000.0, n=30, slippage_bps=0.0, impact_coef=1.0,
+                       impact_on="order", sigma_bps=SIGMA)
+    data.next_bar()
+    ex.execute(OrderEvent(time=data.current_time(), symbol="AAA", quantity=900))
+    work(ex, data)
+    assert ex._arrival == {}
+    ex.execute(OrderEvent(time=data.current_time(), symbol="AAA", quantity=-100))
+    data.next_bar()
+    ex.pop_settled_fills(data.current_time())
+    assert ex.slice_cost_bps[-1] == pytest.approx(SIGMA * np.sqrt(100 / 1000))
+
+
+def test_a_reversal_that_nets_to_zero_clears_the_arrival_too():
+    data, ex = handler(volume=1000.0, n=12, impact_on="order", sigma_bps=SIGMA)
+    data.next_bar()
+    ex.execute(OrderEvent(time=data.current_time(), symbol="AAA", quantity=300))
+    ex.execute(OrderEvent(time=data.current_time(), symbol="AAA", quantity=-300))
+    assert ex.working_quantity("AAA") == 0
+    assert ex._arrival == {}

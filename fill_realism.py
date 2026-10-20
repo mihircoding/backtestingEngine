@@ -800,6 +800,163 @@ def print_metaorders(rows: list[dict], exponents: list[dict],
           f"{best['y_sliced']:.2f}.")
 
 
+# ---------- 7. charge the order, not the slice ----------
+
+LAW_COEF = 0.5          # Toth et al. (2011) put Y between a half and one
+LAW_PERSISTENCE = 0.33  # the book setting section 6 found nearest the law
+LAW_RECOVERY = None     # ... with permanent memory
+
+
+def formula_metaorder_cost(price: float, volume: float, total_frac: float,
+                           impact_on: str = "slice", impact_coef: float = 1.0,
+                           participation: float = 0.10,
+                           slippage_bps: float = 2.0,
+                           sigma_bps: float | None = None) -> dict:
+    """One order worked to completion by the formula handler on a flat tape.
+
+    The same loop as metaorder_cost, with ParticipationLimitedExecutionHandler
+    in place of the book, so the formula row of section 6 comes from the
+    handler itself rather than from the arithmetic replica that section wrote
+    beside it - which is the "two copies of the mechanism" objection the
+    section ends on, now closed. The tape has no volatility, so the handler
+    is given its sigma rather than estimating zero from the tape.
+    """
+    sigma = _daily_vol_bps() if sigma_bps is None else sigma_bps
+    shares = max(int(total_frac * volume), 1)
+    cap = max(int(participation * volume), 1)
+    bars = -(-shares // cap) + 4
+    idx = pd.bdate_range("2023-01-02", periods=bars)
+    flat = pd.DataFrame({SYMBOL: [price] * bars}, index=idx)
+    data = HistoricalDataHandler(flat, opens=flat.copy(),
+                                 volumes=pd.DataFrame({SYMBOL: [volume] * bars},
+                                                      index=idx))
+    ex = ParticipationLimitedExecutionHandler(
+        data, participation=participation, slippage_bps=slippage_bps,
+        commission_per_share=0.0, impact_coef=impact_coef,
+        impact_on=impact_on, sigma_bps=sigma)
+    data.next_bar()
+    ex.execute(OrderEvent(time=data.current_time(), symbol=SYMBOL,
+                          quantity=shares))
+    fills = []
+    while ex.working_quantity(SYMBOL) and data.has_more():
+        data.next_bar()
+        fills.extend(ex.pop_settled_fills(data.current_time()))
+    ex.finalize()
+    filled = sum(f.quantity for f in fills)
+    avg = sum(f.fill_price * f.quantity for f in fills) / filled if filled else price
+    return {"impact_on": impact_on, "impact_coef": impact_coef,
+            "total_frac": total_frac, "shares": shares, "slices": len(fills),
+            "filled_frac": filled / shares,
+            "bps": (avg - price) / price * 10_000}
+
+
+def formula_curves(price: float, volume: float, total_fracs=METAORDER_FRACS,
+                   law_coef: float = LAW_COEF, **kwargs) -> list[dict]:
+    """The formula handler at every size, as coded and as the law."""
+    rows = []
+    for impact_on, coef in (("slice", 1.0), ("order", law_coef)):
+        for frac in total_fracs:
+            rows.append(formula_metaorder_cost(price, volume, frac,
+                                               impact_on=impact_on,
+                                               impact_coef=coef, **kwargs))
+    return rows
+
+
+def formula_exponents(rows: list[dict], participation: float = 0.10) -> list[dict]:
+    """The impact exponent of each form of the formula, one bar | sliced."""
+    out = []
+    for impact_on in ("slice", "order"):
+        group = [r for r in rows if r["impact_on"] == impact_on]
+        single = [r for r in group if r["total_frac"] <= participation]
+        sliced = [r for r in group if r["total_frac"] >= participation]
+        out.append({
+            "impact_on": impact_on,
+            "impact_coef": group[0]["impact_coef"],
+            "single": impact_exponent([r["total_frac"] for r in single],
+                                      [r["bps"] for r in single]),
+            "sliced": impact_exponent([r["total_frac"] for r in sliced],
+                                      [r["bps"] for r in sliced]),
+        })
+    return out
+
+
+def law_ladder(prices, opens, volumes, aums=AUMS, participation: float = 0.10,
+               depth_frac: float = 0.002, law_coef: float = LAW_COEF,
+               persistence: float = LAW_PERSISTENCE,
+               recovery: float | None = LAW_RECOVERY, **kwargs) -> list[dict]:
+    """Section 2's capacity ladder with three handlers that are now distinct.
+
+    Section 6 ended on a prediction: once the formula charges the order
+    rather than the slice, the book with a third of its displacement kept
+    permanently - the setting whose exponent and coefficient matched the
+    law - should land on it at every AUM, not at the one AUM where two
+    curves with different exponents happened to cross. This runs the three
+    side by side: the formula as coded (Y = 1 on the slice), the formula as
+    the law (Y = law_coef on the order), and that book. Cost is the
+    share-weighted charge per slice in bps against the bar's open.
+    """
+    first_price = float(prices.iloc[0, 0])
+    rows = []
+    for aum in aums:
+        shares = max(int(aum / first_price), 1)
+        common = dict(trade_size=shares, initial_cash=aum, opens=opens,
+                      volumes=volumes, **kwargs)
+        slice_eq = run(prices, MovingAverageCrossStrategy,
+                       execution_cls=ParticipationLimitedExecutionHandler,
+                       execution_kwargs={"participation": participation},
+                       **common)
+        order_eq = run(prices, MovingAverageCrossStrategy,
+                       execution_cls=ParticipationLimitedExecutionHandler,
+                       execution_kwargs={"participation": participation,
+                                         "impact_on": "order",
+                                         "impact_coef": law_coef},
+                       **common)
+        book_eq = run(prices, MovingAverageCrossStrategy,
+                      execution_cls=BookExecutionHandler,
+                      execution_kwargs={"participation": participation,
+                                        "depth_frac": depth_frac,
+                                        "persistence": persistence,
+                                        "recovery": recovery},
+                      **common)
+        row = {"aum": aum}
+        for name, eq in (("slice", slice_eq), ("order", order_eq), ("book", book_eq)):
+            ex = eq.attrs["execution"]
+            row[name] = {**stats(eq), "slices": ex.slices,
+                         "cost_bps": _weighted(ex.slice_cost_bps, ex.slice_shares),
+                         "max_delay_bars": ex.max_delay_bars,
+                         "deployed": 1.0 - ex.unfilled_shares * first_price / aum}
+        rows.append(row)
+    return rows
+
+
+def print_law_ladder(rows: list[dict], exponents: list[dict],
+                     curves: list[dict]) -> None:
+    print(f"\n7. CHARGE THE ORDER, NOT THE SLICE   the formula handler on the "
+          f"flat tape, from the handler itself")
+    fracs = sorted({r["total_frac"] for r in curves})
+    print(f"\n{'':>24} | {'days of volume:':>15} "
+          + " ".join(f"{f:>7.2f}" for f in fracs))
+    for impact_on, label in (("slice", "as coded, Y=1"), ("order", "on the order")):
+        group = {r["total_frac"]: r for r in curves if r["impact_on"] == impact_on}
+        coef = group[fracs[0]]["impact_coef"]
+        tag = f"{label}, Y={coef:g}" if impact_on == "order" else label
+        print(f"{tag:>24} | {'':>15} "
+              + " ".join(f"{group[f]['bps']:>7.1f}" for f in fracs))
+    for e in exponents:
+        print(f"   exponent, impact on the {e['impact_on']}: "
+              f"{e['single']:.2f} inside one bar | {e['sliced']:.2f} sliced")
+
+    print(f"\n   The capacity ladder under three handlers: formula on the slice "
+          f"(ships), formula on the order (the law), book with memory.")
+    print(f"\n{'AUM':>8} {'Sharpe slice':>13} {'order':>7} {'book':>7} "
+          f"{'cost slice':>11} {'order':>7} {'book':>7} {'deployed':>9}")
+    for r in rows:
+        print(f"{r['aum'] / 1e9:>7.1f}bn {r['slice']['sharpe']:>13.2f} "
+              f"{r['order']['sharpe']:>7.2f} {r['book']['sharpe']:>7.2f} "
+              f"{r['slice']['cost_bps']:>10.1f} {r['order']['cost_bps']:>7.1f} "
+              f"{r['book']['cost_bps']:>7.1f} {r['book']['deployed']:>9.0%}")
+
+
 # ---------- reporting ----------
 
 def print_cost_curves(rows: list[dict], cross: float | None, price: float,
@@ -1055,6 +1212,11 @@ def main() -> None:
     nearest = closest_to_square_root(exponents)
     print_metaorders(metaorders, exponents, nearest)
 
+    formula = formula_curves(price, volume)
+    formula_exp = formula_exponents(formula)
+    ladder = law_ladder(prices, opens, volumes, aums=aums)
+    print_law_ladder(ladder, formula_exp, formula)
+
     os.makedirs("results", exist_ok=True)
     with open(OUT, "w") as fh:
         json.dump({"symbol": SYMBOL, "start": START, "end": END,
@@ -1068,7 +1230,9 @@ def main() -> None:
                    "persistence": PERSISTENCE, "recovery": RECOVERY,
                    "memory_sweep": memory, "memory_closes_the_gap": closes,
                    "metaorders": metaorders, "impact_exponents": exponents,
-                   "closest_to_square_root": nearest},
+                   "closest_to_square_root": nearest,
+                   "law_coef": LAW_COEF, "formula_curves": formula,
+                   "formula_exponents": formula_exp, "law_ladder": ladder},
                   fh, indent=1, default=float)
     print(f"\nwrote {OUT}")
 

@@ -147,13 +147,35 @@ class ParticipationLimitedExecutionHandler:
 
            impact (bps) = impact_coef x daily volatility (bps) x sqrt(rate)
 
-       where `rate` is the slice's shares divided by the bar's volume. The form
-       is Almgren et al. (2005) and the textbooks; the constant in front is the
-       part every firm calibrates on its own fills and nobody publishes, so
-       `impact_coef` is exposed as a parameter with a documented default of 1.0
-       rather than buried. Volatility is the trailing estimate from the data
-       handler, so impact automatically rises in exactly the markets where
-       liquidity is worst - which turns out to be where all of the damage is.
+       The form is Almgren et al. (2005) and the textbooks; the constant in
+       front is the part every firm calibrates on its own fills and nobody
+       publishes, so `impact_coef` is exposed as a parameter rather than
+       buried. Volatility is the trailing estimate from the data handler, so
+       impact automatically rises in exactly the markets where liquidity is
+       worst - which turns out to be where all of the damage is.
+
+       What `rate` is depends on `impact_on`, and the difference is the whole
+       of RESULTS.md section 6:
+
+         "slice"  rate = this bar's slice / this bar's volume. The original
+                  behaviour, and what every result before section 7 was run
+                  on. It is the law only while the order fits in one bar.
+                  Past that every slice is the participation cap, so every
+                  slice costs the same and a position that takes a month to
+                  build costs the same per share as one that takes a day.
+         "order"  rate = the whole working order / average daily volume, both
+                  fixed when the order arrived, and charged on every slice.
+                  That is the law as published: a statement about the order,
+                  not the slice. The literature's coefficient for this form
+                  is about 0.5 (Toth et al. 2011), not the 1.0 that is the
+                  default here - set impact_coef with the mode.
+
+       Daily volume for the "order" form is the trailing `vol_window` mean,
+       which is what a desk calls ADV; sigma is the same trailing estimate the
+       slice form uses, read once at arrival. An order that changes while it
+       is working - topped up, partly reversed - is re-based: the size the law
+       is applied to is whatever was left to work the last time execute()
+       touched it.
 
     Timing matches NextBarOpenExecutionHandler: an order placed on bar t begins
     filling at bar t+1's open. The two are therefore directly comparable, and
@@ -173,21 +195,34 @@ class ParticipationLimitedExecutionHandler:
 
     def __init__(self, data: HistoricalDataHandler, participation: float = 0.10,
                  slippage_bps: float = 2.0, commission_per_share: float = 0.005,
-                 impact_coef: float = 1.0, vol_window: int = 20):
+                 impact_coef: float = 1.0, vol_window: int = 20,
+                 impact_on: str = "slice", sigma_bps: float | None = None):
         if not 0 < participation <= 1:
             raise ValueError("participation must be in (0, 1]")
+        if impact_on not in ("slice", "order"):
+            raise ValueError("impact_on must be 'slice' or 'order'")
         self.data = data
         self.participation = participation
         self.slippage_bps = slippage_bps
         self.commission_per_share = commission_per_share
         self.impact_coef = impact_coef
         self.vol_window = vol_window
+        self.impact_on = impact_on
+        # A fixed daily vol in basis points, instead of the trailing estimate.
+        # None (the default) estimates it from the tape. The override exists
+        # for the flat-tape studies in fill_realism.py, where a tape with no
+        # volatility would otherwise mean a handler with no impact to measure.
+        self.sigma_bps = sigma_bps
         self._working: dict[str, int] = {}
+        # For the "order" form: (size, daily volume, sigma) at arrival.
+        self._arrival: dict[str, tuple[int, float, float]] = {}
         # Diagnostics. The point of this handler is the numbers it refuses to
         # hide, so it keeps them rather than making the caller reconstruct them.
         self.slices = 0            # how many partial fills it took
         self.unfilled_shares = 0   # still working when the run ended
         self.max_delay_bars = 0    # worst time-to-complete, in bars
+        self.slice_shares: list[int] = []      # shares filled per slice, unsigned
+        self.slice_cost_bps: list[float] = []  # slippage plus impact charged, per slice
         self._age: dict[str, int] = {}
 
     def execute(self, order: OrderEvent) -> None:
@@ -196,9 +231,13 @@ class ParticipationLimitedExecutionHandler:
         if net == 0:
             self._working.pop(order.symbol, None)
             self._age.pop(order.symbol, None)
+            self._arrival.pop(order.symbol, None)
         else:
             self._working[order.symbol] = net
             self._age.setdefault(order.symbol, 0)
+            if self.impact_on == "order":
+                self._arrival[order.symbol] = (abs(net), self._adv(order.symbol),
+                                               self._sigma_bps(order.symbol))
         return None
 
     def working_quantity(self, symbol: str) -> int:
@@ -221,37 +260,57 @@ class ParticipationLimitedExecutionHandler:
                 continue
 
             price = self.data.current_open(symbol)
-            rate = abs(slice_size) / max(self.data.current_volume(symbol), 1.0)
-            bps = self.slippage_bps + self._impact_bps(symbol, rate)
+            if self.impact_on == "order":
+                size, adv, sigma = self._arrival[symbol]
+                impact = self.impact_coef * sigma * np.sqrt(size / max(adv, 1.0))
+            else:
+                rate = abs(slice_size) / max(self.data.current_volume(symbol), 1.0)
+                impact = self._impact_bps(symbol, rate)
+            bps = self.slippage_bps + impact
             fills.append(_price_fill(OrderEvent(time=time, symbol=symbol,
                                                 quantity=slice_size),
                                      price, bps, self.commission_per_share,
                                      time_override=time))
             self.slices += 1
+            self.slice_shares.append(abs(slice_size))
+            self.slice_cost_bps.append(bps)
 
             left = remaining - slice_size
             if left == 0:
                 self.max_delay_bars = max(self.max_delay_bars, self._age[symbol])
                 self._working.pop(symbol)
                 self._age.pop(symbol)
+                self._arrival.pop(symbol, None)
             else:
                 self._working[symbol] = left
 
         return fills
 
-    def _impact_bps(self, symbol: str, rate: float) -> float:
-        """Square-root market impact, in basis points, for one slice.
+    def _sigma_bps(self, symbol: str) -> float:
+        """Trailing daily volatility in basis points, or the fixed override.
 
-        Falls back to no impact during warmup, when there is not yet enough
-        history for a volatility estimate. That understates cost on the first
-        few bars of a run and is stated rather than papered over with a guess.
+        Falls back to zero during warmup, when there is not yet enough history
+        for an estimate. That understates cost on the first few bars of a run
+        and is stated rather than papered over with a guess.
         """
+        if self.sigma_bps is not None:
+            return float(self.sigma_bps)
         window = self.data.get_latest(symbol, self.vol_window + 1)
         if len(window) < self.vol_window + 1:
             return 0.0
         daily = np.diff(np.log(window.to_numpy(dtype=float)))
-        sigma_bps = float(daily.std(ddof=1)) * 10_000
-        return self.impact_coef * sigma_bps * np.sqrt(rate)
+        return float(daily.std(ddof=1)) * 10_000
+
+    def _adv(self, symbol: str) -> float:
+        """Average daily volume over the trailing window, on released bars
+        only. Early in a run it is the average of whatever has been released,
+        which is at least the current bar."""
+        window = self.data.get_latest_volumes(symbol, self.vol_window)
+        return float(window.mean()) if len(window) else self.data.current_volume(symbol)
+
+    def _impact_bps(self, symbol: str, rate: float) -> float:
+        """Square-root market impact, in basis points, for one slice."""
+        return self.impact_coef * self._sigma_bps(symbol) * np.sqrt(rate)
 
     def finalize(self) -> None:
         """Book whatever never got filled. Call once after a run.
