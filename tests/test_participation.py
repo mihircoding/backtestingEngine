@@ -356,3 +356,106 @@ def test_a_reversal_that_nets_to_zero_clears_the_arrival_too():
     ex.execute(OrderEvent(time=data.current_time(), symbol="AAA", quantity=-300))
     assert ex.working_quantity("AAA") == 0
     assert ex._arrival == {}
+
+
+# ---------- the liquidity budget: send what you can get done ----------
+
+def _signal(data):
+    from src.events import SignalEvent, SignalType
+    return SignalEvent(time=data.current_time(), symbol="AAA", signal=SignalType.LONG)
+
+
+def test_the_budget_is_days_times_participation_times_adv():
+    data, ex = handler(volume=1000.0)
+    pf = Portfolio(data, initial_cash=1e9, trade_size=100_000,
+                   max_fill_days=5, participation=0.10)
+    data.next_bar()
+    assert pf.liquidity_budget("AAA") == 500          # 5 x 10% x 1000
+    assert pf.on_signal(_signal(data)).quantity == 500
+    assert pf.liquidity_capped == 1
+
+
+def test_a_position_that_fits_is_not_touched():
+    data, ex = handler(volume=1000.0)
+    pf = Portfolio(data, initial_cash=1e9, trade_size=300,
+                   max_fill_days=5, participation=0.10)
+    data.next_bar()
+    assert pf.on_signal(_signal(data)).quantity == 300
+    assert pf.liquidity_capped == 0
+
+
+def test_a_capped_position_completes_inside_the_budgeted_days():
+    """The whole point: at the budget, the participation handler fills the
+    order in max_fill_days bars, where the uncapped order would still be
+    working when the data ran out."""
+    from src.engine import Backtest
+    from src.strategy import BuyAndHoldStrategy
+
+    def run_with(cap):
+        data, ex = handler(volume=1000.0, n=12)
+        kwargs = {"max_fill_days": 3, "participation": 0.10} if cap else {}
+        pf = Portfolio(data, initial_cash=1e9, trade_size=100_000,
+                       pending=ex.working_quantity, **kwargs)
+        Backtest(data, BuyAndHoldStrategy(data), pf, ex).run()
+        ex.finalize()
+        return ex
+
+    capped, free = run_with(True), run_with(False)
+    assert capped.unfilled_shares == 0
+    assert capped.max_delay_bars == 3
+    assert free.unfilled_shares > 0
+
+
+def test_the_budget_reads_released_volume_only():
+    volumes = [100.0] * 6 + [10_000.0] * 6
+    data = make_handler_with_volumes({"AAA": FLAT}, {"AAA": FLAT}, {"AAA": volumes})
+    pf = Portfolio(data, initial_cash=1e9, trade_size=100_000,
+                   max_fill_days=2, participation=0.5, adv_window=20)
+    for _ in range(6):
+        data.next_bar()
+    # six bars of 100 released; the 10,000s are still in the future
+    assert pf.liquidity_budget("AAA") == 100
+
+
+def test_the_budget_clips_the_vol_targeted_size_too():
+    prices = [100.0 * (1 + 0.02 * ((-1) ** i)) for i in range(40)]
+    data = make_handler_with_volumes({"AAA": prices}, {"AAA": prices},
+                                     {"AAA": [1000.0] * 40})
+    pf = Portfolio(data, initial_cash=1e9, vol_target=0.10, vol_window=20,
+                   max_fill_days=1, participation=0.10)
+    for _ in range(25):
+        data.next_bar()
+    assert pf._risk_size_for("AAA") > 100
+    assert pf.on_signal(_signal(data)).quantity == 100
+
+
+def test_days_and_rate_go_together():
+    data, ex = handler()
+    with pytest.raises(ValueError):
+        Portfolio(data, max_fill_days=5)
+    with pytest.raises(ValueError):
+        Portfolio(data, participation=0.1)
+    with pytest.raises(ValueError):
+        Portfolio(data, max_fill_days=0, participation=0.1)
+
+
+def test_no_budget_is_the_old_behaviour():
+    data, ex = handler(volume=1000.0)
+    pf = Portfolio(data, initial_cash=1e9, trade_size=100_000)
+    data.next_bar()
+    assert pf.liquidity_budget("AAA") is None
+    assert pf.on_signal(_signal(data)).quantity == 100_000
+
+
+def test_exposure_is_gross_notional_over_equity_each_bar():
+    from src.engine import Backtest
+    from src.strategy import BuyAndHoldStrategy
+    data = make_handler_with_volumes({"AAA": [100.0] * 5}, {"AAA": [100.0] * 5},
+                                     {"AAA": [1e6] * 5})
+    ex = NextBarOpenExecutionHandler(data, slippage_bps=0.0, commission_per_share=0.0)
+    pf = Portfolio(data, initial_cash=100_000.0, trade_size=500)
+    Backtest(data, BuyAndHoldStrategy(data), pf, ex).run()
+    exposure = [x for _, x in pf.exposure_history]
+    # bar 1 signals, bar 2 fills at the open: flat, then half the book, forever
+    assert exposure[0] == 0.0
+    assert exposure[1:] == pytest.approx([0.5] * 4)

@@ -157,6 +157,7 @@ def run(prices: pd.DataFrame, strategy_cls, trade_size: int, slippage_bps: float
         execution.finalize()
     equity.attrs["n_fills"] = portfolio.n_fills
     equity.attrs["execution"] = execution
+    equity.attrs["portfolio"] = portfolio
     return equity
 
 

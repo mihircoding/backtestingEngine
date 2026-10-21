@@ -924,9 +924,163 @@ def law_ladder(prices, opens, volumes, aums=AUMS, participation: float = 0.10,
             row[name] = {**stats(eq), "slices": ex.slices,
                          "cost_bps": _weighted(ex.slice_cost_bps, ex.slice_shares),
                          "max_delay_bars": ex.max_delay_bars,
-                         "deployed": 1.0 - ex.unfilled_shares * first_price / aum}
+                         "deployed": 1.0 - ex.unfilled_shares * first_price / aum,
+                         "invested": invested(eq)}
         rows.append(row)
     return rows
+
+
+def invested(equity) -> float:
+    """How much of the book was in the market, averaged over every bar.
+
+    Gross position notional over equity, from the portfolio's own record.
+    This is the number the `deployed` column was reaching for and is not:
+    `deployed` is one minus the shares still working when the data ran out,
+    over the AUM - which is a statement about the LAST order, and how many
+    bars it had been working when the run stopped. Section 8 has the
+    correction.
+    """
+    history = equity.attrs["portfolio"].exposure_history
+    return float(np.mean([x for _, x in history])) if history else 0.0
+
+
+# ---------- 8. send what you can get done ----------
+
+FILL_DAYS = 5                       # a position must be buildable inside a week
+FILL_DAYS_SWEEP = (1, 2, 5, 10, 20, None)   # None is no cap: section 7's row
+
+
+def _ladder_handlers(participation: float, depth_frac: float, law_coef: float,
+                     persistence: float, recovery: float | None) -> dict:
+    """The three handlers of section 7, so the two ladders cannot drift."""
+    return {
+        "slice": (ParticipationLimitedExecutionHandler,
+                  {"participation": participation}),
+        "order": (ParticipationLimitedExecutionHandler,
+                  {"participation": participation, "impact_on": "order",
+                   "impact_coef": law_coef}),
+        "book": (BookExecutionHandler,
+                 {"participation": participation, "depth_frac": depth_frac,
+                  "persistence": persistence, "recovery": recovery}),
+    }
+
+
+def _sized_row(prices, opens, volumes, aum: float, fill_days: float | None,
+               participation: float, handlers: dict, **kwargs) -> dict:
+    first_price = float(prices.iloc[0, 0])
+    shares = max(int(aum / first_price), 1)
+    portfolio_kwargs = ({"max_fill_days": fill_days, "participation": participation}
+                        if fill_days is not None else {})
+    row = {"aum": aum, "fill_days": fill_days}
+    for name, (cls, execution_kwargs) in handlers.items():
+        eq = run(prices, MovingAverageCrossStrategy, trade_size=shares,
+                 initial_cash=aum, opens=opens, volumes=volumes,
+                 execution_cls=cls, execution_kwargs=execution_kwargs,
+                 portfolio_kwargs=portfolio_kwargs, **kwargs)
+        ex = eq.attrs["execution"]
+        row[name] = {**stats(eq), "slices": ex.slices,
+                     "cost_bps": _weighted(ex.slice_cost_bps, ex.slice_shares),
+                     "max_delay_bars": ex.max_delay_bars,
+                     "deployed": 1.0 - ex.unfilled_shares * first_price / aum,
+                     "invested": invested(eq),
+                     "sizings_capped": eq.attrs["portfolio"].liquidity_capped}
+    # What the budget let the desk hold, as a share of the AUM: the median
+    # liquidity budget over the run against the shares the AUM asked for.
+    # Reported from the data rather than from inside a run so that the same
+    # number stands beside all three handlers.
+    if fill_days is None:
+        row["position_share"] = 1.0
+    else:
+        adv = volumes.iloc[:, 0].rolling(20, min_periods=1).mean()
+        budget = (fill_days * participation * adv).median()
+        row["position_share"] = min(1.0, float(budget) / shares)
+    return row
+
+
+def time_in_market(prices, opens, **kwargs) -> float:
+    """The unconstrained rule's average exposure: what 'fully invested when
+    long' comes to over the sample once the flat stretches are counted. The
+    invested column of the ladders is read against this, not against 100%."""
+    eq = run(prices, MovingAverageCrossStrategy, trade_size=int(1e6 / float(prices.iloc[0, 0])),
+             initial_cash=1e6, opens=opens, execution_cls=NextBarOpenExecutionHandler,
+             **kwargs)
+    return invested(eq)
+
+
+def sized_ladder(prices, opens, volumes, aums=AUMS, fill_days: float = FILL_DAYS,
+                 participation: float = 0.10, depth_frac: float = 0.002,
+                 law_coef: float = LAW_COEF, persistence: float = LAW_PERSISTENCE,
+                 recovery: float | None = LAW_RECOVERY, **kwargs) -> list[dict]:
+    """Section 7's ladder again, with the strategy sending what it can fill.
+
+    Section 7 ended on the observation that above $1bn no handler describes a
+    trade, because the order sent is a position that takes forty bars to
+    build and the next signal cancels most of it. That is a sizing question,
+    and this answers it the way a desk does: the position is capped at what
+    `participation` of ADV fills inside `fill_days` bars, so every order
+    completes and the deployed column reads 100% by construction. What is
+    left to measure is what the strategy earns on the AUM once it is only
+    allowed to hold the part of it that fits - which is the capacity number
+    section 2 was reaching for, with the cash pile removed from the Sharpe.
+    """
+    handlers = _ladder_handlers(participation, depth_frac, law_coef,
+                                persistence, recovery)
+    return [_sized_row(prices, opens, volumes, aum, fill_days, participation,
+                       handlers, **kwargs) for aum in aums]
+
+
+def fill_days_sweep(prices, opens, volumes, aum: float = 2e10,
+                    days=FILL_DAYS_SWEEP, participation: float = 0.10,
+                    depth_frac: float = 0.002, law_coef: float = LAW_COEF,
+                    persistence: float = LAW_PERSISTENCE,
+                    recovery: float | None = LAW_RECOVERY, **kwargs) -> list[dict]:
+    """One AUM, every patience. A desk that will wait a month holds more of
+    the book than one that wants it done by Friday; this says what the extra
+    position earns and what it costs, at the AUM where section 7 said 90% of
+    the order was never sent."""
+    handlers = _ladder_handlers(participation, depth_frac, law_coef,
+                                persistence, recovery)
+    return [_sized_row(prices, opens, volumes, aum, d, participation,
+                       handlers, **kwargs) for d in days]
+
+
+def print_sized_ladder(rows: list[dict], sweep: list[dict], ladder: list[dict],
+                       baseline: float, fill_days: float) -> None:
+    print(f"\n8. SEND WHAT YOU CAN GET DONE   the position capped at what "
+          f"participation fills inside {fill_days:g} bars")
+    print(f"\n   First, section 7's ladder read by how much of the book was in the "
+          f"market, averaged over the run,\n   against the unconstrained rule's "
+          f"{baseline:.0%}. The 'deployed' column was the last order's fill.")
+    print(f"\n{'AUM':>8} {'deployed':>9} {'invested':>9} {'of baseline':>12} {'longest':>8}")
+    for r in ladder:
+        print(f"{r['aum'] / 1e9:>7.1f}bn {r['book']['deployed']:>9.0%} "
+              f"{r['book']['invested']:>9.0%} {r['book']['invested'] / baseline:>12.0%} "
+              f"{r['book']['max_delay_bars']:>8d}")
+    print(f"\n   Then the same ladder with the position capped at {fill_days:g} days "
+          f"of participation:")
+    print(f"\n{'AUM':>8} {'position':>9} {'invested':>9} {'Sharpe slice':>13} {'order':>7} "
+          f"{'book':>7} {'return slice':>13} {'order':>7} {'book':>7} "
+          f"{'cost slice':>11} {'order':>7} {'book':>7} {'longest':>8}")
+    for r in rows:
+        print(f"{r['aum'] / 1e9:>7.1f}bn {r['position_share']:>9.0%} "
+              f"{r['book']['invested'] / baseline:>9.0%} "
+              f"{r['slice']['sharpe']:>13.2f} {r['order']['sharpe']:>7.2f} "
+              f"{r['book']['sharpe']:>7.2f} "
+              f"{r['slice']['total_return']:>13.1%} {r['order']['total_return']:>7.1%} "
+              f"{r['book']['total_return']:>7.1%} "
+              f"{r['slice']['cost_bps']:>10.1f} {r['order']['cost_bps']:>7.1f} "
+              f"{r['book']['cost_bps']:>7.1f} {r['book']['max_delay_bars']:>8d}")
+    aum = sweep[0]["aum"]
+    print(f"\n   At ${aum / 1e9:.0f}bn, how long the desk is willing to take:")
+    print(f"\n{'days':>6} {'position':>9} {'invested':>9} {'Sharpe slice':>13} {'order':>7} "
+          f"{'book':>7} {'return book':>12} {'cost book':>10} {'longest':>8}")
+    for r in sweep:
+        label = "none" if r["fill_days"] is None else f"{r['fill_days']:g}"
+        print(f"{label:>6} {r['position_share']:>9.0%} "
+              f"{r['book']['invested'] / baseline:>9.0%} "
+              f"{r['slice']['sharpe']:>13.2f} {r['order']['sharpe']:>7.2f} "
+              f"{r['book']['sharpe']:>7.2f} {r['book']['total_return']:>12.1%} "
+              f"{r['book']['cost_bps']:>10.1f} {r['book']['max_delay_bars']:>8d}")
 
 
 def print_law_ladder(rows: list[dict], exponents: list[dict],
@@ -1217,6 +1371,12 @@ def main() -> None:
     ladder = law_ladder(prices, opens, volumes, aums=aums)
     print_law_ladder(ladder, formula_exp, formula)
 
+    sized = sized_ladder(prices, opens, volumes, aums=aums)
+    patience = fill_days_sweep(prices, opens, volumes,
+                               days=FILL_DAYS_SWEEP if not args.quick else (1, 5, None))
+    baseline = time_in_market(prices, opens)
+    print_sized_ladder(sized, patience, ladder, baseline, FILL_DAYS)
+
     os.makedirs("results", exist_ok=True)
     with open(OUT, "w") as fh:
         json.dump({"symbol": SYMBOL, "start": START, "end": END,
@@ -1232,7 +1392,9 @@ def main() -> None:
                    "metaorders": metaorders, "impact_exponents": exponents,
                    "closest_to_square_root": nearest,
                    "law_coef": LAW_COEF, "formula_curves": formula,
-                   "formula_exponents": formula_exp, "law_ladder": ladder},
+                   "formula_exponents": formula_exp, "law_ladder": ladder,
+                   "fill_days": FILL_DAYS, "time_in_market": baseline,
+                   "sized_ladder": sized, "fill_days_sweep": patience},
                   fh, indent=1, default=float)
     print(f"\nwrote {OUT}")
 

@@ -54,15 +54,25 @@ impact law that the formula only cites. Give the formula the law's form
 0.57, 15 bps a slice against 16 — and the reason turns out to be the
 coefficient rather than the slicing: at $1bn every order fits in a bar or
 two, and the shipped Y of 1 is twice the empirical value. Above that the two
-come apart, because most of the order never fills and a law measured on
-completed metaorders has nothing to say about one that is 90% never sent.
+come apart, because the order takes a month to fill and a law measured on
+completed metaorders has nothing to say about one that is still working. The
+fifth is a correction to the third: the "deployed" column that said 98% of a
+$100bn book never reached the market was measuring the last order of the
+sample — a sell, two bars old when the data ran out. Averaged over every bar
+the $100bn book was in the market as much as the $100m one. It was not idle,
+it was stuck, taking 161 bars to build a position and 161 to sell it, and
+the Sharpe that rose with AUM was a seven-month-lagged buy-and-hold with the
+strategy's costs. Give the portfolio a liquidity budget — hold only what 10%
+participation can fill in five days — and every order completes, the Sharpe
+stops rising, and capacity becomes a patience: $12bn at a week's, $2.4bn at
+a day's, with the return on AUM falling as 1/AUM above it.
 [RESULTS.md](RESULTS.md) has all of it, and the corrections.
 
-353 tests.
+364 tests.
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                 # 353 passed
+python -m pytest -q                 # 364 passed
 
 # the two halves together
 python fill_realism.py              # fill models compared, the headline result

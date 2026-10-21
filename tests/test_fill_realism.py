@@ -519,3 +519,58 @@ def test_the_ladder_slices_identically_under_all_three_handlers():
     # a $100M position on a $100M-a-day tape is a day of volume, which the
     # law charges for and the slice form does not
     assert big["order"]["cost_bps"] > big["slice"]["cost_bps"]
+
+
+# ---------- 8. send what you can get done ----------
+
+from fill_realism import fill_days_sweep, invested, sized_ladder, time_in_market
+
+
+def _tape(n=320, seed=4, volume=1e6):
+    idx = pd.bdate_range("2020-01-01", periods=n)
+    rng = np.random.default_rng(seed)
+    closes = pd.Series(100 * np.exp(np.cumsum(rng.normal(0, 0.01, n))), index=idx)
+    prices = closes.to_frame("SPY")
+    opens = (closes * (1 + rng.normal(0, 0.001, n))).to_frame("SPY")
+    volumes = pd.DataFrame({"SPY": [volume] * n}, index=idx)
+    return prices, opens, volumes
+
+
+def test_a_capped_position_completes_and_the_uncapped_one_is_the_old_row():
+    prices, opens, volumes = _tape()
+    # $1e8 at ~$100 is a million shares on a million-share tape: ten days at
+    # 10%, and the budget of two days holds a fifth of it
+    rows = sized_ladder(prices, opens, volumes, aums=(1e8,), fill_days=2,
+                        short_window=10, long_window=30)
+    row = rows[0]
+    assert row["position_share"] == pytest.approx(0.2, abs=0.01)
+    for name in ("slice", "order", "book"):
+        assert row[name]["max_delay_bars"] <= 3
+        assert row[name]["sizings_capped"] > 0
+    free = sized_ladder(prices, opens, volumes, aums=(1e8,), fill_days=None,
+                        short_window=10, long_window=30)[0]
+    assert free["position_share"] == 1.0
+    assert free["book"]["sizings_capped"] == 0
+    assert free["book"]["max_delay_bars"] > 3
+
+
+def test_more_patience_holds_more_of_the_book():
+    prices, opens, volumes = _tape()
+    sweep = fill_days_sweep(prices, opens, volumes, aum=1e8, days=(1, 5, None),
+                            short_window=10, long_window=30)
+    shares = [r["position_share"] for r in sweep]
+    held = [r["book"]["invested"] for r in sweep]
+    assert shares == sorted(shares) and held == sorted(held)
+    assert shares[-1] == 1.0
+
+
+def test_invested_is_the_time_average_of_exposure_not_the_last_order():
+    prices, opens, volumes = _tape()
+    base = time_in_market(prices, opens, short_window=10, long_window=30)
+    assert 0 < base <= 1.2
+    # a tiny book fills instantly, so it is in the market exactly as much as
+    # the unconstrained rule
+    row = sized_ladder(prices, opens, volumes, aums=(1e4,), fill_days=None,
+                       short_window=10, long_window=30)[0]
+    assert row["book"]["invested"] == pytest.approx(base, rel=0.05)
+    assert row["book"]["deployed"] == 1.0

@@ -359,6 +359,17 @@ running two fill models side by side is what made it visible, because a flaw
 that moves both columns the same way looks like a result until something else
 is standing next to it.
 
+*Correction, section 8.* The deployed column is right about the direction
+and wrong about what it measures. It is one minus the shares still working
+when the data ran out, and the order still working on December 30, 2024 was
+a sell that was two bars old. So 41%, 10% and 2% are how much of the *last
+order* got done, not how much of the book was ever in the market. Averaged
+over every bar, the $100bn book was in the market as much as the $100m one
+— it was not idle, it was stuck — and the Sharpe rises for a different
+reason than the one given here. Section 8 has the right column and the
+mechanism. The conclusion that the rows above $1bn are not Sharpe ratios of
+this strategy stands.
+
 ### 3. How much of this is the one free parameter
 
 `depth_frac` is an assumption, same as `slippage_bps` was. The difference is
@@ -728,6 +739,15 @@ while working. A desk that knew in advance it would get a tenth done would
 have sent a tenth, and that is a strategy-sizing question, not a fill-model
 one.
 
+*Correction, section 8.* "90% never built" is the deployed column, and the
+deployed column is the last order's fill — see the note under section 2.
+Over the run the $20bn position was built, every time, in up to 41 bars,
+and the book was in the market as much as an unconstrained one. The orders
+did complete; they completed late. What the law form charges above $1bn is
+still the root of a size that took a month to trade, and the sizing fix is
+still the honest one, so the rest of this paragraph stands with "never
+built" read as "built over a month".
+
 **What this changes in the earlier sections.** Section 2's "square-root
 Sharpe" column at the readable AUMs was a coefficient of 1 on a slice, and
 the right number for $1bn is 0.57, not 0.49: the shipped formula overcharged
@@ -739,6 +759,126 @@ true at exactly one AUM and for one reason, and the reason is not the one
 that section proposed. Nothing ships differently: `impact_on` defaults to
 `"slice"` and `impact_coef` to 1.0, because changing a default changes every
 table above it, and the gap is now measured rather than hidden.
+
+### 8. Send what you can get done — and find the book was never idle, it was stuck
+
+Reproduce with: `python fill_realism.py` (section 8 of the printout)
+
+Section 7 ended on a sizing question. Above $1bn the order sent is a
+position that takes a month or more to build, and a desk that knows it will
+get a tenth done sends a tenth. So `Portfolio` now takes a liquidity budget:
+`max_fill_days` and `participation`, and the position from either sizing
+scheme is clipped to days × participation × trailing ADV, the most that the
+participation handler can fill inside that many bars. Every order completes
+by construction and the question becomes what the strategy earns on the AUM
+once it is only allowed to hold the part of it that fits.
+
+Before running that, the column it was going to be read against had to be
+checked, and it was wrong. **`deployed` is one minus the shares still
+working when the data ran out, over the AUM.** On December 30, 2024 the
+order still working was a sell, two bars old, at every AUM above $1bn. So 41% at $5bn,
+10% at $20bn and 2% at $100bn are the fraction of *one order* — the last
+one — that got done in two days. They are not how much of the book was in
+the market. `Portfolio` now records its gross exposure every bar and
+`invested()` averages it, against the unconstrained rule's own time in the
+market (89%: a crossover rule on a tape that mostly went up is mostly long).
+
+| AUM | deployed, as reported | in the market, time-averaged | longest fill, bars |
+|---|---|---|---|
+| $0.1bn | 100% | 101% | 1 |
+| $1bn | 100% | 107% | 2 |
+| $5bn | 41% | 107% | 10 |
+| $20bn | 10% | 100% | 41 |
+| $100bn | 2% | 101% | 161 |
+
+The $100bn book was in the market exactly as much as the $100m one. It was
+never idle. It was *stuck*: a position that takes 161 bars to build takes
+161 bars to sell, the next crossover arrives before either is done, and the
+book spends the run ramping toward a target it never reaches and then
+ramping away from it. Sections 2 and 7 read the Sharpe rising with AUM as
+cash in the denominator, and it is not that — at a zero rate a constant
+cash fraction does not move a Sharpe at all. What it is: a seven-month
+moving average of a crossover signal on a tape that went up is a lagged
+buy-and-hold, and buy-and-hold's Sharpe over these ten years is 0.79. The
+$100bn row's 0.73–0.75 is that, with the costs taken out. Every ladder
+above this one has the right conclusion — those rows are not Sharpe ratios
+of this strategy — attached to the wrong mechanism, and the correction is
+noted under each.
+
+**Now the sizing rule.** Same ladder, three handlers, the position capped at
+five days of 10% participation. `position` is what the budget allowed as a
+share of the AUM, on the median bar; `in the market` is relative to the
+unconstrained rule.
+
+| AUM | position | in the market | Sharpe: slice | order | book | return: slice | order | book | cost: slice | order | book | longest fill |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| $0.1bn | 100% | 101% | 0.60 | 0.63 | 0.64 | 124% | 130% | 134% | 10.6 | 6.2 | 3.7 | 1 |
+| $1bn | 100% | 107% | 0.49 | 0.57 | 0.57 | 99% | 117% | 119% | 28.2 | 15.1 | 16.3 | 2 |
+| $5bn | 100% | 107% | 0.44 | 0.45 | 0.51 | 81% | 83% | 100% | 33.4 | 31.3 | 21.3 | 10 |
+| $20bn | **34%** | 48% | 0.47 | 0.43 | 0.54 | 44% | 40% | 52% | 35.5 | 43.1 | 23.0 | 16 |
+| $100bn | **7%** | 11% | 0.44 | 0.40 | 0.51 | 9% | 8% | 10% | 35.5 | 43.1 | 23.0 | 16 |
+
+Three things in that table.
+
+*The Sharpe stops rising.* Once the book holds only what it can trade, the
+$20bn and $100bn rows read 0.54 and 0.51 on the book handler, which is the
+$5bn row's 0.51 — the Sharpe of the strategy at a size where it is a
+strategy. The costs in the last three columns are identical at $20bn and
+$100bn because the position is identical: 5 days × 10% × ADV is the same
+share count whatever the AUM, so above the budget every row is the same
+trade with more cash beside it. The return column is where the AUM shows
+up: 52% on $20bn, 10% on $100bn, against 112% for the stuck book at $20bn
+that was "fully invested" because it could not get out.
+
+*Capacity has a number now, and it is a patience.* The budget binds where
+the position the AUM asks for exceeds 5 days of participation, which on
+this tape is **$12bn** at the median ($10bn in 2015, $14bn in 2024, as SPY's
+share volume fell and its price tripled). A day's patience is $2.4bn; a
+month's is $48bn. Below the line the strategy earns its full return at its
+full-size Sharpe; above it the Sharpe holds and the return on AUM falls as
+1/AUM. That is what a capacity curve looks like, and the deployed column was
+never going to draw it.
+
+*The law form is the one that pays for patience.* At $20bn the formula on
+the order charges 43 bps a slice where the book charges 23, and its Sharpe
+is the lowest of the three, because the order is now a five-day metaorder
+that completes and the law charges every slice for the root of all five
+days. Section 7 said the two agree where an order completes in a bar or
+two; a five-day order is where they are supposed to differ, and they do,
+with the book cheaper. Which one is right is the question section 6 could
+not settle without intraday data, and still cannot.
+
+**How much patience is worth, at $20bn.** The same book, the desk willing
+to take longer.
+
+| days to fill | position | in the market | Sharpe: slice | order | book | return, book | cost, book | longest fill |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 7% | 11% | 0.48 | 0.54 | 0.55 | 12% | 20.3 | 3 |
+| 2 | 14% | 21% | 0.46 | 0.49 | 0.53 | 22% | 21.6 | 6 |
+| 5 | 34% | 48% | 0.47 | 0.43 | 0.54 | 52% | 23.0 | 16 |
+| 10 | 68% | 81% | 0.45 | 0.34 | 0.52 | 76% | 23.0 | 23 |
+| 20 | 100% | 100% | 0.55 | 0.41 | 0.59 | 112% | 24.6 | 41 |
+| no cap | 100% | 100% | 0.55 | 0.41 | 0.59 | 112% | 24.6 | 41 |
+
+From a day to ten the book's Sharpe sits between 0.52 and 0.55 and the
+return climbs with the position, which is the budget doing exactly what it
+should: the Sharpe is a property of the strategy and the return is a
+property of how much of it you can hold. The order form's Sharpe falls from
+0.54 to 0.34 along the same rows, because the longer the metaorder the more
+the root of it costs; whether a ten-day metaorder in SPY really costs 43 bps
+a slice is the thing the literature disagrees about by a factor of two. The
+20-day row is the uncapped row, because at 20 days the budget is $48bn and
+nothing at $20bn ever hits it — and its 0.59 is the stuck book's number, a
+lagged buy-and-hold with the strategy's costs, which is higher than any
+capped row and is not a number to want.
+
+One thing the budget does not do, stated: the longest fill is 16 bars on a
+five-day budget, not five. The budget is set against the trailing ADV at the
+signal and the fill is capped at 10% of each bar's actual volume, so an
+order sent into a quiet fortnight — or a holiday week — takes longer than
+the average said it would. A desk would know that too. Nothing ships
+differently: both parameters default to None, and every number above this
+section was run without a budget.
 
 ### What this still does not model
 
@@ -763,12 +903,15 @@ table above it, and the gap is now measured rather than hidden.
   the law's form (`impact_on="order"`) and finds it lands on that book at
   $1bn, for the coefficient rather than the slicing, and that above $1bn no
   handler here describes an order that completes.
-- **The law is applied to the order that was sent, not the one that got
-  done.** Section 7. Above $1bn most of an order never fills, and the
-  order-form charge is the root of a size that was never traded. A model of
-  what a partially executed metaorder costs would need the literature on
-  cancelled metaorders, which is thin, and intraday data, which section 1
-  does not have.
+- ~~**The law is applied to the order that was sent, not the one that got
+  done.**~~ Section 8. The order that was sent now *gets* done: the
+  portfolio clips the position to what participation fills inside
+  `max_fill_days`, every order completes, and the capacity number is a
+  patience — $12bn at a week's, $2.4bn at a day's. And the "90% never
+  built" this bullet rested on was the last order's fill, not the book's;
+  the book was always in the market, built late and sold late. What a
+  five-day metaorder in SPY actually costs — 23 bps a slice on the book or
+  43 on the law — is still the open question, and still needs intraday data.
 - Every order is a taker. Passive execution is deliberately absent, and the
   reason is a measurement: pooling a day's volume puts ~153,000 shares at the
   touch, and section 8 of notes/exchange.md already showed that an order

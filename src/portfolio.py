@@ -59,13 +59,38 @@ class Portfolio:
         position while a partial fill is still working will order the same
         shares twice, then twice again the next bar. Position plus open orders
         is what a real order management system tracks, and this is that.
+    max_fill_days / participation: cap the position at what the desk can
+        actually get done. A participation-limited handler fills at most
+        `participation` of each bar's volume, so a position of more than
+        max_fill_days x participation x ADV cannot be built inside
+        max_fill_days bars, and RESULTS.md section 7 found that above $1bn
+        most of such an order is never built at all - the next signal
+        cancels it first. A desk that knows it will get a tenth done sends a
+        tenth, and this is that rule: the share count from either sizing
+        scheme is clipped to that liquidity budget, with ADV the trailing
+        `adv_window` released volumes, so a position never takes longer than
+        max_fill_days to put on. Both default to None, which is no cap, and
+        every number in RESULTS.md before section 8 was run without one.
+        The two go together: a cap in days means nothing without the rate it
+        is filled at, so setting one without the other is an error rather
+        than a silent default. It caps the POSITION, not the order; a
+        reversal from long to short is two positions' worth and takes twice
+        as long, which is what it would take a desk too.
     """
 
     def __init__(self, data: HistoricalDataHandler, initial_cash: float = 100_000.0,
                  trade_size: int = 100, vol_target: float | None = None,
                  vol_window: int = 20, max_leverage: float = 3.0,
                  rebalance_band: float = 0.2, short_borrow_bps: float = 0.0,
-                 pending=None):
+                 pending=None, max_fill_days: float | None = None,
+                 participation: float | None = None, adv_window: int = 20):
+        if (max_fill_days is None) != (participation is None):
+            raise ValueError("max_fill_days and participation go together: "
+                             "a liquidity cap needs both the days and the rate")
+        if max_fill_days is not None and max_fill_days <= 0:
+            raise ValueError("max_fill_days must be positive")
+        if participation is not None and not 0 < participation <= 1:
+            raise ValueError("participation must be in (0, 1]")
         self.data = data
         self.initial_cash = initial_cash
         self.trade_size = trade_size
@@ -75,10 +100,20 @@ class Portfolio:
         self.rebalance_band = rebalance_band
         self.short_borrow_bps = short_borrow_bps
         self.pending = pending
+        self.max_fill_days = max_fill_days
+        self.participation = participation
+        self.adv_window = adv_window
+        self.liquidity_capped = 0   # how many sizings the liquidity budget clipped
         self.borrow_paid = 0.0  # cumulative dollars of borrow cost, for reporting
         self.cash = initial_cash
         self.positions: dict[str, int] = {}
         self.equity_history: list[tuple] = []
+        # Gross position notional over equity, one point per bar. The
+        # capacity studies need to know how much of the book was actually in
+        # the market, and the equity curve alone cannot say: a book that is
+        # 10% invested and one that is 100% invested in something ten times
+        # calmer draw the same line.
+        self.exposure_history: list[tuple] = []
         self.n_fills = 0  # how much trading the book actually did
 
     # direction of the target position for each signal type; the magnitude
@@ -122,6 +157,10 @@ class Portfolio:
         Falls back to the fixed size during warmup, when there is not yet
         enough history to estimate a volatility from.
         """
+        return self._liquidity_clip(symbol, self._risk_size_for(symbol))
+
+    def _risk_size_for(self, symbol: str) -> int:
+        """The size before the liquidity budget: fixed, or vol-targeted."""
         if self.vol_target is None:
             return self.trade_size
 
@@ -135,6 +174,26 @@ class Portfolio:
 
         cap = self.max_leverage * equity / price
         return int(min(shares, cap))
+
+    def liquidity_budget(self, symbol: str) -> int | None:
+        """The most shares a position may be, given how fast they can be
+        bought: max_fill_days x participation x trailing ADV. None when no
+        cap is set. Reads released volumes only, like everything else here,
+        and during warmup the average is over whatever has been released."""
+        if self.max_fill_days is None:
+            return None
+        window = self.data.get_latest_volumes(symbol, self.adv_window)
+        if not len(window):
+            return None
+        adv = float(window.mean())
+        return int(self.max_fill_days * self.participation * adv)
+
+    def _liquidity_clip(self, symbol: str, shares: int) -> int:
+        budget = self.liquidity_budget(symbol)
+        if budget is None or shares <= budget:
+            return shares
+        self.liquidity_capped += 1
+        return budget
 
     def _effective_position(self, symbol: str) -> int:
         """Filled position plus anything still working at the broker.
@@ -255,4 +314,8 @@ class Portfolio:
         has the charge in it.
         """
         self.accrue_borrow()
-        self.equity_history.append((time, self.total_equity()))
+        equity = self.total_equity()
+        self.equity_history.append((time, equity))
+        gross = sum(abs(shares) * self.data.current_price(symbol)
+                    for symbol, shares in self.positions.items() if shares != 0)
+        self.exposure_history.append((time, gross / equity if equity > 0 else 0.0))
