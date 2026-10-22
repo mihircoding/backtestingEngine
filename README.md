@@ -65,14 +65,20 @@ the Sharpe that rose with AUM was a seven-month-lagged buy-and-hold with the
 strategy's costs. Give the portfolio a liquidity budget — hold only what 10%
 participation can fill in five days — and every order completes, the Sharpe
 stops rising, and capacity becomes a patience: $12bn at a week's, $2.4bn at
-a day's, with the return on AUM falling as 1/AUM above it.
+a day's, with the return on AUM falling as 1/AUM above it. The sixth makes
+the budget bind on the way out as well — a desk that cannot get out in five
+days does not own the position — and finds it costs a third of the return
+at $20bn to shorten the worst exit from 16 bars to 13, because a trim is an
+order into the same thin tape; and runs the rule that flips, whose reversal
+takes twice as long below the budget and has no capacity worth measuring,
+because on this tape the short leg has no edge to scale.
 [RESULTS.md](RESULTS.md) has all of it, and the corrections.
 
-364 tests.
+375 tests.
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                 # 364 passed
+python -m pytest -q                 # 375 passed
 
 # the two halves together
 python fill_realism.py              # fill models compared, the headline result

@@ -878,7 +878,120 @@ signal and the fill is capped at 10% of each bar's actual volume, so an
 order sent into a quiet fortnight — or a holiday week — takes longer than
 the average said it would. A desk would know that too. Nothing ships
 differently: both parameters default to None, and every number above this
-section was run without a budget.
+section was run without a budget. Section 9 makes the budget bind on the
+exit as well, and finds out what that is worth.
+
+### 9. Make the budget bind on the way out, and run the rule that flips — the exit shortens by three bars, and the reversal has no capacity to measure
+
+Reproduce with: `python fill_realism.py` (section 9 of the printout)
+
+Section 8 left two things open. The budget bound on the way in only: the
+position was capped at what five days of participation could *build*, then
+sold at whatever pace the tape allowed, which is how a five-day budget
+produced a sixteen-bar fill. And the ladder was long-only, where the worst
+order is a position's worth; the long/short version of the rule reverses,
+and a reversal is two positions in one order.
+
+**The budget on the way out.** `Portfolio` takes `trim_to_budget`: every
+bar, every open position is checked against the budget as it stands — the
+same days × participation × trailing ADV, with today's ADV — and anything
+over it is sold down, inside the same rebalance band vol targeting uses.
+A desk that cannot get out in five days does not own the position. Off by
+default; section 8's rows were run with it off. Same ladder, the book
+handler, entry-only against trimmed:
+
+| AUM | Sharpe, entry only | trimmed | return, entry only | trimmed | in the market, entry only | trimmed | longest fill, entry only | trimmed | trims | cost, entry only | trimmed |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| $0.1bn | 0.64 | 0.64 | 134% | 134% | 101% | 101% | 1 | 1 | 0 | 3.7 | 3.7 |
+| $1bn | 0.57 | 0.57 | 119% | 119% | 107% | 107% | 2 | 2 | 0 | 16.3 | 16.3 |
+| $5bn | 0.51 | 0.54 | 100% | 104% | 107% | 103% | 10 | 10 | 6 | 21.3 | 20.6 |
+| $20bn | 0.54 | 0.52 | 52% | **36%** | 48% | 38% | 16 | **13** | 48 | 23.0 | 21.6 |
+| $100bn | 0.51 | 0.50 | 10% | 7% | 11% | 9% | 16 | 13 | 48 | 23.0 | 21.6 |
+
+Below the budget nothing happens, which is the first check. At $20bn the
+trim fires 48 times in ten years — about once every seven weeks — and the
+reason is not a quiet fortnight here and there. SPY's share volume fell
+through the decade as its price tripled, so a position sized to the ADV at
+the signal is over the line a few weeks later more often than not, and the
+book sells down a little, again and again, into the same falling volume.
+That costs a third of the return — 52% to 36% on the AUM — for a Sharpe
+that does not move (0.54 to 0.52), and it holds a fifth less of the book.
+The longest fill goes from 16 bars to 13, not to 5. The budget is a
+statement about the trailing average and the fill is 10% of each bar's
+*actual* volume; a trim is an order into the same thin tape as the exit it
+is meant to shorten, so it shortens it by what it sold before the signal
+and no more. "Hold only what you can get out of" is a discipline that costs
+return and buys three bars, on this tape. A desk would still run it,
+because the sixteen-bar exit is the one that happens in the week it
+matters, and the Sharpe says the return it gives up was the return of
+being stuck.
+
+The $5bn row is the one to be suspicious of: six trims, Sharpe up 0.03.
+That is noise with a sign, not a result.
+
+**The rule that flips.** `long_short_ladder` runs
+`MovingAverageCrossLongShortStrategy` — short where the long-only rule went
+flat — on the same ladder, borrow charged at 75bp (the rate `long_short.py`
+uses, chosen pessimistically), unconstrained and under the five-day budget.
+`position` is what the budget allows, which is the same share count as
+section 8's, because the budget caps the position and does not know the
+rule reverses.
+
+| AUM | position | Sharpe, free | budgeted: slice | order | book | return, free | book, budgeted | longest fill, free | budgeted | long-only, budgeted | cost, book | borrow paid |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| $0.1bn | 100% | 0.25 | 0.24 | 0.24 | 0.25 | 20% | 20% | 1 | 1 | 1 | 5.9 | 40bp/yr |
+| $1bn | 100% | 0.27 | **−0.57** | 0.25 | 0.27 | −9% | −9% | 4 | 4 | 2 | 19.0 | 39 |
+| $5bn | 100% | 0.11 | −0.12 | **−0.32** | 0.12 | −40% | −37% | 18 | 18 | 10 | 22.6 | 34 |
+| $20bn | 34% | 0.22 | 0.02 | −0.12 | 0.11 | 27% | 7% | 74 | **24** | 16 | 27.0 | 11 |
+| $100bn | 7% | 0.35 | −0.03 | −0.18 | 0.06 | 63% | 1% | 531 | 24 | 16 | 40.4 | 2 |
+
+Three things, and the first is the one the section was run for.
+
+*The flip takes twice as long, until the budget binds, and then half again.*
+Longest fill, long/short against long-only under the same budget: 4 against
+2 at $1bn, 18 against 10 at $5bn, 24 against 16 at $20bn and above. Below
+the budget a reversal is two positions' worth of shares into the same
+participation, so it takes twice the bars, as it should. At the budget both
+rules hold the same capped position and the reversal is two of those: ten
+days nominal, 24 actual against the long-only's 16, because both are
+stretched by the same quiet weeks and the reversal spends longer in them.
+Unconstrained, the reversal at $100bn takes **531 bars** — two years — and
+never completes before the next signal, which is section 8's stuck book
+twice over: a rule that is always meant to be long or short and is, in
+practice, slowly becoming one of them.
+
+*The rule has no capacity, because it has no edge to scale.* Long/short
+on SPY over 2015–2024 is Sharpe 0.25 at $100m with a one-bar fill, which is
+`long_short.py`'s finding on 24 ETFs read on one: the short leg of a trend
+rule on an equity index loses money, and borrow at 75bp is 40bp a year on
+top. Capacity is the AUM at which the Sharpe of a strategy stops being the
+Sharpe of the strategy, and this one's never was anything to protect. Under
+the budget the $20bn book earns 7% on the AUM in ten years and the $100bn
+book 1%, at a Sharpe of a tenth: the budget does its job — the return on
+AUM falls as 1/AUM above the line, exactly as in section 8 — and the thing
+it is scaling is worth nothing. The free rows' rising Sharpe (0.22, 0.35)
+is the stuck book again, and this time with a 531-bar fill it is not even
+a lagged buy-and-hold, it is a lagged nothing.
+
+*The formula on the order is the law's verdict on reversals, and it is
+severe.* The `order` column charges a reversal as one metaorder of two
+positions, root of the whole size on every slice, and at $5bn that is
+43 bps a slice over 345 slices: a −96% return, the strategy's capital gone.
+The slice form at $1bn (−0.57, −52%) is the same thing at a smaller size.
+The book handler, which charges each bar's slice against that bar's depth
+and lets the book heal, reads 0.12 at $5bn. Section 7 said the two forms
+disagree by 2× on a five-day order and the literature does not settle it;
+on a ten-day reversal they disagree by the whole strategy, and the same
+intraday data would settle both.
+
+What this leaves. The trim sells down and never tops up, so a fixed-size
+book that drifted *under* its budget on a loud week is not rebuilt — the
+signal did not ask for more, and a budget is a ceiling. The long/short rows
+share section 8's one free parameter, the 10% participation, and the flip's
+24 bars is at that rate. And the borrow is the only carry charged: the
+short's rebate on the proceeds, which at 2023 rates would have paid for the
+borrow several times over, is not credited, which flatters nothing here
+because the short leg loses before carry.
 
 ### What this still does not model
 
@@ -912,6 +1025,11 @@ section was run without a budget.
   the book was always in the market, built late and sold late. What a
   five-day metaorder in SPY actually costs — 23 bps a slice on the book or
   43 on the law — is still the open question, and still needs intraday data.
+  Section 9 makes the budget bind on the way out too (the longest fill goes
+  from 16 bars to 13, for a third of the return at $20bn) and runs the
+  long/short rule, whose reversal takes twice as long below the budget and
+  half again at it — and which has no capacity to measure, because on this
+  tape it has no edge to scale.
 - Every order is a taker. Passive execution is deliberately absent, and the
   reason is a measurement: pooling a day's volume puts ~153,000 shares at the
   touch, and section 8 of notes/exchange.md already showed that an order

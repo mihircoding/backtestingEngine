@@ -574,3 +574,59 @@ def test_invested_is_the_time_average_of_exposure_not_the_last_order():
                        short_window=10, long_window=30)[0]
     assert row["book"]["invested"] == pytest.approx(base, rel=0.05)
     assert row["book"]["deployed"] == 1.0
+
+
+# ---------- 9. the budget on the way out, and the rule that flips ----------
+
+from fill_realism import long_short_ladder, trimmed_ladder
+
+
+def _drying_tape(n=320, seed=4, loud=1e6, quiet=2e5, dries_at=160):
+    prices, opens, _ = _tape(n=n, seed=seed)
+    volumes = pd.DataFrame({"SPY": [loud] * dries_at + [quiet] * (n - dries_at)},
+                           index=prices.index)
+    return prices, opens, volumes
+
+
+def test_the_trimmed_ladder_sells_down_when_the_tape_dries_up_and_the_entry_only_one_does_not():
+    prices, opens, volumes = _drying_tape()
+    kw = dict(aums=(1e8,), fill_days=2, short_window=10, long_window=30)
+    entry_only = sized_ladder(prices, opens, volumes, **kw)[0]
+    trimmed = trimmed_ladder(prices, opens, volumes, **kw)[0]
+    assert entry_only["book"]["trims"] == 0
+    assert trimmed["book"]["trims"] > 0
+    # the trimmed book holds less once the volume dries up
+    assert trimmed["book"]["invested"] < entry_only["book"]["invested"]
+
+
+def test_on_a_steady_tape_the_trim_never_fires_and_the_rows_agree():
+    prices, opens, volumes = _tape()
+    kw = dict(aums=(1e8,), fill_days=2, short_window=10, long_window=30)
+    entry_only = sized_ladder(prices, opens, volumes, **kw)[0]
+    trimmed = trimmed_ladder(prices, opens, volumes, **kw)[0]
+    assert trimmed["book"]["trims"] == 0
+    assert trimmed["book"]["sharpe"] == pytest.approx(entry_only["book"]["sharpe"])
+    assert trimmed["book"]["fills"] == entry_only["book"]["fills"]
+
+
+def test_the_flip_takes_twice_as_long_as_the_position_under_the_same_budget():
+    prices, opens, volumes = _tape()
+    kw = dict(aums=(1e8,), fill_days=2, short_window=10, long_window=30)
+    long_only = sized_ladder(prices, opens, volumes, **kw)[0]
+    both = long_short_ladder(prices, opens, volumes, **kw)[0]
+    # the budget caps the position at two days of participation; a reversal
+    # is two positions' worth and takes about four
+    assert long_only["book"]["max_delay_bars"] <= 3
+    assert 4 <= both["book"]["max_delay_bars"] <= 6
+    assert both["position_share"] == pytest.approx(long_only["position_share"])
+
+
+def test_the_long_short_rows_charge_borrow_and_the_free_row_is_unconstrained():
+    prices, opens, volumes = _tape()
+    kw = dict(aums=(1e8,), short_window=10, long_window=30)
+    free = long_short_ladder(prices, opens, volumes, fill_days=None, **kw)[0]
+    capped = long_short_ladder(prices, opens, volumes, fill_days=2, **kw)[0]
+    assert free["position_share"] == 1.0 and capped["position_share"] < 1.0
+    assert free["book"]["borrow_paid_bps"] > 0 and capped["book"]["borrow_paid_bps"] > 0
+    none = long_short_ladder(prices, opens, volumes, fill_days=2, borrow_bps=0.0, **kw)[0]
+    assert none["book"]["borrow_paid_bps"] == 0.0

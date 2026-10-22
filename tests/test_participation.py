@@ -459,3 +459,143 @@ def test_exposure_is_gross_notional_over_equity_each_bar():
     # bar 1 signals, bar 2 fills at the open: flat, then half the book, forever
     assert exposure[0] == 0.0
     assert exposure[1:] == pytest.approx([0.5] * 4)
+
+
+# ---------- the budget on the way out ----------
+
+def _quiet_after(n_loud=10, n_quiet=20, loud=1000.0, quiet=200.0):
+    volumes = [loud] * n_loud + [quiet] * n_quiet
+    n = n_loud + n_quiet
+    return make_handler_with_volumes({"AAA": [100.0] * n}, {"AAA": [100.0] * n},
+                                     {"AAA": volumes})
+
+
+def test_a_held_position_is_sold_down_when_the_tape_goes_quiet():
+    data = _quiet_after()
+    pf = Portfolio(data, initial_cash=1e9, trade_size=100_000,
+                   max_fill_days=5, participation=0.10, adv_window=5,
+                   trim_to_budget=True)
+    for _ in range(5):
+        data.next_bar()
+    assert pf.on_signal(_signal(data)).quantity == 500      # 5 x 10% x 1000
+    pf.positions["AAA"] = 500                                # filled in full
+    assert pf.on_market(data.current_time()) == []           # fits today
+    for _ in range(10):
+        data.next_bar()                                      # five quiet bars in the window
+    orders = pf.on_market(data.current_time())
+    assert len(orders) == 1
+    assert orders[0].quantity == 100 - 500                   # down to 5 x 10% x 200
+    assert pf.liquidity_trims == 1
+
+
+def test_the_trim_sells_down_and_never_tops_up():
+    data = _quiet_after(n_loud=10, n_quiet=20, loud=200.0, quiet=1000.0)
+    pf = Portfolio(data, initial_cash=1e9, trade_size=100_000,
+                   max_fill_days=5, participation=0.10, adv_window=5,
+                   trim_to_budget=True)
+    for _ in range(5):
+        data.next_bar()
+    pf.positions["AAA"] = 100
+    for _ in range(10):
+        data.next_bar()                                      # budget is now 500
+    assert pf.on_market(data.current_time()) == []
+    assert pf.liquidity_trims == 0
+
+
+def test_the_trim_leaves_a_position_a_little_over_the_line_alone():
+    data = _quiet_after(n_loud=10, n_quiet=20, loud=1000.0, quiet=900.0)
+    pf = Portfolio(data, initial_cash=1e9, trade_size=100_000,
+                   max_fill_days=5, participation=0.10, adv_window=5,
+                   trim_to_budget=True, rebalance_band=0.2)
+    for _ in range(5):
+        data.next_bar()
+    pf.positions["AAA"] = 500
+    for _ in range(10):
+        data.next_bar()                                      # budget 450: 11% over, inside the band
+    assert pf.on_market(data.current_time()) == []
+
+
+def test_the_trim_counts_what_is_already_working():
+    data = _quiet_after()
+    pf = Portfolio(data, initial_cash=1e9, trade_size=100_000,
+                   max_fill_days=5, participation=0.10, adv_window=5,
+                   trim_to_budget=True, pending=lambda s: -400)
+    for _ in range(15):
+        data.next_bar()
+    pf.positions["AAA"] = 500                                # 400 of it already being sold
+    assert pf.on_market(data.current_time()) == []
+
+
+def test_the_trim_applies_to_a_short_too():
+    data = _quiet_after()
+    pf = Portfolio(data, initial_cash=1e9, trade_size=100_000,
+                   max_fill_days=5, participation=0.10, adv_window=5,
+                   trim_to_budget=True)
+    for _ in range(15):
+        data.next_bar()
+    pf.positions["AAA"] = -500
+    orders = pf.on_market(data.current_time())
+    assert orders[0].quantity == 400                         # buy back down to -100
+
+
+def test_the_trim_needs_a_budget_and_is_off_by_default():
+    data = _quiet_after()
+    with pytest.raises(ValueError):
+        Portfolio(data, trim_to_budget=True)
+    pf = Portfolio(data, initial_cash=1e9, trade_size=100_000,
+                   max_fill_days=5, participation=0.10, adv_window=5)
+    for _ in range(15):
+        data.next_bar()
+    pf.positions["AAA"] = 500
+    assert pf.on_market(data.current_time()) == []
+    assert pf.liquidity_trims == 0
+
+
+def test_a_trimmed_book_is_further_out_when_the_exit_comes():
+    """The claim behind the flag, at its most modest: once the tape goes
+    quiet the trimmed book starts selling before the signal does, so when
+    the exit arrives there is less left to get out of. It does not get out
+    inside the budget - nothing can, on a tape that drops tenfold, because
+    the trim is an order into the same thin volume - and the test says so
+    rather than pretending."""
+    from src.engine import Backtest
+    from src.events import SignalEvent, SignalType
+
+    class InThenOut:
+        def __init__(self, data):
+            self.data = data
+            self.bar = 0
+
+        def on_market(self, event):
+            self.bar += 1
+            if self.bar == 6:
+                return [SignalEvent(event.time, "AAA", SignalType.LONG)]
+            if self.bar == 26:
+                return [SignalEvent(event.time, "AAA", SignalType.EXIT)]
+            return []
+
+    def run_with(trim):
+        volumes = [1000.0] * 12 + [100.0] * 28
+        data = make_handler_with_volumes({"AAA": [100.0] * 40}, {"AAA": [100.0] * 40},
+                                         {"AAA": volumes})
+        ex = ParticipationLimitedExecutionHandler(data, participation=0.10)
+        pf = Portfolio(data, initial_cash=1e9, trade_size=100_000,
+                       pending=ex.working_quantity, max_fill_days=5, participation=0.10,
+                       adv_window=5, trim_to_budget=trim)
+        Backtest(data, InThenOut(data), pf, ex).run()
+        ex.finalize()
+        return pf, ex
+
+    pf_trim, ex_trim = run_with(True)
+    pf_free, ex_free = run_with(False)
+    assert pf_trim.liquidity_trims >= 1
+    assert pf_free.liquidity_trims == 0
+    # both books bought 500 into 1000-share bars and sell into 100-share bars
+    # at 10 a bar, and neither exit finished before the data ran out...
+    assert ex_free.unfilled_shares > 0 and ex_trim.unfilled_shares > 0
+    # ...but the trimmed one had been selling since the volume dried up, so
+    # it was smaller at the signal and is smaller at the end
+    free_at_exit = [x for _, x in pf_free.exposure_history][25]
+    trim_at_exit = [x for _, x in pf_trim.exposure_history][25]
+    assert trim_at_exit < free_at_exit
+    assert pf_trim.positions["AAA"] < pf_free.positions["AAA"]

@@ -59,7 +59,8 @@ from src.data_handler import HistoricalDataHandler
 from src.events import OrderEvent
 from src.execution import (NextBarOpenExecutionHandler,
                            ParticipationLimitedExecutionHandler)
-from src.strategy import MovingAverageCrossStrategy
+from src.strategy import (MovingAverageCrossLongShortStrategy,
+                          MovingAverageCrossStrategy)
 from run_backtest import (fetch_opens, fetch_prices, fetch_volumes, run, stats)
 
 SYMBOL = "SPY"
@@ -966,24 +967,33 @@ def _ladder_handlers(participation: float, depth_frac: float, law_coef: float,
 
 
 def _sized_row(prices, opens, volumes, aum: float, fill_days: float | None,
-               participation: float, handlers: dict, **kwargs) -> dict:
+               participation: float, handlers: dict,
+               strategy=MovingAverageCrossStrategy, trim: bool = False,
+               borrow_bps: float = 0.0, **kwargs) -> dict:
     first_price = float(prices.iloc[0, 0])
     shares = max(int(aum / first_price), 1)
-    portfolio_kwargs = ({"max_fill_days": fill_days, "participation": participation}
+    portfolio_kwargs = ({"max_fill_days": fill_days, "participation": participation,
+                         "trim_to_budget": trim}
                         if fill_days is not None else {})
+    if borrow_bps:
+        portfolio_kwargs["short_borrow_bps"] = borrow_bps
     row = {"aum": aum, "fill_days": fill_days}
     for name, (cls, execution_kwargs) in handlers.items():
-        eq = run(prices, MovingAverageCrossStrategy, trade_size=shares,
+        eq = run(prices, strategy, trade_size=shares,
                  initial_cash=aum, opens=opens, volumes=volumes,
                  execution_cls=cls, execution_kwargs=execution_kwargs,
                  portfolio_kwargs=portfolio_kwargs, **kwargs)
         ex = eq.attrs["execution"]
+        pf = eq.attrs["portfolio"]
         row[name] = {**stats(eq), "slices": ex.slices,
                      "cost_bps": _weighted(ex.slice_cost_bps, ex.slice_shares),
                      "max_delay_bars": ex.max_delay_bars,
                      "deployed": 1.0 - ex.unfilled_shares * first_price / aum,
                      "invested": invested(eq),
-                     "sizings_capped": eq.attrs["portfolio"].liquidity_capped}
+                     "sizings_capped": pf.liquidity_capped,
+                     "trims": pf.liquidity_trims,
+                     "fills": pf.n_fills,
+                     "borrow_paid_bps": pf.borrow_paid / aum * 1e4}
     # What the budget let the desk hold, as a share of the AUM: the median
     # liquidity budget over the run against the shares the AUM asked for.
     # Reported from the data rather than from inside a run so that the same
@@ -997,11 +1007,11 @@ def _sized_row(prices, opens, volumes, aum: float, fill_days: float | None,
     return row
 
 
-def time_in_market(prices, opens, **kwargs) -> float:
+def time_in_market(prices, opens, strategy=MovingAverageCrossStrategy, **kwargs) -> float:
     """The unconstrained rule's average exposure: what 'fully invested when
     long' comes to over the sample once the flat stretches are counted. The
     invested column of the ladders is read against this, not against 100%."""
-    eq = run(prices, MovingAverageCrossStrategy, trade_size=int(1e6 / float(prices.iloc[0, 0])),
+    eq = run(prices, strategy, trade_size=int(1e6 / float(prices.iloc[0, 0])),
              initial_cash=1e6, opens=opens, execution_cls=NextBarOpenExecutionHandler,
              **kwargs)
     return invested(eq)
@@ -1042,6 +1052,90 @@ def fill_days_sweep(prices, opens, volumes, aum: float = 2e10,
                                 persistence, recovery)
     return [_sized_row(prices, opens, volumes, aum, d, participation,
                        handlers, **kwargs) for d in days]
+
+
+# ---------- 9. the budget on the way out, and the rule that flips ----------
+
+# General collateral on SPY, from long_short.py: the pessimistic end of the
+# range on purpose, so the long/short rows are not flattered by free borrow.
+LS_BORROW_BPS = 75.0
+
+
+def trimmed_ladder(prices, opens, volumes, aums=AUMS, fill_days: float = FILL_DAYS,
+                   participation: float = 0.10, depth_frac: float = 0.002,
+                   law_coef: float = LAW_COEF, persistence: float = LAW_PERSISTENCE,
+                   recovery: float | None = LAW_RECOVERY, **kwargs) -> list[dict]:
+    """Section 8's ladder with the budget binding on the way out too.
+
+    Section 8 capped the position at entry and then sold it at whatever pace
+    the tape allowed, which is how a five-day budget produced a sixteen-bar
+    fill: the ADV the position was sized against is not the ADV it is sold
+    into. With trim_to_budget the portfolio re-checks the budget every bar
+    and sells down anything over it, so what the book holds is always what
+    it could get out of in `fill_days`. The trim is itself an order into the
+    same volume, so this is a measurement of what that discipline costs and
+    whether it shortens the exits, not a promise that it does.
+    """
+    handlers = _ladder_handlers(participation, depth_frac, law_coef,
+                                persistence, recovery)
+    return [_sized_row(prices, opens, volumes, aum, fill_days, participation,
+                       handlers, trim=True, **kwargs) for aum in aums]
+
+
+def long_short_ladder(prices, opens, volumes, aums=AUMS, fill_days: float | None = FILL_DAYS,
+                      participation: float = 0.10, depth_frac: float = 0.002,
+                      law_coef: float = LAW_COEF, persistence: float = LAW_PERSISTENCE,
+                      recovery: float | None = LAW_RECOVERY,
+                      borrow_bps: float = LS_BORROW_BPS, **kwargs) -> list[dict]:
+    """The capacity curve for the rule that flips.
+
+    The long-only rule's worst order is a position's worth. The long/short
+    version's down-cross is a flip from long to short, which is two
+    positions' worth of shares in one order, so the budget - which caps the
+    POSITION - should bite twice as hard on it: the same days of participation
+    buy half the position, and the order that reverses it takes twice as
+    long. This runs the same ladder on that rule, with the budget and
+    without, borrow charged at long_short.py's rate. fill_days=None is the
+    unconstrained rule, which is the row section 7's ladder would have had
+    if it had been long/short.
+    """
+    handlers = _ladder_handlers(participation, depth_frac, law_coef,
+                                persistence, recovery)
+    return [_sized_row(prices, opens, volumes, aum, fill_days, participation,
+                       handlers, strategy=MovingAverageCrossLongShortStrategy,
+                       borrow_bps=borrow_bps, **kwargs) for aum in aums]
+
+
+def print_exit_and_flip(trimmed: list[dict], sized: list[dict], ls_free: list[dict],
+                        ls_capped: list[dict], baseline: float, ls_baseline: float,
+                        fill_days: float) -> None:
+    print(f"\n9. THE BUDGET ON THE WAY OUT, AND THE RULE THAT FLIPS")
+    print(f"\n   Section 8's ladder, the book handler, with the position sold down "
+          f"whenever it is over\n   what {fill_days:g} days of participation could "
+          f"get out of. 'entry only' is section 8's row.")
+    print(f"\n{'AUM':>8} {'Sharpe entry':>13} {'trimmed':>8} {'return entry':>13} "
+          f"{'trimmed':>8} {'invested':>9} {'trimmed':>8} {'longest':>8} {'trimmed':>8} "
+          f"{'trims':>6} {'fills':>6} {'trimmed':>8} {'cost':>6} {'trimmed':>8}")
+    for a, b in zip(sized, trimmed):
+        print(f"{a['aum'] / 1e9:>7.1f}bn {a['book']['sharpe']:>13.2f} {b['book']['sharpe']:>8.2f} "
+              f"{a['book']['total_return']:>13.1%} {b['book']['total_return']:>8.1%} "
+              f"{a['book']['invested'] / baseline:>9.0%} {b['book']['invested'] / baseline:>8.0%} "
+              f"{a['book']['max_delay_bars']:>8d} {b['book']['max_delay_bars']:>8d} "
+              f"{b['book']['trims']:>6d} {a['book']['fills']:>6d} {b['book']['fills']:>8d} "
+              f"{a['book']['cost_bps']:>6.1f} {b['book']['cost_bps']:>8.1f}")
+    print(f"\n   Then the long/short rule, borrow at {LS_BORROW_BPS:.0f}bp, unconstrained "
+          f"against the {fill_days:g}-day budget.\n   'invested' is against the long/short "
+          f"rule's own {ls_baseline:.0%}; the budget caps the position, and a flip is two of them.")
+    print(f"\n{'AUM':>8} {'position':>9} {'Sharpe free':>12} {'slice':>7} {'order':>7} {'book':>7} "
+          f"{'return free':>12} {'book':>7} {'invested free':>14} {'book':>7} "
+          f"{'longest free':>13} {'book':>7} {'cost book':>10} {'borrow':>7}")
+    for f, c in zip(ls_free, ls_capped):
+        print(f"{f['aum'] / 1e9:>7.1f}bn {c['position_share']:>9.0%} {f['book']['sharpe']:>12.2f} "
+              f"{c['slice']['sharpe']:>7.2f} {c['order']['sharpe']:>7.2f} {c['book']['sharpe']:>7.2f} "
+              f"{f['book']['total_return']:>12.1%} {c['book']['total_return']:>7.1%} "
+              f"{f['book']['invested'] / ls_baseline:>14.0%} {c['book']['invested'] / ls_baseline:>7.0%} "
+              f"{f['book']['max_delay_bars']:>13d} {c['book']['max_delay_bars']:>7d} "
+              f"{c['book']['cost_bps']:>10.1f} {c['book']['borrow_paid_bps']:>7.0f}")
 
 
 def print_sized_ladder(rows: list[dict], sweep: list[dict], ladder: list[dict],
@@ -1377,6 +1471,12 @@ def main() -> None:
     baseline = time_in_market(prices, opens)
     print_sized_ladder(sized, patience, ladder, baseline, FILL_DAYS)
 
+    trimmed = trimmed_ladder(prices, opens, volumes, aums=aums)
+    ls_free = long_short_ladder(prices, opens, volumes, aums=aums, fill_days=None)
+    ls_capped = long_short_ladder(prices, opens, volumes, aums=aums)
+    ls_baseline = time_in_market(prices, opens, strategy=MovingAverageCrossLongShortStrategy)
+    print_exit_and_flip(trimmed, sized, ls_free, ls_capped, baseline, ls_baseline, FILL_DAYS)
+
     os.makedirs("results", exist_ok=True)
     with open(OUT, "w") as fh:
         json.dump({"symbol": SYMBOL, "start": START, "end": END,
@@ -1394,7 +1494,10 @@ def main() -> None:
                    "law_coef": LAW_COEF, "formula_curves": formula,
                    "formula_exponents": formula_exp, "law_ladder": ladder,
                    "fill_days": FILL_DAYS, "time_in_market": baseline,
-                   "sized_ladder": sized, "fill_days_sweep": patience},
+                   "sized_ladder": sized, "fill_days_sweep": patience,
+                   "trimmed_ladder": trimmed, "ls_borrow_bps": LS_BORROW_BPS,
+                   "long_short_free": ls_free, "long_short_capped": ls_capped,
+                   "long_short_time_in_market": ls_baseline},
                   fh, indent=1, default=float)
     print(f"\nwrote {OUT}")
 

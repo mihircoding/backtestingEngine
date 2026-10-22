@@ -76,6 +76,18 @@ class Portfolio:
         than a silent default. It caps the POSITION, not the order; a
         reversal from long to short is two positions' worth and takes twice
         as long, which is what it would take a desk too.
+    trim_to_budget: re-check that budget on every open position, every bar,
+        and sell down whatever is over it. The budget at entry is set against
+        the ADV at the signal, and a position that fit in max_fill_days then
+        does not fit once the tape goes quiet - the shares are the same, the
+        volume to sell them into is not. A desk that cannot get out in
+        max_fill_days does not own the position, it owns a problem, so this
+        makes the budget bind on the way out as well as the way in. Uses
+        rebalance_band the way vol targeting does: a position a few percent
+        over the line is left alone, because trimming it costs a trade and
+        buys nothing. Off by default, and RESULTS.md section 8 was run with
+        it off: there the budget bound on the way in only, and the exit was
+        sold at whatever pace the tape allowed.
     """
 
     def __init__(self, data: HistoricalDataHandler, initial_cash: float = 100_000.0,
@@ -83,7 +95,8 @@ class Portfolio:
                  vol_window: int = 20, max_leverage: float = 3.0,
                  rebalance_band: float = 0.2, short_borrow_bps: float = 0.0,
                  pending=None, max_fill_days: float | None = None,
-                 participation: float | None = None, adv_window: int = 20):
+                 participation: float | None = None, adv_window: int = 20,
+                 trim_to_budget: bool = False):
         if (max_fill_days is None) != (participation is None):
             raise ValueError("max_fill_days and participation go together: "
                              "a liquidity cap needs both the days and the rate")
@@ -91,6 +104,9 @@ class Portfolio:
             raise ValueError("max_fill_days must be positive")
         if participation is not None and not 0 < participation <= 1:
             raise ValueError("participation must be in (0, 1]")
+        if trim_to_budget and max_fill_days is None:
+            raise ValueError("trim_to_budget needs a budget to trim to: "
+                             "set max_fill_days and participation")
         self.data = data
         self.initial_cash = initial_cash
         self.trade_size = trade_size
@@ -103,7 +119,9 @@ class Portfolio:
         self.max_fill_days = max_fill_days
         self.participation = participation
         self.adv_window = adv_window
+        self.trim_to_budget = trim_to_budget
         self.liquidity_capped = 0   # how many sizings the liquidity budget clipped
+        self.liquidity_trims = 0    # how many held positions it sold down after the fact
         self.borrow_paid = 0.0  # cumulative dollars of borrow cost, for reporting
         self.cash = initial_cash
         self.positions: dict[str, int] = {}
@@ -236,22 +254,39 @@ class Portfolio:
 
         The engine calls this after the bar's signals, orders and fills have
         settled, so the position being measured is the real one.
+
+        With trim_to_budget and no vol target, the same loop runs with the
+        liquidity budget as the only ceiling, and only ever sells down: a
+        fixed-size book that has drifted under its budget is not topped up,
+        because nothing about the signal said to hold more. Vol targeting
+        already clips its target to the budget every bar, so for it the
+        flag changes nothing.
         """
-        if self.vol_target is None:
+        if self.vol_target is None and not self.trim_to_budget:
             return []
 
         orders = []
         for symbol, shares in list(self.positions.items()):
             if shares == 0:
                 continue
+            sign = 1 if shares > 0 else -1
+            held = self._effective_position(symbol)
 
-            target = self._size_for(symbol) * (1 if shares > 0 else -1)
-            if target == 0:
-                continue
+            if self.vol_target is not None:
+                target = self._size_for(symbol) * sign
+                if target == 0:
+                    continue
+            else:
+                budget = self.liquidity_budget(symbol)
+                if budget is None or abs(held) <= budget:
+                    continue
+                target = budget * sign
 
-            delta = target - self._effective_position(symbol)
+            delta = target - held
             if abs(delta) <= self.rebalance_band * abs(target):
                 continue  # close enough; not worth the commission
+            if self.vol_target is None:
+                self.liquidity_trims += 1
 
             orders.append(OrderEvent(time=time, symbol=symbol, quantity=delta))
 
