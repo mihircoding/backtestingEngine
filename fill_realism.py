@@ -1138,6 +1138,102 @@ def print_exit_and_flip(trimmed: list[dict], sized: list[dict], ls_free: list[di
               f"{c['book']['cost_bps']:>10.1f} {c['book']['borrow_paid_bps']:>7.0f}")
 
 
+# ---------- 10. the one free parameter, and the result that was noise ----------
+
+PARTICIPATION_SWEEP = (0.02, 0.05, 0.10, 0.20, 0.30, 0.50)
+BOOTSTRAP_AUMS = (5e9, 2e10)   # the two trim rows section 9 read a sign off
+
+
+def participation_sweep(prices, opens, volumes, aum: float = 2e10,
+                        rates=PARTICIPATION_SWEEP, fill_days: float = FILL_DAYS,
+                        depth_frac: float = 0.002, law_coef: float = LAW_COEF,
+                        persistence: float = LAW_PERSISTENCE,
+                        recovery: float | None = LAW_RECOVERY, **kwargs) -> list[dict]:
+    """Section 9's trimmed $20bn row at every participation rate.
+
+    The budget is days x participation x ADV and the fill is participation x
+    the bar's actual volume, so participation is in both: a desk that is
+    willing to be 20% of the tape is allowed twice the position of one at
+    10%, and gets out of it at twice the pace. The ratio of the two - the
+    bars the worst exit takes - does not depend on it at all. What does is
+    the impact: the slice handler charges the root of the slice's share of
+    the bar, the order handler the root of the whole order's, and the book
+    walks whatever depth the bar has. All three see the participation; what
+    the sweep says is what being a bigger share of the tape costs under each,
+    and whether that is the same knob as the patience section 8 swept.
+    """
+    rows = []
+    for rate in rates:
+        handlers = _ladder_handlers(rate, depth_frac, law_coef, persistence, recovery)
+        row = _sized_row(prices, opens, volumes, aum, fill_days, rate, handlers,
+                         trim=True, **kwargs)
+        row["participation"] = rate
+        rows.append(row)
+    return rows
+
+
+def trim_bootstrap(prices, opens, volumes, aums=BOOTSTRAP_AUMS, fill_days: float = FILL_DAYS,
+                   participation: float = 0.10, depth_frac: float = 0.002,
+                   law_coef: float = LAW_COEF, persistence: float = LAW_PERSISTENCE,
+                   recovery: float | None = LAW_RECOVERY, n_boot: int = 2000,
+                   **kwargs) -> list[dict]:
+    """Section 9's trim rows, with an interval on the Sharpe difference.
+
+    Section 9 read +0.03 at $5bn and -0.02 at $20bn off the trimmed column
+    and called the first noise with a sign. This is the check: the two
+    equity curves saw the same tape on the same days, so the stationary
+    bootstrap of significance.py resamples them together and the interval
+    on the difference is the interval that matters. A difference whose
+    interval straddles zero is not a result, and a sign on it is not a
+    direction.
+    """
+    import significance as sig
+
+    cls, execution_kwargs = _ladder_handlers(participation, depth_frac, law_coef,
+                                             persistence, recovery)["book"]
+    first_price = float(prices.iloc[0, 0])
+    rows = []
+    for aum in aums:
+        shares = max(int(aum / first_price), 1)
+        curves = {}
+        for trim in (False, True):
+            eq = run(prices, MovingAverageCrossStrategy, trade_size=shares,
+                     initial_cash=aum, opens=opens, volumes=volumes,
+                     execution_cls=cls, execution_kwargs=execution_kwargs,
+                     portfolio_kwargs={"max_fill_days": fill_days,
+                                       "participation": participation,
+                                       "trim_to_budget": trim}, **kwargs)
+            curves[trim] = eq.pct_change().dropna().to_numpy()
+        gap = sig.paired_difference(curves[True], curves[False], n_boot=n_boot)
+        rows.append({"aum": aum, "sharpe_entry_only": sig.sharpe(curves[False]),
+                     "sharpe_trimmed": sig.sharpe(curves[True]), **gap,
+                     "days_that_differ": int(np.sum(curves[True] != curves[False]))})
+    return rows
+
+
+def print_participation(rows: list[dict], boot: list[dict], aum: float,
+                        fill_days: float) -> None:
+    print(f"\n10. THE ONE FREE PARAMETER, AND THE RESULT THAT WAS NOISE")
+    print(f"\n   Section 9's trimmed ${aum / 1e9:.0f}bn row at every participation rate, "
+          f"{fill_days:g}-day budget, all three handlers.")
+    print(f"\n{'rate':>5} {'position':>9} {'Sharpe slice':>13} {'order':>7} {'book':>7} "
+          f"{'return book':>12} {'longest':>8} {'trims':>6} {'cost slice':>11} {'order':>7} {'book':>7}")
+    for r in rows:
+        print(f"{r['participation']:>5.0%} {r['position_share']:>9.0%} "
+              f"{r['slice']['sharpe']:>13.2f} {r['order']['sharpe']:>7.2f} {r['book']['sharpe']:>7.2f} "
+              f"{r['book']['total_return']:>12.1%} {r['book']['max_delay_bars']:>8d} "
+              f"{r['book']['trims']:>6d} {r['slice']['cost_bps']:>11.1f} "
+              f"{r['order']['cost_bps']:>7.1f} {r['book']['cost_bps']:>7.1f}")
+    print(f"\n   The trim rows' Sharpe difference, trimmed minus entry-only, book handler, "
+          f"bootstrapped on the same days:")
+    print(f"\n{'AUM':>8} {'entry only':>11} {'trimmed':>8} {'diff':>7} {'95% interval':>17} "
+          f"{'P(diff<=0)':>11} {'days that differ':>17}")
+    for b in boot:
+        print(f"{b['aum'] / 1e9:>7.1f}bn {b['sharpe_entry_only']:>11.2f} {b['sharpe_trimmed']:>8.2f} "
+              f"{b['diff']:>+7.2f} [{b['lo']:>+6.2f}, {b['hi']:>+6.2f}] "
+              f"{b['p_le_zero']:>11.0%} {b['days_that_differ']:>17d}")
+
+
 def print_sized_ladder(rows: list[dict], sweep: list[dict], ladder: list[dict],
                        baseline: float, fill_days: float) -> None:
     print(f"\n8. SEND WHAT YOU CAN GET DONE   the position capped at what "
@@ -1477,6 +1573,11 @@ def main() -> None:
     ls_baseline = time_in_market(prices, opens, strategy=MovingAverageCrossLongShortStrategy)
     print_exit_and_flip(trimmed, sized, ls_free, ls_capped, baseline, ls_baseline, FILL_DAYS)
 
+    rates = participation_sweep(prices, opens, volumes,
+                                rates=PARTICIPATION_SWEEP if not args.quick else (0.05, 0.10, 0.20))
+    boot = trim_bootstrap(prices, opens, volumes)
+    print_participation(rates, boot, 2e10, FILL_DAYS)
+
     os.makedirs("results", exist_ok=True)
     with open(OUT, "w") as fh:
         json.dump({"symbol": SYMBOL, "start": START, "end": END,
@@ -1497,7 +1598,8 @@ def main() -> None:
                    "sized_ladder": sized, "fill_days_sweep": patience,
                    "trimmed_ladder": trimmed, "ls_borrow_bps": LS_BORROW_BPS,
                    "long_short_free": ls_free, "long_short_capped": ls_capped,
-                   "long_short_time_in_market": ls_baseline},
+                   "long_short_time_in_market": ls_baseline,
+                   "participation_sweep": rates, "trim_bootstrap": boot},
                   fh, indent=1, default=float)
     print(f"\nwrote {OUT}")
 

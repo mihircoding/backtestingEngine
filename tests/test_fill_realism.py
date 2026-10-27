@@ -630,3 +630,52 @@ def test_the_long_short_rows_charge_borrow_and_the_free_row_is_unconstrained():
     assert free["book"]["borrow_paid_bps"] > 0 and capped["book"]["borrow_paid_bps"] > 0
     none = long_short_ladder(prices, opens, volumes, fill_days=2, borrow_bps=0.0, **kw)[0]
     assert none["book"]["borrow_paid_bps"] == 0.0
+
+
+# ---------- 10. the one free parameter, and the result that was noise ----------
+
+from fill_realism import participation_sweep, trim_bootstrap
+
+
+def test_participation_buys_position_and_pays_for_it_but_does_not_buy_time():
+    prices, opens, volumes = _drying_tape()
+    rows = participation_sweep(prices, opens, volumes, aum=1e8, rates=(0.05, 0.10, 0.20),
+                               fill_days=2, short_window=10, long_window=30)
+    shares = [r["position_share"] for r in rows]
+    assert shares == sorted(shares) and shares[0] < shares[-1]
+    # the budget and the fill scale together, so the worst exit is the same
+    # number of bars whatever the rate
+    assert len({r["book"]["max_delay_bars"] for r in rows}) == 1
+    # and every handler charges more for a bigger share of the bar
+    for handler in ("slice", "order", "book"):
+        costs = [r[handler]["cost_bps"] for r in rows]
+        assert costs == sorted(costs) and costs[0] < costs[-1]
+
+
+def test_the_sweep_rows_are_the_trimmed_ladder_at_that_rate():
+    prices, opens, volumes = _drying_tape()
+    kw = dict(fill_days=2, short_window=10, long_window=30)
+    row = participation_sweep(prices, opens, volumes, aum=1e8, rates=(0.10,), **kw)[0]
+    ladder = trimmed_ladder(prices, opens, volumes, aums=(1e8,), participation=0.10, **kw)[0]
+    assert row["book"]["sharpe"] == pytest.approx(ladder["book"]["sharpe"])
+    assert row["book"]["trims"] == ladder["book"]["trims"]
+    assert row["participation"] == 0.10
+
+
+def test_the_bootstrap_reads_zero_when_the_trim_never_fires():
+    prices, opens, volumes = _tape()
+    row = trim_bootstrap(prices, opens, volumes, aums=(1e8,), fill_days=2, n_boot=200,
+                         short_window=10, long_window=30)[0]
+    assert row["days_that_differ"] == 0
+    assert row["diff"] == 0.0 and row["lo"] == 0.0 and row["hi"] == 0.0
+    assert row["sharpe_trimmed"] == pytest.approx(row["sharpe_entry_only"])
+
+
+def test_the_bootstrap_interval_brackets_the_difference_when_the_trim_does_fire():
+    prices, opens, volumes = _drying_tape()
+    row = trim_bootstrap(prices, opens, volumes, aums=(1e8,), fill_days=2, n_boot=300,
+                         short_window=10, long_window=30)[0]
+    assert row["days_that_differ"] > 0
+    assert row["diff"] == pytest.approx(row["sharpe_trimmed"] - row["sharpe_entry_only"])
+    assert row["lo"] <= row["diff"] <= row["hi"]
+    assert 0.0 <= row["p_le_zero"] <= 1.0

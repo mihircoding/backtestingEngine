@@ -71,14 +71,24 @@ days does not own the position — and finds it costs a third of the return
 at $20bn to shorten the worst exit from 16 bars to 13, because a trim is an
 order into the same thin tape; and runs the rule that flips, whose reversal
 takes twice as long below the budget and has no capacity worth measuring,
-because on this tape the short leg has no edge to scale.
+because on this tape the short leg has no edge to scale. The seventh sweeps
+the one parameter all of that ran on, the 10% participation, and finds the
+worst exit is 13 bars at 2% and at 50% — the budget and the fill scale
+together, so taking more of the tape buys position, not time — while the
+Sharpe goes from 0.60 to 0.43 as the book pays for the bigger position in
+impact. Doubling the $20bn book by waiting twice as long costs nothing a
+slice and seven bars; doubling it by taking twice the bar costs ten basis
+points a slice and a tenth of Sharpe. Patience is paid in time and
+aggression in impact, and the capacity number's Sharpe is the participation
+it was run at. The trim's +0.03 at $5bn bootstraps to [−0.02, +0.09], which
+is the noise section 9 called it.
 [RESULTS.md](RESULTS.md) has all of it, and the corrections.
 
-375 tests.
+379 tests.
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                 # 375 passed
+python -m pytest -q                 # 379 passed
 
 # the two halves together
 python fill_realism.py              # fill models compared, the headline result

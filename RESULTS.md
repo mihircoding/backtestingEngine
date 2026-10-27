@@ -993,6 +993,109 @@ short's rebate on the proceeds, which at 2023 rates would have paid for the
 borrow several times over, is not credited, which flatters nothing here
 because the short leg loses before carry.
 
+### 10. Sweep the one free parameter, and bootstrap the sign — aggression is paid in impact, patience in time, and the +0.03 was noise
+
+Reproduce with: `python fill_realism.py` (section 10 of the printout)
+
+Section 9 left two loose ends and named them. The trim ran at 10%
+participation, which is section 8's one free parameter and has been 10%
+since section 2 because 10% is a round number; and the $5bn row read
++0.03 of Sharpe off six trims, which the text called noise with a sign
+without checking. Both are a sweep and a bootstrap away, so here they are.
+
+**The participation sweep.** `participation_sweep` reruns the trimmed
+$20bn row — the one where the trim fires 48 times — at every rate from 2%
+to 50%, under all three handlers. Participation sits on both sides of the
+budget: the position allowed is days × participation × ADV, and the fill
+is participation × the bar's actual volume, so a desk willing to be 20%
+of the tape holds twice the position of one at 10% and gets out of it at
+twice the pace. The prediction going in, from the Oct 22 note, was that
+the 20% desk "gets out in half the time and pays for it in impact".
+
+| participation | position allowed | Sharpe: slice | order | book | return, book | longest fill | trims | cost, slice | order | book |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 2% | 7% | 0.53 | 0.52 | **0.60** | 8% | 13 | 48 | 16.4 | 17.6 | **7.4** |
+| 5% | 17% | 0.48 | 0.46 | 0.57 | 20% | 13 | 48 | 24.7 | 26.7 | 13.6 |
+| 10% | 34% | 0.42 | 0.40 | 0.52 | 36% | 13 | 48 | 34.1 | 36.9 | 21.6 |
+| 20% | 68% | 0.32 | 0.30 | 0.43 | 60% | 13 | 40 | 46.6 | 50.1 | 32.1 |
+| 30% | 100% | 0.33 | 0.32 | 0.48 | 90% | 13 | 18 | 56.3 | 57.0 | 38.4 |
+| 50% | 100% | 0.25 | 0.30 | 0.43 | 87% | 13 | 1 | 71.7 | 60.5 | 44.1 |
+
+Half of the prediction held. *The longest fill is 13 bars at every rate.*
+Not approximately — exactly, because the budget and the fill scale
+together and the ratio is what the exit takes: five days of ADV at the
+signal, sold at the same share of the actual tape, is thirteen bars when
+the tape is thin, whether the share is 2% or 50%. Aggression does not buy
+time. It buys position — 7% of the AUM at 2%, all of it at 30% — and the
+whole bill for that position is impact. The book handler charges 7 bps a
+slice at 2% and 44 at 50%, and the Sharpe goes from 0.60 to 0.43 under it,
+0.53 to 0.25 under the formula on the slice. At 30% the budget stops
+binding, the trim all but stops firing, and the row is section 7's
+unconstrained $20bn book with the costs of being 30% of the tape.
+
+That makes the comparison with section 8 the point of the section. Here
+are the two ways of doubling the $20bn book from 34% to 68% of the AUM,
+both on the book handler:
+
+| the knob | position | Sharpe | return | cost, bps a slice | longest fill |
+|---|---|---|---|---|---|
+| patience: 5 days → 10, at 10% (section 8) | 34% → 68% | 0.54 → 0.52 | 52% → 76% | 23.0 → 23.0 | 16 → 23 |
+| aggression: 10% → 20%, at 5 days | 34% → 68% | 0.52 → **0.43** | 36% → 60% | 21.6 → **32.1** | 13 → 13 |
+
+**Patience is paid in time and aggression in impact, and they are not the
+same bill.** Doubling the book by waiting costs nothing a slice and seven
+bars on the worst exit; doubling it by taking more of each bar costs ten
+basis points a slice, a tenth of Sharpe, and no bars at all. Section 8
+found that capacity is a patience; this finds that the Sharpe of that
+capacity is a participation, and that the one free parameter the whole
+capacity ladder has run on since section 2 is the one that sets the
+Sharpe, not the one that sets the size. A desk that reads 0.52 at $20bn
+and 10% is reading a number that would be 0.60 at 2% and 0.43 at 20% on
+the same tape with the same rule, and none of the three is more right
+than the others. It is a choice, and the ladder should say so.
+
+All three handlers agree on the direction and disagree on the level, by
+about a tenth: the book is dearest to a small order and cheapest to a
+large one relative to the formula (7 against 16 bps at 2%, 44 against 72
+at 50%), which is section 1's finding — the flat charge is wrong in both
+directions — showing up as a Sharpe gap instead of a cost gap. The
+formula on the order is within two bps of the formula on the slice at
+every rate here, because at $20bn under a five-day budget every order is
+the same five-day order and the two forms differ only in how they slice
+it.
+
+**The bootstrap.** `trim_bootstrap` runs section 9's entry-only and
+trimmed books at $5bn and $20bn, takes the two daily return series, and
+hands them to `significance.paired_difference` — the stationary bootstrap
+from the parameter-grid study, both series resampled on the same days, so
+the interval is on the difference and not on two Sharpes that happen to
+share a market.
+
+| AUM, book handler | Sharpe, entry only | trimmed | difference | 95% interval | P(diff ≤ 0) | days the two books differ |
+|---|---|---|---|---|---|---|
+| $5bn | 0.51 | 0.54 | +0.03 | [−0.02, +0.09] | 13% | 1,037 |
+| $20bn | 0.54 | 0.52 | −0.02 | [−0.22, +0.18] | 55% | 1,893 |
+
+*The +0.03 was noise, and so was the −0.02.* Section 9's instinct was
+right at $5bn: six trims, a difference whose interval straddles zero,
+and a sign that 13% of resamples flip. It was also right at $20bn without
+saying so — the trimmed book holds a fifth less and the two curves differ
+on three quarters of the days, so the interval is four times wider and
+the sign is a coin flip at 55%. The thing section 9 could say about the
+trim, and still can, is what it does to the return (a third of it) and the
+exit (three bars); what it does to the Sharpe is not distinguishable from
+nothing at either AUM, on ten years of one tape.
+
+What this leaves. The participation sweep is one AUM, and the rate at
+which the budget stops binding (30% here) is a function of the AUM and
+the tape, not a constant. Impact at 30% or 50% of the tape is outside
+anything the depth profile of section 1c was fitted on; those rows are
+the handler extrapolating, reported because the sweep should run until
+the budget stops binding and not because a desk would trade there. And
+the bootstrap's block length is the parameter grid's 20 days; the trim
+fires every seven weeks, so a longer block would widen both intervals,
+which moves neither conclusion.
+
 ### What this still does not model
 
 - One bar is one book. A day's liquidity is pooled into a single snapshot at
@@ -1029,7 +1132,13 @@ because the short leg loses before carry.
   from 16 bars to 13, for a third of the return at $20bn) and runs the
   long/short rule, whose reversal takes twice as long below the budget and
   half again at it — and which has no capacity to measure, because on this
-  tape it has no edge to scale.
+  tape it has no edge to scale. Section 10 sweeps the participation the
+  whole ladder has run on: the worst exit is 13 bars at every rate, because
+  the budget and the fill scale together, so aggression buys position and
+  not time, and pays for it in impact — 0.60 at 2% to 0.43 at 20% on the
+  same tape. Patience is paid in time, aggression in impact, and the Sharpe
+  of the capacity number is the participation it was run at. The +0.03 the
+  trim read at $5bn bootstraps to [−0.02, +0.09]: noise, as section 9 said.
 - Every order is a taker. Passive execution is deliberately absent, and the
   reason is a measurement: pooling a day's volume puts ~153,000 shares at the
   touch, and section 8 of notes/exchange.md already showed that an order
