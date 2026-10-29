@@ -679,3 +679,95 @@ def test_the_bootstrap_interval_brackets_the_difference_when_the_trim_does_fire(
     assert row["diff"] == pytest.approx(row["sharpe_trimmed"] - row["sharpe_entry_only"])
     assert row["lo"] <= row["diff"] <= row["hi"]
     assert 0.0 <= row["p_le_zero"] <= 1.0
+
+
+# ---------- 11. the capacity surface ----------
+
+from fill_realism import _same_tape, _sections, capacity_surface, surface_knees
+
+
+def _surface(**kw):
+    prices, opens, volumes = _tape()
+    # $1e6 at ~$100 is ten thousand shares, which a two-day budget at any of
+    # these rates holds whole; $1e8 and $1e9 are a million and ten million,
+    # which it does not
+    return capacity_surface(prices, opens, volumes, aums=(1e6, 1e8, 1e9),
+                            rates=(0.05, 0.10, 0.20), fill_days=2,
+                            short_window=10, long_window=30, **kw)
+
+
+def test_the_surface_has_a_cell_for_every_aum_at_every_rate():
+    rows = _surface()
+    assert len(rows) == 9
+    assert {(r["aum"], r["participation"]) for r in rows} == {
+        (a, p) for a in (1e6, 1e8, 1e9) for p in (0.05, 0.10, 0.20)}
+    for r in rows:
+        assert {"sharpe", "cost_bps", "max_delay_bars", "position_share", "trims"} <= set(r)
+    # more AUM at a rate holds less of it; more rate at an AUM holds more
+    for p in (0.05, 0.10, 0.20):
+        col = sorted((r for r in rows if r["participation"] == p), key=lambda r: r["aum"])
+        assert [r["position_share"] for r in col] == sorted((r["position_share"] for r in col), reverse=True)
+    for a in (1e6, 1e8, 1e9):
+        row = sorted((r for r in rows if r["aum"] == a), key=lambda r: r["participation"])
+        assert [r["position_share"] for r in row] == sorted(r["position_share"] for r in row)
+
+
+def test_past_the_knee_every_cell_at_a_rate_is_the_same_run():
+    # once the budget binds, the position is the budget whatever the AUM
+    # says, so the slices and the exits are identical and only the cash differs
+    rows = _surface()
+    for p in (0.05, 0.10, 0.20):
+        bound = [r for r in rows if r["participation"] == p and r["position_share"] < 1]
+        assert len(bound) == 2
+        assert bound[0]["max_delay_bars"] == bound[1]["max_delay_bars"]
+        assert bound[0]["cost_bps"] == pytest.approx(bound[1]["cost_bps"])
+        # the same dollars, made on the same shares; the Sharpe only differs
+        # because the cash pile the daily return is divided by does
+        assert (bound[0]["final"] - bound[0]["aum"]
+                == pytest.approx(bound[1]["final"] - bound[1]["aum"], rel=1e-6))
+        assert bound[0]["sharpe"] == pytest.approx(bound[1]["sharpe"], abs=0.05)
+
+
+def test_the_knee_is_the_first_rung_the_budget_binds_on():
+    rows = _surface()
+    knees = {k["participation"]: k for k in surface_knees(rows)}
+    assert set(knees) == {0.05, 0.10, 0.20}
+    for p, k in knees.items():
+        col = sorted((r for r in rows if r["participation"] == p), key=lambda r: r["aum"])
+        assert k["knee_aum"] == 1e8
+        assert k["position_at_knee"] == col[1]["position_share"] < 1
+        assert k["sharpe_whole"] == col[0]["sharpe"]
+        past = [r["sharpe"] for r in col[1:]]
+        assert k["sharpe_past_knee_low"] == min(past) and k["sharpe_past_knee_high"] == max(past)
+        assert k["sharpe_spread_past_knee"] == pytest.approx(max(past) - min(past))
+    # a tape nothing binds on has no knee and no spread
+    prices, opens, volumes = _tape()
+    small = capacity_surface(prices, opens, volumes, aums=(1e4, 1e5), rates=(0.10,),
+                             fill_days=2, short_window=10, long_window=30)
+    flat = surface_knees(small)[0]
+    assert flat["knee_aum"] is None and flat["sharpe_spread_past_knee"] == 0.0
+
+
+def test_a_section_run_refuses_a_different_tape_but_not_a_rerounded_one():
+    header = {"symbol": "SPY", "start": "2015-01-01", "end": "2024-12-31", "bars": 2515,
+              "median_price": 271.0247, "median_volume": 76610800.0}
+    assert _same_tape(dict(header), header)
+    # yfinance re-rounds the adjustment between downloads; that is the same tape
+    assert _same_tape({**header, "median_price": 271.0247 * (1 + 5e-5)}, header)
+    assert not _same_tape({**header, "median_price": 271.0247 * 1.01}, header)
+    assert not _same_tape({**header, "bars": 2514}, header)
+    assert not _same_tape({**header, "end": "2023-12-31"}, header)
+    assert not _same_tape({}, header)
+
+
+def test_a_section_that_prints_beside_an_earlier_one_says_so_when_it_is_missing(capsys):
+    prices, opens, volumes = _tape()
+    sections = _sections(prices, opens, volumes, quick=True)
+    assert list(sections) == list(range(1, 12))
+    # section 9 prints against section 8's rows; with nothing on disk it has to stop
+    with pytest.raises(SystemExit, match="section 8"):
+        sections[9]({})
+    # and section 11 stands on its own
+    added = sections[11]({})
+    capsys.readouterr()
+    assert set(added) == {"surface_aums", "capacity_surface", "surface_knees"}

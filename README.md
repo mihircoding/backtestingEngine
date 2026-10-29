@@ -81,17 +81,26 @@ slice and seven bars; doubling it by taking twice the bar costs ten basis
 points a slice and a tenth of Sharpe. Patience is paid in time and
 aggression in impact, and the capacity number's Sharpe is the participation
 it was run at. The trim's +0.03 at $5bn bootstraps to [−0.02, +0.09], which
-is the noise section 9 called it.
+is the noise section 9 called it. The eighth runs the whole surface, AUM
+against participation, and finds capacity was never an AUM: past the rung
+the budget binds on, every cell at a rate makes the same dollars to the
+dollar — $1.7bn over the ten years at 2%, $7.2bn at 10%, $27bn at 50% —
+and the AUM is a number on the account statement. The knee sits at the
+same place in every column, $0.68bn of position per point of
+participation and week, and the rate is the trade between the Sharpe
+column and the P&L column: the patient desk has the best Sharpe and the
+smallest P&L.
 [RESULTS.md](RESULTS.md) has all of it, and the corrections.
 
-379 tests.
+384 tests.
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                 # 379 passed
+python -m pytest -q                 # 384 passed
 
 # the two halves together
 python fill_realism.py              # fill models compared, the headline result
+python fill_realism.py --section 11   # re-run one section, keep the rest
 
 # the strategy side
 python run_backtest.py              # synthetic + SPY, writes engine_backtest.png

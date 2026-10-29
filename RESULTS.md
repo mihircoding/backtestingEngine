@@ -1096,6 +1096,109 @@ the bootstrap's block length is the parameter grid's 20 days; the trim
 fires every seven weeks, so a longer block would widen both intervals,
 which moves neither conclusion.
 
+### 11. Run the whole surface, and find capacity was never an AUM — past the knee every cell at a rate is the same dollars
+
+Reproduce with: `python fill_realism.py --section 11` (section 11 of the
+printout; the flag re-runs one section and merges it into the results file,
+leaving the other ten as they were)
+
+Section 10 ended on the sentence that the capacity ladder's Sharpe is the
+participation it was run at, which makes a ladder — one axis, AUM, with
+the rate hidden inside the handler — the wrong shape for the claim. This
+runs the two-axis version: section 9's trimmed book, book handler, five-day
+budget, at seven AUMs from $100m to $100bn and the six rates of section
+10, 42 cells. The prediction written down before it ran: at each rate, the
+Sharpe falls with AUM only until the budget binds, and is flat beyond,
+because past that point the position is days × rate × ADV whatever the
+AUM says, so the slices, the fills and the exits are the same run and the
+extra AUM is cash, which a Sharpe does not see. If that holds, every
+column is a staircase with one step and the surface collapses to the rate.
+
+`capacity_surface` runs the grid. `surface_knees` reads off, per rate,
+the first rung the budget binds on — the smallest AUM holding less than
+the whole — and the spread of the Sharpes from there up, which is the
+number that says whether the prediction held.
+
+**The surface.** Sharpe, then the share of the AUM the budget let the
+desk hold:
+
+| AUM | 2% | 5% | 10% | 20% | 30% | 50% |
+|---|---|---|---|---|---|---|
+| $100m | 0.64 | 0.64 | 0.64 | 0.64 | 0.64 | 0.64 |
+| $1bn | 0.63 | 0.60 | 0.57 | 0.56 | 0.56 | 0.56 |
+| $2bn | **0.60** | 0.58 | 0.56 | 0.51 | 0.51 | 0.51 |
+| $5bn | 0.62 | **0.56** | 0.54 | 0.48 | 0.46 | 0.44 |
+| $10bn | 0.61 | 0.58 | **0.50** | 0.47 | 0.43 | 0.41 |
+| $20bn | 0.60 | 0.57 | 0.52 | **0.43** | 0.48 | 0.43 |
+| $100bn | 0.60 | 0.56 | 0.50 | 0.42 | **0.42** | **0.40** |
+
+| AUM | 2% | 5% | 10% | 20% | 30% | 50% |
+|---|---|---|---|---|---|---|
+| $100m | 100% | 100% | 100% | 100% | 100% | 100% |
+| $1bn | 100% | 100% | 100% | 100% | 100% | 100% |
+| $2bn | **68%** | 100% | 100% | 100% | 100% | 100% |
+| $5bn | 27% | **68%** | 100% | 100% | 100% | 100% |
+| $10bn | 14% | 34% | **68%** | 100% | 100% | 100% |
+| $20bn | 7% | 17% | 34% | **68%** | 100% | 100% |
+| $100bn | 1% | 3% | 7% | 14% | **20%** | **34%** |
+
+Bold is the knee: the first rung at which the desk holds less than it
+asked for. And from the knee up, per rate:
+
+| rate | knee AUM | holds | Sharpe, last rung that fits | Sharpe past the knee | spread | ten-year P&L past the knee, every rung |
+|---|---|---|---|---|---|---|
+| 2% | $2bn | 68% | 0.63 | 0.60–0.62 | 0.02 | **$1.68bn** |
+| 5% | $5bn | 68% | 0.58 | 0.56–0.58 | 0.02 | **$3.94bn** |
+| 10% | $10bn | 68% | 0.54 | 0.50–0.52 | 0.02 | **$7.18bn** |
+| 20% | $20bn | 68% | 0.47 | 0.42–0.43 | 0.01 | $11.95bn → $12.25bn |
+| 30% | $100bn | 20% | 0.48 | 0.42 | — | $18.21bn |
+| 50% | $100bn | 34% | 0.43 | 0.40 | — | $27.24bn |
+
+**It held, and more exactly than a Sharpe can show.** The spread past the
+knee is two hundredths at most. The dollars are tighter than that: at 2%
+the book makes $1,684.6m over the ten years at $5bn, at $10bn, at $20bn
+and at $100bn — the same number to the dollar — and at 5% it is
+$3,939.6m at every rung from $10bn up, at 10% $7,178.8m. The knee rung
+itself is not quite there yet (40 trims against 48, the budget binding on
+most orders rather than all), and the rung after it is, and from there up
+the AUM is a number on the account statement. The two hundredths the
+Sharpe moves is the cash: the daily return divides the same P&L by an
+equity that drifts with it, and a $100bn book drifts less. So the surface
+is not a surface. Past the knee it is six numbers, one per rate.
+
+**Where the knee is.** It lands at the same rung in every column: the AUM,
+in billions, equal to the rate in points — $2bn at 2%, $5bn at 5%, $10bn
+at 10%, $20bn at 20% — and at the same 68% each time, because the budget
+is five days of the rate's share of ADV and nothing else. On this tape a
+point of participation and a week buys five days of 1% of 80 million
+shares at the $169 they cost in January 2015: $0.68bn of position per
+point, which is the 68% of a billion the knee sits at. That is the
+capacity statement, and it has no Sharpe in it.
+
+**And on the near side of the knee, the other axis stops mattering.** At
+$1bn the Sharpe reads 0.56 at 20%, 30% and 50% alike: a $1bn order fills
+inside one bar at a fifth of SPY's volume, and a desk that is willing to be
+half the tape gets the same fill as one that is willing to be a fifth,
+because the order is gone before the difference arises. Below the knee the
+participation is slack; above it the AUM is. Each axis bites on one side,
+and the knee is where they hand over.
+
+**So the honest capacity claim.** Not "$12bn at a week" (section 8) and
+not "$12bn at 10% and a week" (what section 10 asked for) but: at 10% of
+the tape and a five-day budget, this rule takes $7.2bn off ten years of
+SPY at a Sharpe of 0.50, from any AUM above $10bn; at 2% it takes $1.7bn
+at 0.60; at 50% it takes $27bn at 0.40. The rate you choose is the trade
+between the two columns. The patient desk has the best Sharpe and the
+smallest P&L, which is the thing a Sharpe never says about capacity: it
+is a ratio, and the desk is paid in the numerator.
+
+The one cell that wobbles is $20bn at 30%, 0.48 against 0.43 either side
+of it — a book that fits whole but only just, 34 of its orders capped and
+18 trimmed, the knee's own neighbour. The sweep ran to 50% for the reason
+section 10 gave, that the budget should stop binding somewhere in the
+grid, and the depth profile was not fitted at those rates, so the 30% and
+50% columns are the handler extrapolating.
+
 ### What this still does not model
 
 - One bar is one book. A day's liquidity is pooled into a single snapshot at
@@ -1139,6 +1242,12 @@ which moves neither conclusion.
   same tape. Patience is paid in time, aggression in impact, and the Sharpe
   of the capacity number is the participation it was run at. The +0.03 the
   trim read at $5bn bootstraps to [−0.02, +0.09]: noise, as section 9 said.
+  Section 11 runs the whole AUM × participation surface and finds capacity
+  was never an AUM: past the rung the budget binds on, every cell at a
+  rate makes the same dollars to the dollar — $1.7bn at 2%, $7.2bn at 10%,
+  $27bn at 50% — and the AUM is a number on the account statement. The
+  knee is $0.68bn of position per point of participation and week, and the
+  rate is the trade between the Sharpe column and the P&L column.
 - Every order is a taker. Passive execution is deliberately absent, and the
   reason is a measurement: pooling a day's volume puts ~153,000 shares at the
   touch, and section 8 of notes/exchange.md already showed that an order

@@ -1,6 +1,6 @@
 """What the assumed fill was worth, measured against the book that prints it.
 
-Usage:  python fill_realism.py [--quick]
+Usage:  python fill_realism.py [--quick] [--section N ...]
 Verify with:  pytest tests/test_fill_realism.py
 
 Section 11 of notes/backtester.md put a capacity number on this strategy by
@@ -1301,6 +1301,101 @@ def print_law_ladder(rows: list[dict], exponents: list[dict],
               f"{r['book']['cost_bps']:>7.1f} {r['book']['deployed']:>9.0%}")
 
 
+# ---------- 11. the capacity surface ----------
+
+# Denser than AUMS between $1bn and $20bn, because that is where the budget
+# starts to bind at the lower participation rates and the knee has to be
+# somewhere in the grid to be read off it.
+SURFACE_AUMS = (1e8, 1e9, 2e9, 5e9, 1e10, 2e10, 1e11)
+
+
+def capacity_surface(prices, opens, volumes, aums=SURFACE_AUMS, rates=PARTICIPATION_SWEEP,
+                     fill_days: float = FILL_DAYS, depth_frac: float = 0.002,
+                     persistence: float = LAW_PERSISTENCE,
+                     recovery: float | None = LAW_RECOVERY, **kwargs) -> list[dict]:
+    """Section 9's trimmed book at every AUM and every participation rate.
+
+    Section 10 ended by saying that the capacity ladder's Sharpe is the
+    participation it was run at, which makes a one-axis ladder the wrong
+    shape for the claim. This is the two-axis version, book handler only,
+    so that "capacity" can be read as a position at a rate and a patience
+    rather than as a dollar figure with the rate hidden inside it.
+
+    The prediction, written before it ran: at each rate the Sharpe falls
+    with AUM only until the budget binds, and is flat beyond. Past that
+    point the dollar position is days x rate x ADV whatever the AUM says,
+    so the slices, the fills and the exits are the same run, and the extra
+    AUM is cash that the Sharpe does not see. If that holds, every column
+    is a staircase with one step, and the surface collapses to the rate.
+    """
+    rows = []
+    for rate in rates:
+        handlers = {"book": _ladder_handlers(rate, depth_frac, LAW_COEF,
+                                             persistence, recovery)["book"]}
+        for aum in aums:
+            row = _sized_row(prices, opens, volumes, aum, fill_days, rate, handlers,
+                             trim=True, **kwargs)
+            book = row.pop("book")
+            rows.append({**row, "participation": rate, **book})
+    return rows
+
+
+def surface_knees(rows: list[dict], fits: float = 0.999) -> list[dict]:
+    """Per rate: where the budget first binds, and what the Sharpe does past it.
+
+    The knee is the smallest AUM whose position_share is below one - the
+    first rung where the desk is holding less than the AUM asked for. The
+    cells from the knee up are the "flat" part if the prediction holds, so
+    the spread of their Sharpes is the number that says whether it did.
+    """
+    out = []
+    for rate in sorted({r["participation"] for r in rows}):
+        col = sorted((r for r in rows if r["participation"] == rate), key=lambda r: r["aum"])
+        bound = [r for r in col if r["position_share"] < fits]
+        whole = [r for r in col if r["position_share"] >= fits]
+        knee = bound[0] if bound else None
+        past = [r["sharpe"] for r in bound]
+        out.append({
+            "participation": rate,
+            "knee_aum": knee["aum"] if knee else None,
+            "position_at_knee": knee["position_share"] if knee else 1.0,
+            "sharpe_whole": whole[-1]["sharpe"] if whole else None,
+            "sharpe_past_knee_low": min(past) if past else None,
+            "sharpe_past_knee_high": max(past) if past else None,
+            "sharpe_spread_past_knee": (max(past) - min(past)) if past else 0.0,
+            "cost_bps_past_knee": {"low": min(r["cost_bps"] for r in bound),
+                                   "high": max(r["cost_bps"] for r in bound)} if bound else None,
+        })
+    return out
+
+
+def print_surface(rows: list[dict], knees: list[dict], fill_days: float) -> None:
+    aums = sorted({r["aum"] for r in rows})
+    rates = sorted({r["participation"] for r in rows})
+    cell = {(r["aum"], r["participation"]): r for r in rows}
+    print(f"\n11. THE CAPACITY SURFACE   book handler, trimmed, {fill_days:g}-day budget: "
+          f"Sharpe at every AUM and every participation rate")
+    print(f"\n{'AUM':>9} " + " ".join(f"{p:>8.0%}" for p in rates))
+    for aum in aums:
+        print(f"{aum / 1e9:>7.1f}bn " + " ".join(f"{cell[(aum, p)]['sharpe']:>8.2f}" for p in rates))
+    print(f"\n   and the share of the AUM the budget let the desk hold:")
+    print(f"\n{'AUM':>9} " + " ".join(f"{p:>8.0%}" for p in rates))
+    for aum in aums:
+        print(f"{aum / 1e9:>7.1f}bn " + " ".join(f"{cell[(aum, p)]['position_share']:>8.0%}" for p in rates))
+    print(f"\n   Where the budget first binds, and what the Sharpe does from there up:")
+    print(f"\n{'rate':>5} {'knee AUM':>9} {'holds':>6} {'Sharpe, last whole':>19} "
+          f"{'past the knee':>15} {'spread':>7} {'cost bps past knee':>19}")
+    for k in knees:
+        if k["knee_aum"] is None:
+            print(f"{k['participation']:>5.0%} {'never binds':>9}")
+            continue
+        print(f"{k['participation']:>5.0%} {k['knee_aum'] / 1e9:>7.1f}bn {k['position_at_knee']:>6.0%} "
+              f"{k['sharpe_whole'] if k['sharpe_whole'] is not None else float('nan'):>19.2f} "
+              f"{k['sharpe_past_knee_low']:>6.2f}-{k['sharpe_past_knee_high']:.2f} "
+              f"{k['sharpe_spread_past_knee']:>7.2f} "
+              f"{k['cost_bps_past_knee']['low']:>8.1f}-{k['cost_bps_past_knee']['high']:.1f}")
+
+
 # ---------- reporting ----------
 
 def print_cost_curves(rows: list[dict], cross: float | None, price: float,
@@ -1500,108 +1595,193 @@ def print_memory_sweep(rows: list[dict], closes: dict) -> None:
                   f"square-root model from persistence {p:.2f}.")
 
 
+def _load_previous(path: str = OUT) -> dict:
+    """What the last run wrote, so that one section can be re-run on its own."""
+    if os.path.exists(path):
+        with open(path) as fh:
+            return json.load(fh)
+    return {}
+
+
+def _same_tape(previous: dict, header: dict) -> bool:
+    """Whether a --section run is adding to results computed on the same bars.
+
+    Symbol, dates and bar count have to match exactly. The medians only have
+    to match to a basis point: yfinance's adjusted closes move at the fifth
+    decimal between downloads as it re-rounds the dividend adjustment, and
+    that is not a different tape, it is the same one printed again.
+    """
+    for key in ("symbol", "start", "end", "bars"):
+        if previous.get(key) != header[key]:
+            return False
+    for key in ("median_price", "median_volume"):
+        old = previous.get(key)
+        if old is None or abs(old - header[key]) > 1e-4 * abs(header[key]):
+            return False
+    return True
+
+
+def _sections(prices, opens, volumes, quick: bool) -> dict:
+    """The study as a numbered table of sections.
+
+    Each is a function from `have` - everything this run has computed so
+    far, falling back to what the last run wrote to results/fill_realism.json
+    - to the keys it adds. The numbers match the printout and RESULTS.md.
+    Sections 8 and 9 print their rows beside section 7's and 8's, which is
+    why they read those from `have` rather than recomputing them: run on its
+    own, section 9 is printed against the section 8 that is on disk, and
+    says so if there is none.
+    """
+    aums = AUMS[:3] if quick else AUMS
+    depths = DEPTH_FRACS[:3] if quick else DEPTH_FRACS
+    price = float(prices.iloc[:, 0].median())
+    volume = float(volumes.iloc[:, 0].median())
+
+    def need(have, key, section):
+        if key not in have:
+            raise SystemExit(f"section {section} must be in {OUT} first: "
+                             f"run `python fill_realism.py --section {section}`")
+        return have[key]
+
+    def s1(have):
+        curves = cost_curves(price, volume)
+        cross = crossover(curves)
+        print_cost_curves(curves, cross, price, volume, 0.002)
+        by_shape = crossover_by_shape(price, volume)
+        print_crossover_by_shape(by_shape, price, volume)
+        by_decay = crossover_by_decay(price, volume)
+        print_crossover_by_decay(by_decay, price, volume)
+        vol_study = vol_elasticity_study(prices, opens, volumes)
+        print_vol_elasticity(vol_study)
+        return {"cost_curves": curves, "crossover": cross, "shape": SHAPE,
+                "crossover_by_shape": by_shape, "crossover_by_decay": by_decay,
+                "vol_elasticity": VOL_ELASTICITY, "vol_elasticity_study": vol_study}
+
+    def s2(have):
+        cap = capacity_under_both(prices, opens, volumes, aums=aums)
+        print_capacity(cap)
+        readable = interpretable_to(cap, "book")
+        print(f"\n   Both Sharpe columns are only readable up to "
+              f"${readable / 1e9:.1f}bn, where 90% of the book still reaches the "
+              f"market.\n   Above that the rising Sharpe is idle cash, not "
+              f"capacity - see interpretable_to().")
+        return {"capacity": cap}
+
+    def s3(have):
+        sweep = depth_sweep(prices, opens, volumes, aum=5e9, depth_fracs=depths)
+        print_depth_sweep(sweep, 5e9)
+        return {"depth_sweep": sweep}
+
+    def s4(have):
+        bill = fee_bill(prices, opens, volumes)
+        print_fees(bill)
+        return {"fees": bill}
+
+    def s5(have):
+        memory = memory_sweep(prices, opens, volumes,
+                              aums=(1e9, 5e9) if not quick else (5e9,))
+        closes = memory_closes_the_gap(memory)
+        print_memory_sweep(memory, closes)
+        return {"persistence": PERSISTENCE, "recovery": RECOVERY,
+                "memory_sweep": memory, "memory_closes_the_gap": closes}
+
+    def s6(have):
+        metaorders = metaorder_curves(price, volume)
+        exponents = exponents_by_setting(metaorders)
+        nearest = closest_to_square_root(exponents)
+        print_metaorders(metaorders, exponents, nearest)
+        return {"metaorders": metaorders, "impact_exponents": exponents,
+                "closest_to_square_root": nearest}
+
+    def s7(have):
+        formula = formula_curves(price, volume)
+        formula_exp = formula_exponents(formula)
+        ladder = law_ladder(prices, opens, volumes, aums=aums)
+        print_law_ladder(ladder, formula_exp, formula)
+        return {"law_coef": LAW_COEF, "formula_curves": formula,
+                "formula_exponents": formula_exp, "law_ladder": ladder}
+
+    def s8(have):
+        sized = sized_ladder(prices, opens, volumes, aums=aums)
+        patience = fill_days_sweep(prices, opens, volumes,
+                                   days=FILL_DAYS_SWEEP if not quick else (1, 5, None))
+        baseline = time_in_market(prices, opens)
+        print_sized_ladder(sized, patience, need(have, "law_ladder", 7), baseline, FILL_DAYS)
+        return {"fill_days": FILL_DAYS, "time_in_market": baseline,
+                "sized_ladder": sized, "fill_days_sweep": patience}
+
+    def s9(have):
+        trimmed = trimmed_ladder(prices, opens, volumes, aums=aums)
+        ls_free = long_short_ladder(prices, opens, volumes, aums=aums, fill_days=None)
+        ls_capped = long_short_ladder(prices, opens, volumes, aums=aums)
+        ls_baseline = time_in_market(prices, opens, strategy=MovingAverageCrossLongShortStrategy)
+        print_exit_and_flip(trimmed, need(have, "sized_ladder", 8), ls_free, ls_capped,
+                            need(have, "time_in_market", 8), ls_baseline, FILL_DAYS)
+        return {"trimmed_ladder": trimmed, "ls_borrow_bps": LS_BORROW_BPS,
+                "long_short_free": ls_free, "long_short_capped": ls_capped,
+                "long_short_time_in_market": ls_baseline}
+
+    def s10(have):
+        rates = participation_sweep(prices, opens, volumes,
+                                    rates=PARTICIPATION_SWEEP if not quick else (0.05, 0.10, 0.20))
+        boot = trim_bootstrap(prices, opens, volumes)
+        print_participation(rates, boot, 2e10, FILL_DAYS)
+        return {"participation_sweep": rates, "trim_bootstrap": boot}
+
+    def s11(have):
+        surface = capacity_surface(prices, opens, volumes,
+                                   aums=SURFACE_AUMS if not quick else SURFACE_AUMS[::2],
+                                   rates=PARTICIPATION_SWEEP if not quick else (0.05, 0.10, 0.20))
+        knees = surface_knees(surface)
+        print_surface(surface, knees, FILL_DAYS)
+        return {"surface_aums": list(SURFACE_AUMS), "capacity_surface": surface,
+                "surface_knees": knees}
+
+    return {1: s1, 2: s2, 3: s3, 4: s4, 5: s5, 6: s6, 7: s7, 8: s8, 9: s9, 10: s10, 11: s11}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--quick", action="store_true",
-                       help="three AUM levels and three depths instead of five")
+                        help="three AUM levels and three depths instead of five")
+    parser.add_argument("--section", type=int, action="append", metavar="N",
+                        help="run only section N (repeatable) and merge it into the "
+                             "results file, which keeps every other section as it was")
     args = parser.parse_args()
-
-    aums = AUMS[:3] if args.quick else AUMS
-    depths = DEPTH_FRACS[:3] if args.quick else DEPTH_FRACS
 
     prices = fetch_prices(SYMBOL, START, END)
     opens = fetch_opens(SYMBOL, START, END)
     volumes = fetch_volumes(SYMBOL, START, END)
     prices, opens, volumes = _align(prices, opens, volumes)
-
-    price = float(prices.iloc[:, 0].median())
-    volume = float(volumes.iloc[:, 0].median())
-
     print(f"{SYMBOL}  {prices.index[0].date()} to {prices.index[-1].date()}  "
           f"{len(prices)} bars")
 
-    curves = cost_curves(price, volume)
-    cross = crossover(curves)
-    print_cost_curves(curves, cross, price, volume, 0.002)
+    sections = _sections(prices, opens, volumes, args.quick)
+    chosen = sorted(set(args.section)) if args.section else list(sections)
+    unknown = [n for n in chosen if n not in sections]
+    if unknown:
+        raise SystemExit(f"no section {unknown}; the study has sections {min(sections)}-{max(sections)}")
 
-    by_shape = crossover_by_shape(price, volume)
-    print_crossover_by_shape(by_shape, price, volume)
-    by_decay = crossover_by_decay(price, volume)
-    print_crossover_by_decay(by_decay, price, volume)
-
-    vol_study = vol_elasticity_study(prices, opens, volumes)
-    print_vol_elasticity(vol_study)
-
-    cap = capacity_under_both(prices, opens, volumes, aums=aums)
-    print_capacity(cap)
-    readable = interpretable_to(cap, "book")
-    print(f"\n   Both Sharpe columns are only readable up to "
-          f"${readable / 1e9:.1f}bn, where 90% of the book still reaches the "
-          f"market.\n   Above that the rising Sharpe is idle cash, not "
-          f"capacity - see interpretable_to().")
-
-    sweep = depth_sweep(prices, opens, volumes, aum=5e9, depth_fracs=depths)
-    print_depth_sweep(sweep, 5e9)
-
-    bill = fee_bill(prices, opens, volumes)
-    print_fees(bill)
-
-    memory = memory_sweep(prices, opens, volumes,
-                          aums=(1e9, 5e9) if not args.quick else (5e9,))
-    closes = memory_closes_the_gap(memory)
-    print_memory_sweep(memory, closes)
-
-    metaorders = metaorder_curves(price, volume)
-    exponents = exponents_by_setting(metaorders)
-    nearest = closest_to_square_root(exponents)
-    print_metaorders(metaorders, exponents, nearest)
-
-    formula = formula_curves(price, volume)
-    formula_exp = formula_exponents(formula)
-    ladder = law_ladder(prices, opens, volumes, aums=aums)
-    print_law_ladder(ladder, formula_exp, formula)
-
-    sized = sized_ladder(prices, opens, volumes, aums=aums)
-    patience = fill_days_sweep(prices, opens, volumes,
-                               days=FILL_DAYS_SWEEP if not args.quick else (1, 5, None))
-    baseline = time_in_market(prices, opens)
-    print_sized_ladder(sized, patience, ladder, baseline, FILL_DAYS)
-
-    trimmed = trimmed_ladder(prices, opens, volumes, aums=aums)
-    ls_free = long_short_ladder(prices, opens, volumes, aums=aums, fill_days=None)
-    ls_capped = long_short_ladder(prices, opens, volumes, aums=aums)
-    ls_baseline = time_in_market(prices, opens, strategy=MovingAverageCrossLongShortStrategy)
-    print_exit_and_flip(trimmed, sized, ls_free, ls_capped, baseline, ls_baseline, FILL_DAYS)
-
-    rates = participation_sweep(prices, opens, volumes,
-                                rates=PARTICIPATION_SWEEP if not args.quick else (0.05, 0.10, 0.20))
-    boot = trim_bootstrap(prices, opens, volumes)
-    print_participation(rates, boot, 2e10, FILL_DAYS)
+    # A full run starts from nothing. A --section run starts from the file,
+    # so the sections it does not touch stay exactly as the last run left them.
+    results = _load_previous() if args.section else {}
+    header = {"symbol": SYMBOL, "start": START, "end": END, "bars": len(prices),
+              "median_price": float(prices.iloc[:, 0].median()),
+              "median_volume": float(volumes.iloc[:, 0].median())}
+    if args.section and results and not _same_tape(results, header):
+        raise SystemExit(f"{OUT} was written for a different tape ({results.get('symbol')} "
+                         f"{results.get('start')} to {results.get('end')}, "
+                         f"{results.get('bars')} bars); run without --section")
+    results.update(header)
+    for n in chosen:
+        results.update(sections[n](results))
 
     os.makedirs("results", exist_ok=True)
     with open(OUT, "w") as fh:
-        json.dump({"symbol": SYMBOL, "start": START, "end": END,
-                   "median_price": price, "median_volume": volume,
-                   "cost_curves": curves, "crossover": cross,
-                   "shape": SHAPE, "crossover_by_shape": by_shape,
-                   "crossover_by_decay": by_decay,
-                   "vol_elasticity": VOL_ELASTICITY,
-                   "vol_elasticity_study": vol_study,
-                   "capacity": cap, "depth_sweep": sweep, "fees": bill,
-                   "persistence": PERSISTENCE, "recovery": RECOVERY,
-                   "memory_sweep": memory, "memory_closes_the_gap": closes,
-                   "metaorders": metaorders, "impact_exponents": exponents,
-                   "closest_to_square_root": nearest,
-                   "law_coef": LAW_COEF, "formula_curves": formula,
-                   "formula_exponents": formula_exp, "law_ladder": ladder,
-                   "fill_days": FILL_DAYS, "time_in_market": baseline,
-                   "sized_ladder": sized, "fill_days_sweep": patience,
-                   "trimmed_ladder": trimmed, "ls_borrow_bps": LS_BORROW_BPS,
-                   "long_short_free": ls_free, "long_short_capped": ls_capped,
-                   "long_short_time_in_market": ls_baseline,
-                   "participation_sweep": rates, "trim_bootstrap": boot},
-                  fh, indent=1, default=float)
-    print(f"\nwrote {OUT}")
+        json.dump(results, fh, indent=1, default=float)
+    print(f"\nwrote {OUT}" + (f" (section{'s' if len(chosen) > 1 else ''} "
+                              f"{', '.join(map(str, chosen))} replaced, the rest kept)"
+                              if args.section else ""))
 
 
 def _align(*frames: pd.DataFrame) -> tuple:
