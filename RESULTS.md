@@ -1100,7 +1100,7 @@ which moves neither conclusion.
 
 Reproduce with: `python fill_realism.py --section 11` (section 11 of the
 printout; the flag re-runs one section and merges it into the results file,
-leaving the other ten as they were)
+leaving the others as they were)
 
 Section 10 ended on the sentence that the capacity ladder's Sharpe is the
 participation it was run at, which makes a ladder — one axis, AUM, with
@@ -1198,6 +1198,93 @@ of it — a book that fits whole but only just, 34 of its orders capped and
 section 10 gave, that the budget should stop binding somewhere in the
 grid, and the depth profile was not fitted at those rates, so the 30% and
 50% columns are the handler extrapolating.
+
+### 12. Put a fee on the surface, and find the manager is paid on the denominator
+
+Reproduce with: `python fill_realism.py --section 12` (section 12 of the
+printout; arithmetic on section 11's cells, no new runs)
+
+Section 11 ended on the sentence that the desk is paid in the numerator.
+This asks what the *manager* is paid in, because the fee is the one number
+that turns the Sharpe-versus-P&L trade into something a desk recognizes.
+Two-and-twenty on every one of the 42 cells: 2% a year of the capital for
+the ten years, and 20% of whatever gross is left after that. The ten years
+are taken as one lump — no yearly crystallization, no high-water mark —
+which is the floor on the incentive fee, since a real one is paid in the up
+years and not refunded in the down ones. And it is charged twice: once on
+the AUM the investor committed, which is what the fee actually says, and
+once on the position the budget let the desk hold (`position_share` of
+the AUM), which is what section 11 found the P&L comes from.
+
+**On the AUM, the two sides part at the knee.** The investor's net, $m:
+
+| AUM | 2% | 5% | 10% | 20% | 30% | 50% |
+|---|---|---|---|---|---|---|
+| $1bn | 794 | 843 | 789 | 781 | 781 | 781 |
+| $2bn | **949** | 1,547 | 1,552 | 1,396 | 1,382 | 1,378 |
+| $5bn | 549 | **2,164** | 3,347 | 3,201 | 3,066 | 2,941 |
+| $10bn | −311 | 1,555 | **3,796** | 5,682 | 5,426 | 5,215 |
+| $20bn | −2,307 | −52 | 2,549 | **6,368** | 11,162 | 10,795 |
+| $100bn | −18,276 | −16,021 | −12,782 | −7,710 | −1,752 | 5,821 |
+
+and the manager's take, same cells:
+
+| AUM | 2% | 5% | 10% | 20% | 30% | 50% |
+|---|---|---|---|---|---|---|
+| $2bn | 636 | 786 | 787 | 748 | 745 | 744 |
+| $10bn | 1,996 | 2,385 | 2,945 | 3,416 | 3,352 | 3,300 |
+| $20bn | 3,992 | 3,992 | 4,629 | 5,584 | 6,783 | 6,691 |
+| $100bn | 19,960 | 19,960 | 19,960 | 19,960 | 19,960 | 21,416 |
+
+Bold is the knee from section 11, and in every column where the knee is on
+the surface it is also the investor's best AUM: past it the gross is flat
+to the dollar and the management fee keeps growing at 2% of AUM a year, so
+the net falls in a straight line, and reaches zero at gross ÷ (2% × ten
+years) — $8.4bn at 2%, $19.7bn at 5%, $36bn at 10%, $61bn at 20%,
+three to four times the knee at every rate (4.2× at 2%, 3.1× at 20%). The manager's best
+AUM is the top of the surface in every column, because a fifth of a flat
+profit plus two percent of a growing pile only grows. At $100bn the 2%
+desk has made $1.68bn gross over ten years, the manager has taken $19.96bn,
+all of it management fee and none of it incentive, and the investor is
+down $18.3bn on a strategy that made money. The take at $100bn is the
+same $19.96bn in five columns out of six: the desk's gross differs by $16bn
+across those columns and the fee does not see it, because the fee is on
+the denominator and the gross is in the numerator.
+
+**On the position, they do not.** Charge the 2% on what the budget let the
+desk hold and the fee stops growing where the position does — the spread
+of the manager's take past the knee is zero to the dollar, as is the
+investor's net — so neither side has a reason to raise the AUM past the
+knee and neither has a reason not to. The manager's take at $100bn drops
+from $19.96bn to $0.55bn at 2%, $2.52bn at 10%, $10.85bn at 50%: the
+numbers a desk earning the P&L column would actually be paid. Which is
+the proposal, and it is not a novel one — it is what "fee on deployed
+capital" means in a managed-account agreement, and section 11 is the
+reason it exists.
+
+**Along the other axis the fee aligns them.** At each AUM, the rate the
+investor's net is largest at and the rate the manager's take is largest at
+are the same rung — 5% at $1bn, 10% at $2bn and $5bn, 20% at $10bn, 30%
+at $20bn, 50% at $100bn — and it is the first rate at which the budget
+holds the position whole, or the rung past it when the two are within a
+few million ($2bn's 5% and 10% are $5m apart), because a more aggressive
+desk past that point pays more impact for the same position (section 10)
+and the fee is a share of the gross. The Sharpe's pick is 2% in every row. At $10bn the Sharpe's
+rate leaves the investor $311m *down* net of fees and the fee's rate
+leaves them $5.7bn up; the Sharpe is 0.61 at the first and 0.47 at the
+second. So the Sharpe column is the investor's only argument for patience,
+and it is not an argument the investor's own money makes at any AUM on
+the surface. A ratio is the right number for choosing between two desks
+of the same size; it is the wrong number for choosing how big one desk
+should be, and both fees know it.
+
+So: the capacity claim of section 11 — one P&L per rate — has a fee
+attached, and the fee says who is paid for what. On the AUM, the manager
+is paid for the account statement and the investor's best move is to
+stop at the knee, four times below where the fee would take them. On the
+position, both are paid for the P&L column, and the one free choice left
+is the rate, on which the two sides already agree. The patient desk has
+the best Sharpe and the smallest P&L, and now also the smallest fee.
 
 ### What this still does not model
 

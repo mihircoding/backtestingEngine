@@ -89,18 +89,31 @@ and the AUM is a number on the account statement. The knee sits at the
 same place in every column, $0.68bn of position per point of
 participation and week, and the rate is the trade between the Sharpe
 column and the P&L column: the patient desk has the best Sharpe and the
-smallest P&L.
+smallest P&L. The ninth puts two-and-twenty on every cell of that surface
+and finds the manager is paid on the denominator: charged on the AUM, the
+fee keeps growing past the knee while the gross does not, so the
+investor's best AUM is the knee and the manager's is the top of the
+surface, and the fee has eaten the whole profit at three to four times
+the knee — at $100bn the 2% desk has made $1.7bn gross, the manager has
+taken $20bn, and the take is the same $20bn in five columns out of six
+whose gross differs by $16bn. Charged on the position the budget let the
+desk hold, the fee stops growing where the position does and both sides
+stop at the knee. Along the rate axis the fee already aligns them: at
+every AUM the rate the investor nets most at is the rate the manager
+takes most at, and the Sharpe's pick, 2% in every row, leaves the $10bn
+investor $311m down net of fees where the fee's pick leaves them $5.7bn
+up.
 [RESULTS.md](RESULTS.md) has all of it, and the corrections.
 
-384 tests.
+387 tests.
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                 # 384 passed
+python -m pytest -q                 # 387 passed
 
 # the two halves together
 python fill_realism.py              # fill models compared, the headline result
-python fill_realism.py --section 11   # re-run one section, keep the rest
+python fill_realism.py --section 12   # re-run one section, keep the rest
 
 # the strategy side
 python run_backtest.py              # synthetic + SPY, writes engine_backtest.png

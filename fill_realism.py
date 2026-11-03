@@ -61,7 +61,8 @@ from src.execution import (NextBarOpenExecutionHandler,
                            ParticipationLimitedExecutionHandler)
 from src.strategy import (MovingAverageCrossLongShortStrategy,
                           MovingAverageCrossStrategy)
-from run_backtest import (fetch_opens, fetch_prices, fetch_volumes, run, stats)
+from run_backtest import (TRADING_DAYS, fetch_opens, fetch_prices, fetch_volumes, run,
+                          stats)
 
 SYMBOL = "SPY"
 START, END = "2015-01-01", "2024-12-31"
@@ -1396,6 +1397,164 @@ def print_surface(rows: list[dict], knees: list[dict], fill_days: float) -> None
               f"{k['cost_bps_past_knee']['low']:>8.1f}-{k['cost_bps_past_knee']['high']:.1f}")
 
 
+# ---------- 12. put a fee on the surface ----------
+
+MGMT_FEE = 0.02        # a year, on whatever the fee is charged on
+PERF_FEE = 0.20        # of the profit after the management fee
+BASES = ("on_aum", "on_deployed")
+
+
+def fee_economics(rows: list[dict], bars: int, mgmt: float = MGMT_FEE,
+                  perf: float = PERF_FEE, trading_days: int = TRADING_DAYS) -> list[dict]:
+    """Two-and-twenty, charged two ways, on every cell of the surface.
+
+    Section 11 found that past the knee every cell at a rate makes the same
+    dollars whatever the AUM says, because the rest is cash. A management
+    fee does not know that: it is charged on the AUM. So each cell gets the
+    fee worked out twice - on the AUM the investor committed, and on the
+    position the budget actually let the desk hold (`position_share` of it)
+    - with the incentive fee taken as a fifth of whatever profit is left
+    after the management fee. That is the ten years as one lump: no yearly
+    crystallization and no high-water mark, which would charge more, since
+    an incentive fee is paid in the up years and not handed back in the
+    down ones. The lump is the floor on what the manager takes.
+
+    No runs. Every number is arithmetic on what section 11 wrote.
+    """
+    years = bars / trading_days
+    out = []
+    for r in rows:
+        gross = r["final"] - r["aum"]
+        cell = {"aum": r["aum"], "participation": r["participation"], "years": years,
+                "gross_pl": gross, "sharpe": r["sharpe"],
+                "position_share": r["position_share"]}
+        for basis, capital in (("on_aum", r["aum"]),
+                               ("on_deployed", r["aum"] * r["position_share"])):
+            fee = mgmt * capital * years
+            incentive = perf * max(gross - fee, 0.0)
+            take = fee + incentive
+            cell[basis] = {"management": fee, "incentive": incentive, "manager_take": take,
+                           "investor_net": gross - take,
+                           "investor_net_return": (gross - take) / r["aum"],
+                           "fee_share_of_gross": take / gross if gross > 0 else None}
+        out.append(cell)
+    return out
+
+
+def fee_alignment(cells: list[dict], knees: list[dict], mgmt: float = MGMT_FEE) -> list[dict]:
+    """Per rate: the AUM each side of the fee would choose, and where they part.
+
+    On the AUM basis the manager's take only rises with AUM - a fifth of a
+    flat profit plus two percent of a growing pile - so the manager's best
+    AUM is the top of the surface at every rate. The investor's best is the
+    rung where the net is largest, and past the knee the net falls a
+    straight 2% of AUM a year, so there is an AUM at which the fee has eaten
+    the whole profit: gross / (mgmt x years), which is exact when the knee
+    is below it because the gross is flat from the knee up. On the deployed
+    basis the fee stops growing where the position does, and both sides'
+    best AUM is the same rung.
+    """
+    knee_at = {k["participation"]: k["knee_aum"] for k in knees}
+    out = []
+    for rate in sorted({c["participation"] for c in cells}):
+        col = sorted((c for c in cells if c["participation"] == rate), key=lambda c: c["aum"])
+        years = col[0]["years"]
+        top = col[-1]
+        best = {basis: max(col, key=lambda c: c[basis]["investor_net"]) for basis in BASES}
+        manager = {basis: max(col, key=lambda c: c[basis]["manager_take"]) for basis in BASES}
+        knee = knee_at.get(rate)
+        flat_gross = top["gross_pl"]
+        break_even = flat_gross / (mgmt * years) if flat_gross > 0 else None
+        # past the knee, how much either side's number still moves with the
+        # AUM, as a share of its level: zero is "the fee stopped growing where
+        # the position did", which is the claim for the deployed basis
+        past = [c for c in col if knee is not None and c["aum"] > knee] or [top]
+        spread = {b: {side: (max(c[b][side] for c in past) - min(c[b][side] for c in past))
+                            / max(abs(np.mean([c[b][side] for c in past])), 1.0)
+                      for side in ("manager_take", "investor_net")} for b in BASES}
+        out.append({
+            "participation": rate,
+            "knee_aum": knee,
+            "flat_gross_pl": flat_gross,
+            "break_even_aum": break_even,
+            "break_even_over_knee": (break_even / knee) if (break_even and knee) else None,
+            "investor_best_aum": {b: best[b]["aum"] for b in best},
+            "investor_best_net": {b: best[b][b]["investor_net"] for b in best},
+            "manager_best_aum": {b: manager[b]["aum"] for b in manager},
+            "manager_take_at_top": {b: top[b]["manager_take"] for b in BASES},
+            "investor_net_at_top": {b: top[b]["investor_net"] for b in BASES},
+            "spread_past_knee": spread,
+        })
+    return out
+
+
+def rate_alignment(cells: list[dict], basis: str = "on_aum") -> list[dict]:
+    """Per AUM: the rate each side of the fee would choose, against the Sharpe.
+
+    The other axis. At a fixed AUM the gross rises with the rate until the
+    budget stops binding and then stops rising, because a more aggressive
+    desk past that point is paying more impact for the same position; the
+    fee is a share of the gross, so the manager's best rate and the
+    investor's are the same rung. The Sharpe is highest at the most patient
+    rate in every row, and nobody's dollars are.
+    """
+    out = []
+    for aum in sorted({c["aum"] for c in cells}):
+        row = sorted((c for c in cells if c["aum"] == aum), key=lambda c: c["participation"])
+        investor = max(row, key=lambda c: c[basis]["investor_net"])
+        manager = max(row, key=lambda c: c[basis]["manager_take"])
+        patient = max(row, key=lambda c: c["sharpe"])
+        out.append({
+            "aum": aum,
+            "investor_best_rate": investor["participation"],
+            "manager_best_rate": manager["participation"],
+            "sharpe_best_rate": patient["participation"],
+            "sharpe_at_investor_best": investor["sharpe"],
+            "sharpe_best": patient["sharpe"],
+            "investor_net_at_best": investor[basis]["investor_net"],
+            "investor_net_at_sharpe_best": patient[basis]["investor_net"],
+        })
+    return out
+
+
+def print_fee_surface(cells: list[dict], alignment: list[dict], by_aum: list[dict],
+                      mgmt: float = MGMT_FEE, perf: float = PERF_FEE) -> None:
+    aums = sorted({c["aum"] for c in cells})
+    rates = sorted({c["participation"] for c in cells})
+    cell = {(c["aum"], c["participation"]): c for c in cells}
+    years = cells[0]["years"]
+    print(f"\n12. PUT A FEE ON THE SURFACE   {mgmt:.0%} and {perf:.0%}, {years:.1f} years as one lump, "
+          f"no high-water mark")
+    print(f"\n   the investor's net, $m, fee charged on the AUM:")
+    print(f"\n{'AUM':>9} " + " ".join(f"{p:>9.0%}" for p in rates))
+    for aum in aums:
+        print(f"{aum / 1e9:>7.1f}bn " + " ".join(
+            f"{cell[(aum, p)]['on_aum']['investor_net'] / 1e6:>9,.0f}" for p in rates))
+    print(f"\n   and the manager's take, $m, same basis:")
+    print(f"\n{'AUM':>9} " + " ".join(f"{p:>9.0%}" for p in rates))
+    for aum in aums:
+        print(f"{aum / 1e9:>7.1f}bn " + " ".join(
+            f"{cell[(aum, p)]['on_aum']['manager_take'] / 1e6:>9,.0f}" for p in rates))
+    print(f"\n   Where each side would stop, per rate:")
+    print(f"\n{'rate':>5} {'knee':>8} {'gross past knee':>16} {'fee eats it at':>15} {'x knee':>7} "
+          f"{'investor best':>14} {'manager best':>13} {'take at top':>12} {'on deployed':>12}")
+    for a in alignment:
+        knee = f"{a['knee_aum'] / 1e9:.0f}bn" if a["knee_aum"] else "never"
+        be = f"{a['break_even_aum'] / 1e9:.1f}bn" if a["break_even_aum"] else "-"
+        mult = f"{a['break_even_over_knee']:.1f}" if a["break_even_over_knee"] else "-"
+        print(f"{a['participation']:>5.0%} {knee:>8} {a['flat_gross_pl'] / 1e9:>15.2f}bn {be:>15} {mult:>7} "
+              f"{a['investor_best_aum']['on_aum'] / 1e9:>12.0f}bn {a['manager_best_aum']['on_aum'] / 1e9:>11.0f}bn "
+              f"{a['manager_take_at_top']['on_aum'] / 1e9:>10.1f}bn {a['manager_take_at_top']['on_deployed'] / 1e9:>10.2f}bn")
+    print(f"\n   And along the other axis, at each AUM, the rate each side would pick "
+          f"(fee on the AUM):")
+    print(f"\n{'AUM':>9} {'investor':>9} {'manager':>8} {'best Sharpe at':>15} {'Sharpe there':>13} "
+          f"{'Sharpe at the pick':>19} {'net at the pick':>16} {'net at best Sharpe':>19}")
+    for r in by_aum:
+        print(f"{r['aum'] / 1e9:>7.1f}bn {r['investor_best_rate']:>9.0%} {r['manager_best_rate']:>8.0%} "
+              f"{r['sharpe_best_rate']:>15.0%} {r['sharpe_best']:>13.2f} {r['sharpe_at_investor_best']:>19.2f} "
+              f"{r['investor_net_at_best'] / 1e6:>14,.0f}m {r['investor_net_at_sharpe_best'] / 1e6:>17,.0f}m")
+
+
 # ---------- reporting ----------
 
 def print_cost_curves(rows: list[dict], cross: float | None, price: float,
@@ -1737,7 +1896,16 @@ def _sections(prices, opens, volumes, quick: bool) -> dict:
         return {"surface_aums": list(SURFACE_AUMS), "capacity_surface": surface,
                 "surface_knees": knees}
 
-    return {1: s1, 2: s2, 3: s3, 4: s4, 5: s5, 6: s6, 7: s7, 8: s8, 9: s9, 10: s10, 11: s11}
+    def s12(have):
+        cells = fee_economics(need(have, "capacity_surface", 11), have["bars"])
+        alignment = fee_alignment(cells, need(have, "surface_knees", 11))
+        by_aum = rate_alignment(cells)
+        print_fee_surface(cells, alignment, by_aum)
+        return {"mgmt_fee": MGMT_FEE, "perf_fee": PERF_FEE, "fee_surface": cells,
+                "fee_alignment": alignment, "rate_alignment": by_aum}
+
+    return {1: s1, 2: s2, 3: s3, 4: s4, 5: s5, 6: s6, 7: s7, 8: s8, 9: s9, 10: s10, 11: s11,
+            12: s12}
 
 
 def main() -> None:

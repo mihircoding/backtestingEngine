@@ -3,7 +3,7 @@
  "start": "2015-01-01",
  "end": "2024-12-31",
  "bars": 2515,
- "median_price": 271.0247802734375,
+ "median_price": 271.02471923828125,
  "median_volume": 76610800.0,
  "cost_curves": [
   {
@@ -4799,6 +4799,1314 @@
     "low": 44.64955329232245,
     "high": 44.64955329232245
    }
+  }
+ ],
+ "mgmt_fee": 0.02,
+ "perf_fee": 0.2,
+ "fee_surface": [
+  {
+   "aum": 100000000.0,
+   "participation": 0.02,
+   "years": 9.98015873015873,
+   "gross_pl": 134009514.84832701,
+   "sharpe": 0.6417189650220181,
+   "position_share": 1.0,
+   "on_aum": {
+    "management": 19960317.46031746,
+    "incentive": 22809839.477601912,
+    "manager_take": 42770156.93791937,
+    "investor_net": 91239357.91040763,
+    "investor_net_return": 0.9123935791040764,
+    "fee_share_of_gross": 0.31915761344503757
+   },
+   "on_deployed": {
+    "management": 19960317.46031746,
+    "incentive": 22809839.477601912,
+    "manager_take": 42770156.93791937,
+    "investor_net": 91239357.91040763,
+    "investor_net_return": 0.9123935791040764,
+    "fee_share_of_gross": 0.31915761344503757
+   }
+  },
+  {
+   "aum": 1000000000.0,
+   "participation": 0.02,
+   "years": 9.98015873015873,
+   "gross_pl": 1192287064.2816563,
+   "sharpe": 0.626962095341986,
+   "position_share": 1.0,
+   "on_aum": {
+    "management": 199603174.6031746,
+    "incentive": 198536777.93569636,
+    "manager_take": 398139952.53887093,
+    "investor_net": 794147111.7427853,
+    "investor_net_return": 0.7941471117427853,
+    "fee_share_of_gross": 0.33392960845276565
+   },
+   "on_deployed": {
+    "management": 199603174.6031746,
+    "incentive": 198536777.93569636,
+    "manager_take": 398139952.53887093,
+    "investor_net": 794147111.7427853,
+    "investor_net_return": 0.7941471117427853,
+    "fee_share_of_gross": 0.33392960845276565
+   }
+  },
+  {
+   "aum": 2000000000.0,
+   "participation": 0.02,
+   "years": 9.98015873015873,
+   "gross_pl": 1585084461.2132668,
+   "sharpe": 0.6047523199289782,
+   "position_share": 0.677051409663768,
+   "on_aum": {
+    "management": 399206349.2063492,
+    "incentive": 237175622.40138355,
+    "manager_take": 636381971.6077328,
+    "investor_net": 948702489.6055341,
+    "investor_net_return": 0.474351244802767,
+    "fee_share_of_gross": 0.40148142712889173
+   },
+   "on_deployed": {
+    "management": 270283221.47688514,
+    "incentive": 262960247.94727635,
+    "manager_take": 533243469.4241615,
+    "investor_net": 1051840991.7891054,
+    "investor_net_return": 0.5259204958945527,
+    "fee_share_of_gross": 0.3364132842586839
+   }
+  },
+  {
+   "aum": 5000000000.0,
+   "participation": 0.02,
+   "years": 9.98015873015873,
+   "gross_pl": 1684571648.6658373,
+   "sharpe": 0.619738271236947,
+   "position_share": 0.2708205592813959,
+   "on_aum": {
+    "management": 998015873.015873,
+    "incentive": 137311155.12999287,
+    "manager_take": 1135327028.145866,
+    "investor_net": 549244620.5199714,
+    "investor_net_return": 0.10984892410399427,
+    "fee_share_of_gross": 0.6739559157635312
+   },
+   "on_deployed": {
+    "management": 270283216.90186936,
+    "incentive": 282857686.35279363,
+    "manager_take": 553140903.254663,
+    "investor_net": 1131430745.4111743,
+    "investor_net_return": 0.22628614908223485,
+    "fee_share_of_gross": 0.32835700618180574
+   }
+  },
+  {
+   "aum": 10000000000.0,
+   "participation": 0.02,
+   "years": 9.98015873015873,
+   "gross_pl": 1684571648.6658611,
+   "sharpe": 0.6094688114357129,
+   "position_share": 0.13541027964069796,
+   "on_aum": {
+    "management": 1996031746.031746,
+    "incentive": 0.0,
+    "manager_take": 1996031746.031746,
+    "investor_net": -311460097.3658848,
+    "investor_net_return": -0.031146009736588477,
+    "fee_share_of_gross": 1.184889789408811
+   },
+   "on_deployed": {
+    "management": 270283216.90186936,
+    "incentive": 282857686.3527984,
+    "manager_take": 553140903.2546678,
+    "investor_net": 1131430745.4111934,
+    "investor_net_return": 0.11314307454111934,
+    "fee_share_of_gross": 0.3283570061818039
+   }
+  },
+  {
+   "aum": 20000000000.0,
+   "participation": 0.02,
+   "years": 9.98015873015873,
+   "gross_pl": 1684571648.6658058,
+   "sharpe": 0.6036160747025378,
+   "position_share": 0.06770513982034898,
+   "on_aum": {
+    "management": 3992063492.063492,
+    "incentive": 0.0,
+    "manager_take": 3992063492.063492,
+    "investor_net": -2307491843.397686,
+    "investor_net_return": -0.1153745921698843,
+    "fee_share_of_gross": 2.3697795788177
+   },
+   "on_deployed": {
+    "management": 270283216.90186936,
+    "incentive": 282857686.3527873,
+    "manager_take": 553140903.2546567,
+    "investor_net": 1131430745.411149,
+    "investor_net_return": 0.05657153727055745,
+    "fee_share_of_gross": 0.32835700618180813
+   }
+  },
+  {
+   "aum": 100000000000.0,
+   "participation": 0.02,
+   "years": 9.98015873015873,
+   "gross_pl": 1684571648.6658478,
+   "sharpe": 0.5985154987232874,
+   "position_share": 0.013541027872387574,
+   "on_aum": {
+    "management": 19960317460.31746,
+    "incentive": 0.0,
+    "manager_take": 19960317460.31746,
+    "investor_net": -18275745811.65161,
+    "investor_net_return": -0.1827574581165161,
+    "fee_share_of_gross": 11.848897894088205
+   },
+   "on_deployed": {
+    "management": 270283215.07186306,
+    "incentive": 282857686.7187969,
+    "manager_take": 553140901.7906599,
+    "investor_net": 1131430746.8751879,
+    "investor_net_return": 0.011314307468751878,
+    "fee_share_of_gross": 0.3283570053127382
+   }
+  },
+  {
+   "aum": 100000000.0,
+   "participation": 0.05,
+   "years": 9.98015873015873,
+   "gross_pl": 134009514.84832701,
+   "sharpe": 0.6417189650220181,
+   "position_share": 1.0,
+   "on_aum": {
+    "management": 19960317.46031746,
+    "incentive": 22809839.477601912,
+    "manager_take": 42770156.93791937,
+    "investor_net": 91239357.91040763,
+    "investor_net_return": 0.9123935791040764,
+    "fee_share_of_gross": 0.31915761344503757
+   },
+   "on_deployed": {
+    "management": 19960317.46031746,
+    "incentive": 22809839.477601912,
+    "manager_take": 42770156.93791937,
+    "investor_net": 91239357.91040763,
+    "investor_net_return": 0.9123935791040764,
+    "fee_share_of_gross": 0.31915761344503757
+   }
+  },
+  {
+   "aum": 1000000000.0,
+   "participation": 0.05,
+   "years": 9.98015873015873,
+   "gross_pl": 1253150463.5089097,
+   "sharpe": 0.6010054816698428,
+   "position_share": 1.0,
+   "on_aum": {
+    "management": 199603174.6031746,
+    "incentive": 210709457.78114703,
+    "manager_take": 410312632.38432163,
+    "investor_net": 842837831.124588,
+    "investor_net_return": 0.842837831124588,
+    "fee_share_of_gross": 0.32742487381396906
+   },
+   "on_deployed": {
+    "management": 199603174.6031746,
+    "incentive": 210709457.78114703,
+    "manager_take": 410312632.38432163,
+    "investor_net": 842837831.124588,
+    "investor_net_return": 0.842837831124588,
+    "fee_share_of_gross": 0.32742487381396906
+   }
+  },
+  {
+   "aum": 2000000000.0,
+   "participation": 0.05,
+   "years": 9.98015873015873,
+   "gross_pl": 2333288359.9373455,
+   "sharpe": 0.5764791478365734,
+   "position_share": 1.0,
+   "on_aum": {
+    "management": 399206349.2063492,
+    "incentive": 386816402.1461993,
+    "manager_take": 786022751.3525485,
+    "investor_net": 1547265608.584797,
+    "investor_net_return": 0.7736328042923984,
+    "fee_share_of_gross": 0.33687338643975195
+   },
+   "on_deployed": {
+    "management": 399206349.2063492,
+    "incentive": 386816402.1461993,
+    "manager_take": 786022751.3525485,
+    "investor_net": 1547265608.584797,
+    "investor_net_return": 0.7736328042923984,
+    "fee_share_of_gross": 0.33687338643975195
+   }
+  },
+  {
+   "aum": 5000000000.0,
+   "participation": 0.05,
+   "years": 9.98015873015873,
+   "gross_pl": 3702825648.9395485,
+   "sharpe": 0.5592347050721551,
+   "position_share": 0.6770513982034898,
+   "on_aum": {
+    "management": 998015873.015873,
+    "incentive": 540961955.1847352,
+    "manager_take": 1538977828.2006083,
+    "investor_net": 2163847820.7389402,
+    "investor_net_return": 0.43276956414778806,
+    "fee_share_of_gross": 0.4156225472407419
+   },
+   "on_deployed": {
+    "management": 675708042.2546732,
+    "incentive": 605423521.3369751,
+    "manager_take": 1281131563.5916483,
+    "investor_net": 2421694085.3479004,
+    "investor_net_return": 0.4843388170695801,
+    "fee_share_of_gross": 0.3459875470935423
+   }
+  },
+  {
+   "aum": 10000000000.0,
+   "participation": 0.05,
+   "years": 9.98015873015873,
+   "gross_pl": 3939576885.087494,
+   "sharpe": 0.5770929487746985,
+   "position_share": 0.3385256991017449,
+   "on_aum": {
+    "management": 1996031746.031746,
+    "incentive": 388709027.8111496,
+    "manager_take": 2384740773.8428955,
+    "investor_net": 1554836111.2445984,
+    "investor_net_return": 0.15548361112445983,
+    "fee_share_of_gross": 0.6053291618371177
+   },
+   "on_deployed": {
+    "management": 675708042.2546732,
+    "incentive": 652773768.5665642,
+    "manager_take": 1328481810.8212376,
+    "investor_net": 2611095074.2662563,
+    "investor_net_return": 0.26110950742662564,
+    "fee_share_of_gross": 0.3372143378772346
+   }
+  },
+  {
+   "aum": 20000000000.0,
+   "participation": 0.05,
+   "years": 9.98015873015873,
+   "gross_pl": 3939576885.0875053,
+   "sharpe": 0.5663782728928746,
+   "position_share": 0.16926284955087245,
+   "on_aum": {
+    "management": 3992063492.063492,
+    "incentive": 0.0,
+    "manager_take": 3992063492.063492,
+    "investor_net": -52486606.97598648,
+    "investor_net_return": -0.002624330348799324,
+    "fee_share_of_gross": 1.0133229045927912
+   },
+   "on_deployed": {
+    "management": 675708042.2546732,
+    "incentive": 652773768.5665665,
+    "manager_take": 1328481810.8212397,
+    "investor_net": 2611095074.266266,
+    "investor_net_return": 0.1305547537133133,
+    "fee_share_of_gross": 0.33721433787723415
+   }
+  },
+  {
+   "aum": 100000000000.0,
+   "participation": 0.05,
+   "years": 9.98015873015873,
+   "gross_pl": 3939576885.087387,
+   "sharpe": 0.55612468640542,
+   "position_share": 0.03385256968096893,
+   "on_aum": {
+    "management": 19960317460.31746,
+    "incentive": 0.0,
+    "manager_take": 19960317460.31746,
+    "investor_net": -16020740575.230072,
+    "investor_net_return": -0.16020740575230072,
+    "fee_share_of_gross": 5.066614522964108
+   },
+   "on_deployed": {
+    "management": 675708037.6796576,
+    "incentive": 652773769.4815459,
+    "manager_take": 1328481807.1612034,
+    "investor_net": 2611095077.9261837,
+    "investor_net_return": 0.026110950779261836,
+    "fee_share_of_gross": 0.3372143369482013
+   }
+  },
+  {
+   "aum": 100000000.0,
+   "participation": 0.1,
+   "years": 9.98015873015873,
+   "gross_pl": 134009514.84832701,
+   "sharpe": 0.6417189650220181,
+   "position_share": 1.0,
+   "on_aum": {
+    "management": 19960317.46031746,
+    "incentive": 22809839.477601912,
+    "manager_take": 42770156.93791937,
+    "investor_net": 91239357.91040763,
+    "investor_net_return": 0.9123935791040764,
+    "fee_share_of_gross": 0.31915761344503757
+   },
+   "on_deployed": {
+    "management": 19960317.46031746,
+    "incentive": 22809839.477601912,
+    "manager_take": 42770156.93791937,
+    "investor_net": 91239357.91040763,
+    "investor_net_return": 0.9123935791040764,
+    "fee_share_of_gross": 0.31915761344503757
+   }
+  },
+  {
+   "aum": 1000000000.0,
+   "participation": 0.1,
+   "years": 9.98015873015873,
+   "gross_pl": 1185823170.8222675,
+   "sharpe": 0.5655335588911676,
+   "position_share": 1.0,
+   "on_aum": {
+    "management": 199603174.6031746,
+    "incentive": 197243999.2438186,
+    "manager_take": 396847173.8469932,
+    "investor_net": 788975996.9752743,
+    "investor_net_return": 0.7889759969752743,
+    "fee_share_of_gross": 0.33465965551323595
+   },
+   "on_deployed": {
+    "management": 199603174.6031746,
+    "incentive": 197243999.2438186,
+    "manager_take": 396847173.8469932,
+    "investor_net": 788975996.9752743,
+    "investor_net_return": 0.7889759969752743,
+    "fee_share_of_gross": 0.33465965551323595
+   }
+  },
+  {
+   "aum": 2000000000.0,
+   "participation": 0.1,
+   "years": 9.98015873015873,
+   "gross_pl": 2339131203.7795353,
+   "sharpe": 0.5579744987975847,
+   "position_share": 1.0,
+   "on_aum": {
+    "management": 399206349.2063492,
+    "incentive": 387984970.91463727,
+    "manager_take": 787191320.1209865,
+    "investor_net": 1551939883.6585488,
+    "investor_net_return": 0.7759699418292744,
+    "fee_share_of_gross": 0.3365314946203333
+   },
+   "on_deployed": {
+    "management": 399206349.2063492,
+    "incentive": 387984970.91463727,
+    "manager_take": 787191320.1209865,
+    "investor_net": 1551939883.6585488,
+    "investor_net_return": 0.7759699418292744,
+    "fee_share_of_gross": 0.3365314946203333
+   }
+  },
+  {
+   "aum": 5000000000.0,
+   "participation": 0.1,
+   "years": 9.98015873015873,
+   "gross_pl": 5181990226.172411,
+   "sharpe": 0.538775000713854,
+   "position_share": 1.0,
+   "on_aum": {
+    "management": 998015873.015873,
+    "incentive": 836794870.6313076,
+    "manager_take": 1834810743.6471806,
+    "investor_net": 3347179482.5252304,
+    "investor_net_return": 0.6694358965050461,
+    "fee_share_of_gross": 0.35407452804140704
+   },
+   "on_deployed": {
+    "management": 998015873.015873,
+    "incentive": 836794870.6313076,
+    "manager_take": 1834810743.6471806,
+    "investor_net": 3347179482.5252304,
+    "investor_net_return": 0.6694358965050461,
+    "fee_share_of_gross": 0.35407452804140704
+   }
+  },
+  {
+   "aum": 10000000000.0,
+   "participation": 0.1,
+   "years": 9.98015873015873,
+   "gross_pl": 6740861899.768351,
+   "sharpe": 0.5008671053451077,
+   "position_share": 0.6770513982034898,
+   "on_aum": {
+    "management": 1996031746.031746,
+    "incentive": 948966030.747321,
+    "manager_take": 2944997776.779067,
+    "investor_net": 3795864122.9892836,
+    "investor_net_return": 0.37958641229892837,
+    "fee_share_of_gross": 0.4368874219007916
+   },
+   "on_deployed": {
+    "management": 1351416084.5093465,
+    "incentive": 1077889163.051801,
+    "manager_take": 2429305247.5611477,
+    "investor_net": 4311556652.207203,
+    "investor_net_return": 0.4311556652207203,
+    "fee_share_of_gross": 0.36038496021475097
+   }
+  },
+  {
+   "aum": 20000000000.0,
+   "participation": 0.1,
+   "years": 9.98015873015873,
+   "gross_pl": 7178765519.912342,
+   "sharpe": 0.5154528346222623,
+   "position_share": 0.3385256991017449,
+   "on_aum": {
+    "management": 3992063492.063492,
+    "incentive": 637340405.5697701,
+    "manager_take": 4629403897.633262,
+    "investor_net": 2549361622.2790804,
+    "investor_net_return": 0.12746808111395402,
+    "fee_share_of_gross": 0.644874649379799
+   },
+   "on_deployed": {
+    "management": 1351416084.5093465,
+    "incentive": 1165469887.0805993,
+    "manager_take": 2516885971.589946,
+    "investor_net": 4661879548.322396,
+    "investor_net_return": 0.2330939774161198,
+    "fee_share_of_gross": 0.3506015016939401
+   }
+  },
+  {
+   "aum": 100000000000.0,
+   "participation": 0.1,
+   "years": 9.98015873015873,
+   "gross_pl": 7178765519.912537,
+   "sharpe": 0.4994117163502203,
+   "position_share": 0.06770513936193787,
+   "on_aum": {
+    "management": 19960317460.31746,
+    "incentive": 0.0,
+    "manager_take": 19960317460.31746,
+    "investor_net": -12781551940.404922,
+    "investor_net_return": -0.12781551940404923,
+    "fee_share_of_gross": 2.7804665586236683
+   },
+   "on_deployed": {
+    "management": 1351416075.3593152,
+    "incentive": 1165469888.9106443,
+    "manager_take": 2516885964.2699594,
+    "investor_net": 4661879555.642577,
+    "investor_net_return": 0.04661879555642577,
+    "fee_share_of_gross": 0.3506015006742586
+   }
+  },
+  {
+   "aum": 100000000.0,
+   "participation": 0.2,
+   "years": 9.98015873015873,
+   "gross_pl": 134009514.84832701,
+   "sharpe": 0.6417189650220181,
+   "position_share": 1.0,
+   "on_aum": {
+    "management": 19960317.46031746,
+    "incentive": 22809839.477601912,
+    "manager_take": 42770156.93791937,
+    "investor_net": 91239357.91040763,
+    "investor_net_return": 0.9123935791040764,
+    "fee_share_of_gross": 0.31915761344503757
+   },
+   "on_deployed": {
+    "management": 19960317.46031746,
+    "incentive": 22809839.477601912,
+    "manager_take": 42770156.93791937,
+    "investor_net": 91239357.91040763,
+    "investor_net_return": 0.9123935791040764,
+    "fee_share_of_gross": 0.31915761344503757
+   }
+  },
+  {
+   "aum": 1000000000.0,
+   "participation": 0.2,
+   "years": 9.98015873015873,
+   "gross_pl": 1176158534.9602962,
+   "sharpe": 0.5607041069241756,
+   "position_share": 1.0,
+   "on_aum": {
+    "management": 199603174.6031746,
+    "incentive": 195311072.07142434,
+    "manager_take": 394914246.67459893,
+    "investor_net": 781244288.2856972,
+    "investor_net_return": 0.7812442882856973,
+    "fee_share_of_gross": 0.3357661700664614
+   },
+   "on_deployed": {
+    "management": 199603174.6031746,
+    "incentive": 195311072.07142434,
+    "manager_take": 394914246.67459893,
+    "investor_net": 781244288.2856972,
+    "investor_net_return": 0.7812442882856973,
+    "fee_share_of_gross": 0.3357661700664614
+   }
+  },
+  {
+   "aum": 2000000000.0,
+   "participation": 0.2,
+   "years": 9.98015873015873,
+   "gross_pl": 2144814909.2570086,
+   "sharpe": 0.5104471159646121,
+   "position_share": 1.0,
+   "on_aum": {
+    "management": 399206349.2063492,
+    "incentive": 349121712.0101319,
+    "manager_take": 748328061.2164811,
+    "investor_net": 1396486848.0405273,
+    "investor_net_return": 0.6982434240202636,
+    "fee_share_of_gross": 0.34890099746449055
+   },
+   "on_deployed": {
+    "management": 399206349.2063492,
+    "incentive": 349121712.0101319,
+    "manager_take": 748328061.2164811,
+    "investor_net": 1396486848.0405273,
+    "investor_net_return": 0.6982434240202636,
+    "fee_share_of_gross": 0.34890099746449055
+   }
+  },
+  {
+   "aum": 5000000000.0,
+   "participation": 0.2,
+   "years": 9.98015873015873,
+   "gross_pl": 4998898029.891468,
+   "sharpe": 0.47702047958841615,
+   "position_share": 1.0,
+   "on_aum": {
+    "management": 998015873.015873,
+    "incentive": 800176431.3751191,
+    "manager_take": 1798192304.3909922,
+    "investor_net": 3200705725.500476,
+    "investor_net_return": 0.6401411451000951,
+    "fee_share_of_gross": 0.35971774051771027
+   },
+   "on_deployed": {
+    "management": 998015873.015873,
+    "incentive": 800176431.3751191,
+    "manager_take": 1798192304.3909922,
+    "investor_net": 3200705725.500476,
+    "investor_net_return": 0.6401411451000951,
+    "fee_share_of_gross": 0.35971774051771027
+   }
+  },
+  {
+   "aum": 10000000000.0,
+   "participation": 0.2,
+   "years": 9.98015873015873,
+   "gross_pl": 9098267936.630058,
+   "sharpe": 0.468246314057872,
+   "position_share": 1.0,
+   "on_aum": {
+    "management": 1996031746.031746,
+    "incentive": 1420447238.1196625,
+    "manager_take": 3416478984.151408,
+    "investor_net": 5681788952.47865,
+    "investor_net_return": 0.568178895247865,
+    "fee_share_of_gross": 0.37550872407224917
+   },
+   "on_deployed": {
+    "management": 1996031746.031746,
+    "incentive": 1420447238.1196625,
+    "manager_take": 3416478984.151408,
+    "investor_net": 5681788952.47865,
+    "investor_net_return": 0.568178895247865,
+    "fee_share_of_gross": 0.37550872407224917
+   }
+  },
+  {
+   "aum": 20000000000.0,
+   "participation": 0.2,
+   "years": 9.98015873015873,
+   "gross_pl": 11951783812.15401,
+   "sharpe": 0.43425476417198394,
+   "position_share": 0.6770513982034898,
+   "on_aum": {
+    "management": 3992063492.063492,
+    "incentive": 1591944064.0181038,
+    "manager_take": 5584007556.081595,
+    "investor_net": 6367776256.072415,
+    "investor_net_return": 0.31838881280362075,
+    "fee_share_of_gross": 0.4672112250225866
+   },
+   "on_deployed": {
+    "management": 2702832169.018693,
+    "incentive": 1849790328.6270638,
+    "manager_take": 4552622497.645757,
+    "investor_net": 7399161314.508254,
+    "investor_net_return": 0.3699580657254127,
+    "fee_share_of_gross": 0.3809157335172096
+   }
+  },
+  {
+   "aum": 100000000000.0,
+   "participation": 0.2,
+   "years": 9.98015873015873,
+   "gross_pl": 12250298225.117813,
+   "sharpe": 0.41935084333255007,
+   "position_share": 0.13541027872387573,
+   "on_aum": {
+    "management": 19960317460.31746,
+    "incentive": 0.0,
+    "manager_take": 19960317460.31746,
+    "investor_net": -7710019235.199646,
+    "investor_net_return": -0.07710019235199646,
+    "fee_share_of_gross": 1.6293740032704793
+   },
+   "on_deployed": {
+    "management": 2702832150.7186303,
+    "incentive": 1909493214.8798368,
+    "manager_take": 4612325365.598467,
+    "investor_net": 7637972859.519346,
+    "investor_net_return": 0.07637972859519346,
+    "fee_share_of_gross": 0.37650719034263425
+   }
+  },
+  {
+   "aum": 100000000.0,
+   "participation": 0.3,
+   "years": 9.98015873015873,
+   "gross_pl": 134009514.84832701,
+   "sharpe": 0.6417189650220181,
+   "position_share": 1.0,
+   "on_aum": {
+    "management": 19960317.46031746,
+    "incentive": 22809839.477601912,
+    "manager_take": 42770156.93791937,
+    "investor_net": 91239357.91040763,
+    "investor_net_return": 0.9123935791040764,
+    "fee_share_of_gross": 0.31915761344503757
+   },
+   "on_deployed": {
+    "management": 19960317.46031746,
+    "incentive": 22809839.477601912,
+    "manager_take": 42770156.93791937,
+    "investor_net": 91239357.91040763,
+    "investor_net_return": 0.9123935791040764,
+    "fee_share_of_gross": 0.31915761344503757
+   }
+  },
+  {
+   "aum": 1000000000.0,
+   "participation": 0.3,
+   "years": 9.98015873015873,
+   "gross_pl": 1176158534.9602962,
+   "sharpe": 0.5607041069241756,
+   "position_share": 1.0,
+   "on_aum": {
+    "management": 199603174.6031746,
+    "incentive": 195311072.07142434,
+    "manager_take": 394914246.67459893,
+    "investor_net": 781244288.2856972,
+    "investor_net_return": 0.7812442882856973,
+    "fee_share_of_gross": 0.3357661700664614
+   },
+   "on_deployed": {
+    "management": 199603174.6031746,
+    "incentive": 195311072.07142434,
+    "manager_take": 394914246.67459893,
+    "investor_net": 781244288.2856972,
+    "investor_net_return": 0.7812442882856973,
+    "fee_share_of_gross": 0.3357661700664614
+   }
+  },
+  {
+   "aum": 2000000000.0,
+   "participation": 0.3,
+   "years": 9.98015873015873,
+   "gross_pl": 2126701994.3157754,
+   "sharpe": 0.5066246908867234,
+   "position_share": 1.0,
+   "on_aum": {
+    "management": 399206349.2063492,
+    "incentive": 345499129.0218853,
+    "manager_take": 744705478.2282345,
+    "investor_net": 1381996516.0875409,
+    "investor_net_return": 0.6909982580437705,
+    "fee_share_of_gross": 0.3501691728407058
+   },
+   "on_deployed": {
+    "management": 399206349.2063492,
+    "incentive": 345499129.0218853,
+    "manager_take": 744705478.2282345,
+    "investor_net": 1381996516.0875409,
+    "investor_net_return": 0.6909982580437705,
+    "fee_share_of_gross": 0.3501691728407058
+   }
+  },
+  {
+   "aum": 5000000000.0,
+   "participation": 0.3,
+   "years": 9.98015873015873,
+   "gross_pl": 4830506475.819626,
+   "sharpe": 0.4566612903203171,
+   "position_share": 1.0,
+   "on_aum": {
+    "management": 998015873.015873,
+    "incentive": 766498120.5607506,
+    "manager_take": 1764513993.5766234,
+    "investor_net": 3065992482.2430024,
+    "investor_net_return": 0.6131984964486005,
+    "fee_share_of_gross": 0.36528550420320594
+   },
+   "on_deployed": {
+    "management": 998015873.015873,
+    "incentive": 766498120.5607506,
+    "manager_take": 1764513993.5766234,
+    "investor_net": 3065992482.2430024,
+    "investor_net_return": 0.6131984964486005,
+    "fee_share_of_gross": 0.36528550420320594
+   }
+  },
+  {
+   "aum": 10000000000.0,
+   "participation": 0.3,
+   "years": 9.98015873015873,
+   "gross_pl": 8778131689.25792,
+   "sharpe": 0.42608916557947485,
+   "position_share": 1.0,
+   "on_aum": {
+    "management": 1996031746.031746,
+    "incentive": 1356419988.6452348,
+    "manager_take": 3352451734.676981,
+    "investor_net": 5425679954.580938,
+    "investor_net_return": 0.5425679954580939,
+    "fee_share_of_gross": 0.38190948294606736
+   },
+   "on_deployed": {
+    "management": 1996031746.031746,
+    "incentive": 1356419988.6452348,
+    "manager_take": 3352451734.676981,
+    "investor_net": 5425679954.580938,
+    "investor_net_return": 0.5425679954580939,
+    "fee_share_of_gross": 0.38190948294606736
+   }
+  },
+  {
+   "aum": 20000000000.0,
+   "participation": 0.3,
+   "years": 9.98015873015873,
+   "gross_pl": 17944596527.88806,
+   "sharpe": 0.48418844057136556,
+   "position_share": 1.0,
+   "on_aum": {
+    "management": 3992063492.063492,
+    "incentive": 2790506607.164914,
+    "manager_take": 6782570099.228406,
+    "investor_net": 11162026428.659657,
+    "investor_net_return": 0.5581013214329829,
+    "fee_share_of_gross": 0.3779728392715588
+   },
+   "on_deployed": {
+    "management": 3992063492.063492,
+    "incentive": 2790506607.164914,
+    "manager_take": 6782570099.228406,
+    "investor_net": 11162026428.659657,
+    "investor_net_return": 0.5581013214329829,
+    "fee_share_of_gross": 0.3779728392715588
+   }
+  },
+  {
+   "aum": 100000000000.0,
+   "participation": 0.3,
+   "years": 9.98015873015873,
+   "gross_pl": 18208194857.20198,
+   "sharpe": 0.4151077331856832,
+   "position_share": 0.2031154180858136,
+   "on_aum": {
+    "management": 19960317460.31746,
+    "incentive": 0.0,
+    "manager_take": 19960317460.31746,
+    "investor_net": -1752122603.1154785,
+    "investor_net_return": -0.017521226031154784,
+    "fee_share_of_gross": 1.0962271448024652
+   },
+   "on_deployed": {
+    "management": 4054248226.077946,
+    "incentive": 2830789326.2248073,
+    "manager_take": 6885037552.302753,
+    "investor_net": 11323157304.899227,
+    "investor_net_return": 0.11323157304899227,
+    "fee_share_of_gross": 0.3781285078668564
+   }
+  },
+  {
+   "aum": 100000000.0,
+   "participation": 0.5,
+   "years": 9.98015873015873,
+   "gross_pl": 134009514.84832701,
+   "sharpe": 0.6417189650220181,
+   "position_share": 1.0,
+   "on_aum": {
+    "management": 19960317.46031746,
+    "incentive": 22809839.477601912,
+    "manager_take": 42770156.93791937,
+    "investor_net": 91239357.91040763,
+    "investor_net_return": 0.9123935791040764,
+    "fee_share_of_gross": 0.31915761344503757
+   },
+   "on_deployed": {
+    "management": 19960317.46031746,
+    "incentive": 22809839.477601912,
+    "manager_take": 42770156.93791937,
+    "investor_net": 91239357.91040763,
+    "investor_net_return": 0.9123935791040764,
+    "fee_share_of_gross": 0.31915761344503757
+   }
+  },
+  {
+   "aum": 1000000000.0,
+   "participation": 0.5,
+   "years": 9.98015873015873,
+   "gross_pl": 1176158534.9602962,
+   "sharpe": 0.5607041069241756,
+   "position_share": 1.0,
+   "on_aum": {
+    "management": 199603174.6031746,
+    "incentive": 195311072.07142434,
+    "manager_take": 394914246.67459893,
+    "investor_net": 781244288.2856972,
+    "investor_net_return": 0.7812442882856973,
+    "fee_share_of_gross": 0.3357661700664614
+   },
+   "on_deployed": {
+    "management": 199603174.6031746,
+    "incentive": 195311072.07142434,
+    "manager_take": 394914246.67459893,
+    "investor_net": 781244288.2856972,
+    "investor_net_return": 0.7812442882856973,
+    "fee_share_of_gross": 0.3357661700664614
+   }
+  },
+  {
+   "aum": 2000000000.0,
+   "participation": 0.5,
+   "years": 9.98015873015873,
+   "gross_pl": 2122066171.6843705,
+   "sharpe": 0.5054440289717924,
+   "position_share": 1.0,
+   "on_aum": {
+    "management": 399206349.2063492,
+    "incentive": 344571964.4956043,
+    "manager_take": 743778313.7019534,
+    "investor_net": 1378287857.982417,
+    "investor_net_return": 0.6891439289912086,
+    "fee_share_of_gross": 0.35049722936376965
+   },
+   "on_deployed": {
+    "management": 399206349.2063492,
+    "incentive": 344571964.4956043,
+    "manager_take": 743778313.7019534,
+    "investor_net": 1378287857.982417,
+    "investor_net_return": 0.6891439289912086,
+    "fee_share_of_gross": 0.35049722936376965
+   }
+  },
+  {
+   "aum": 5000000000.0,
+   "participation": 0.5,
+   "years": 9.98015873015873,
+   "gross_pl": 4674806290.780867,
+   "sharpe": 0.4403838337457429,
+   "position_share": 1.0,
+   "on_aum": {
+    "management": 998015873.015873,
+    "incentive": 735358083.5529988,
+    "manager_take": 1733373956.5688717,
+    "investor_net": 2941432334.211995,
+    "investor_net_return": 0.588286466842399,
+    "fee_share_of_gross": 0.3707905416289097
+   },
+   "on_deployed": {
+    "management": 998015873.015873,
+    "incentive": 735358083.5529988,
+    "manager_take": 1733373956.5688717,
+    "investor_net": 2941432334.211995,
+    "investor_net_return": 0.588286466842399,
+    "fee_share_of_gross": 0.3707905416289097
+   }
+  },
+  {
+   "aum": 10000000000.0,
+   "participation": 0.5,
+   "years": 9.98015873015873,
+   "gross_pl": 8514361059.125095,
+   "sharpe": 0.40903250126508617,
+   "position_share": 1.0,
+   "on_aum": {
+    "management": 1996031746.031746,
+    "incentive": 1303665862.61867,
+    "manager_take": 3299697608.650416,
+    "investor_net": 5214663450.47468,
+    "investor_net_return": 0.521466345047468,
+    "fee_share_of_gross": 0.38754494738205064
+   },
+   "on_deployed": {
+    "management": 1996031746.031746,
+    "incentive": 1303665862.61867,
+    "manager_take": 3299697608.650416,
+    "investor_net": 5214663450.47468,
+    "investor_net_return": 0.521466345047468,
+    "fee_share_of_gross": 0.38754494738205064
+   }
+  },
+  {
+   "aum": 20000000000.0,
+   "participation": 0.5,
+   "years": 9.98015873015873,
+   "gross_pl": 17486413458.996155,
+   "sharpe": 0.4327266513008066,
+   "position_share": 1.0,
+   "on_aum": {
+    "management": 3992063492.063492,
+    "incentive": 2698869993.386533,
+    "manager_take": 6690933485.450025,
+    "investor_net": 10795479973.546131,
+    "investor_net_return": 0.5397739986773066,
+    "fee_share_of_gross": 0.38263612496293636
+   },
+   "on_deployed": {
+    "management": 3992063492.063492,
+    "incentive": 2698869993.386533,
+    "manager_take": 6690933485.450025,
+    "investor_net": 10795479973.546131,
+    "investor_net_return": 0.5397739986773066,
+    "fee_share_of_gross": 0.38263612496293636
+   }
+  },
+  {
+   "aum": 100000000000.0,
+   "participation": 0.5,
+   "years": 9.98015873015873,
+   "gross_pl": 27236610061.213715,
+   "sharpe": 0.3988159532198567,
+   "position_share": 0.33852569680968936,
+   "on_aum": {
+    "management": 19960317460.31746,
+    "incentive": 1455258520.1792512,
+    "manager_take": 21415575980.49671,
+    "investor_net": 5821034080.717003,
+    "investor_net_return": 0.05821034080717003,
+    "fee_share_of_gross": 0.78627905353734
+   },
+   "on_deployed": {
+    "management": 6757080376.796577,
+    "incentive": 4095905936.8834276,
+    "manager_take": 10852986313.680004,
+    "investor_net": 16383623747.53371,
+    "investor_net_return": 0.1638362374753371,
+    "fee_share_of_gross": 0.39847052512365316
+   }
+  }
+ ],
+ "fee_alignment": [
+  {
+   "participation": 0.02,
+   "knee_aum": 2000000000.0,
+   "flat_gross_pl": 1684571648.6658478,
+   "break_even_aum": 8439603488.3457985,
+   "break_even_over_knee": 4.2198017441729,
+   "investor_best_aum": {
+    "on_aum": 2000000000.0,
+    "on_deployed": 100000000000.0
+   },
+   "investor_best_net": {
+    "on_aum": 948702489.6055341,
+    "on_deployed": 1131430746.8751879
+   },
+   "manager_best_aum": {
+    "on_aum": 100000000000.0,
+    "on_deployed": 10000000000.0
+   },
+   "manager_take_at_top": {
+    "on_aum": 19960317460.31746,
+    "on_deployed": 553140901.7906599
+   },
+   "investor_net_at_top": {
+    "on_aum": -18275745811.65161,
+    "on_deployed": 1131430746.8751879
+   },
+   "spread_past_knee": {
+    "on_aum": {
+     "manager_take": 2.780264560541709,
+     "investor_net": 3.701070762127185
+    },
+    "on_deployed": {
+     "manager_take": 2.646717765430467e-09,
+     "investor_net": 1.2939712433493308e-09
+    }
+   }
+  },
+  {
+   "participation": 0.05,
+   "knee_aum": 5000000000.0,
+   "flat_gross_pl": 3939576885.087387,
+   "break_even_aum": 19737045229.46365,
+   "break_even_over_knee": 3.94740904589273,
+   "investor_best_aum": {
+    "on_aum": 5000000000.0,
+    "on_deployed": 100000000000.0
+   },
+   "investor_best_net": {
+    "on_aum": 2163847820.7389402,
+    "on_deployed": 2611095077.9261837
+   },
+   "manager_best_aum": {
+    "on_aum": 100000000000.0,
+    "on_deployed": 20000000000.0
+   },
+   "manager_take_at_top": {
+    "on_aum": 19960317460.31746,
+    "on_deployed": 1328481807.1612034
+   },
+   "investor_net_at_top": {
+    "on_aum": -16020740575.230072,
+    "on_deployed": 2611095077.9261837
+   },
+   "spread_past_knee": {
+    "on_aum": {
+     "manager_take": 2.0019928755891248,
+     "investor_net": 3.631719920045676
+    },
+    "on_deployed": {
+     "manager_take": 2.755051893825594e-09,
+     "investor_net": 1.4016829193714882e-09
+    }
+   }
+  },
+  {
+   "participation": 0.1,
+   "knee_aum": 10000000000.0,
+   "flat_gross_pl": 7178765519.912537,
+   "break_even_aum": 35965187097.77255,
+   "break_even_over_knee": 3.5965187097772553,
+   "investor_best_aum": {
+    "on_aum": 10000000000.0,
+    "on_deployed": 100000000000.0
+   },
+   "investor_best_net": {
+    "on_aum": 3795864122.9892836,
+    "on_deployed": 4661879555.642577
+   },
+   "manager_best_aum": {
+    "on_aum": 100000000000.0,
+    "on_deployed": 20000000000.0
+   },
+   "manager_take_at_top": {
+    "on_aum": 19960317460.31746,
+    "on_deployed": 2516885964.2699594
+   },
+   "investor_net_at_top": {
+    "on_aum": -12781551940.404922,
+    "on_deployed": 4661879555.642577
+   },
+   "spread_past_knee": {
+    "on_aum": {
+     "manager_take": 1.24693674560303,
+     "investor_net": 2.996604458290032
+    },
+    "on_deployed": {
+     "manager_take": 2.9083504126347896e-09,
+     "investor_net": 1.5702209401423495e-09
+    }
+   }
+  },
+  {
+   "participation": 0.2,
+   "knee_aum": 20000000000.0,
+   "flat_gross_pl": 12250298225.117813,
+   "break_even_aum": 61373263473.751274,
+   "break_even_over_knee": 3.068663173687564,
+   "investor_best_aum": {
+    "on_aum": 20000000000.0,
+    "on_deployed": 100000000000.0
+   },
+   "investor_best_net": {
+    "on_aum": 6367776256.072415,
+    "on_deployed": 7637972859.519346
+   },
+   "manager_best_aum": {
+    "on_aum": 100000000000.0,
+    "on_deployed": 100000000000.0
+   },
+   "manager_take_at_top": {
+    "on_aum": 19960317460.31746,
+    "on_deployed": 4612325365.598467
+   },
+   "investor_net_at_top": {
+    "on_aum": -7710019235.199646,
+    "on_deployed": 7637972859.519346
+   },
+   "spread_past_knee": {
+    "on_aum": {
+     "manager_take": 0.0,
+     "investor_net": 0.0
+    },
+    "on_deployed": {
+     "manager_take": 0.0,
+     "investor_net": 0.0
+    }
+   }
+  },
+  {
+   "participation": 0.3,
+   "knee_aum": 100000000000.0,
+   "flat_gross_pl": 18208194857.20198,
+   "break_even_aum": 91221970258.74551,
+   "break_even_over_knee": 0.9122197025874551,
+   "investor_best_aum": {
+    "on_aum": 20000000000.0,
+    "on_deployed": 100000000000.0
+   },
+   "investor_best_net": {
+    "on_aum": 11162026428.659657,
+    "on_deployed": 11323157304.899227
+   },
+   "manager_best_aum": {
+    "on_aum": 100000000000.0,
+    "on_deployed": 100000000000.0
+   },
+   "manager_take_at_top": {
+    "on_aum": 19960317460.31746,
+    "on_deployed": 6885037552.302753
+   },
+   "investor_net_at_top": {
+    "on_aum": -1752122603.1154785,
+    "on_deployed": 11323157304.899227
+   },
+   "spread_past_knee": {
+    "on_aum": {
+     "manager_take": 0.0,
+     "investor_net": 0.0
+    },
+    "on_deployed": {
+     "manager_take": 0.0,
+     "investor_net": 0.0
+    }
+   }
+  },
+  {
+   "participation": 0.5,
+   "knee_aum": 100000000000.0,
+   "flat_gross_pl": 27236610061.213715,
+   "break_even_aum": 136453791956.77647,
+   "break_even_over_knee": 1.3645379195677647,
+   "investor_best_aum": {
+    "on_aum": 20000000000.0,
+    "on_deployed": 100000000000.0
+   },
+   "investor_best_net": {
+    "on_aum": 10795479973.546131,
+    "on_deployed": 16383623747.53371
+   },
+   "manager_best_aum": {
+    "on_aum": 100000000000.0,
+    "on_deployed": 100000000000.0
+   },
+   "manager_take_at_top": {
+    "on_aum": 21415575980.49671,
+    "on_deployed": 10852986313.680004
+   },
+   "investor_net_at_top": {
+    "on_aum": 5821034080.717003,
+    "on_deployed": 16383623747.53371
+   },
+   "spread_past_knee": {
+    "on_aum": {
+     "manager_take": 0.0,
+     "investor_net": 0.0
+    },
+    "on_deployed": {
+     "manager_take": 0.0,
+     "investor_net": 0.0
+    }
+   }
+  }
+ ],
+ "rate_alignment": [
+  {
+   "aum": 100000000.0,
+   "investor_best_rate": 0.02,
+   "manager_best_rate": 0.02,
+   "sharpe_best_rate": 0.02,
+   "sharpe_at_investor_best": 0.6417189650220181,
+   "sharpe_best": 0.6417189650220181,
+   "investor_net_at_best": 91239357.91040763,
+   "investor_net_at_sharpe_best": 91239357.91040763
+  },
+  {
+   "aum": 1000000000.0,
+   "investor_best_rate": 0.05,
+   "manager_best_rate": 0.05,
+   "sharpe_best_rate": 0.02,
+   "sharpe_at_investor_best": 0.6010054816698428,
+   "sharpe_best": 0.626962095341986,
+   "investor_net_at_best": 842837831.124588,
+   "investor_net_at_sharpe_best": 794147111.7427853
+  },
+  {
+   "aum": 2000000000.0,
+   "investor_best_rate": 0.1,
+   "manager_best_rate": 0.1,
+   "sharpe_best_rate": 0.02,
+   "sharpe_at_investor_best": 0.5579744987975847,
+   "sharpe_best": 0.6047523199289782,
+   "investor_net_at_best": 1551939883.6585488,
+   "investor_net_at_sharpe_best": 948702489.6055341
+  },
+  {
+   "aum": 5000000000.0,
+   "investor_best_rate": 0.1,
+   "manager_best_rate": 0.1,
+   "sharpe_best_rate": 0.02,
+   "sharpe_at_investor_best": 0.538775000713854,
+   "sharpe_best": 0.619738271236947,
+   "investor_net_at_best": 3347179482.5252304,
+   "investor_net_at_sharpe_best": 549244620.5199714
+  },
+  {
+   "aum": 10000000000.0,
+   "investor_best_rate": 0.2,
+   "manager_best_rate": 0.2,
+   "sharpe_best_rate": 0.02,
+   "sharpe_at_investor_best": 0.468246314057872,
+   "sharpe_best": 0.6094688114357129,
+   "investor_net_at_best": 5681788952.47865,
+   "investor_net_at_sharpe_best": -311460097.3658848
+  },
+  {
+   "aum": 20000000000.0,
+   "investor_best_rate": 0.3,
+   "manager_best_rate": 0.3,
+   "sharpe_best_rate": 0.02,
+   "sharpe_at_investor_best": 0.48418844057136556,
+   "sharpe_best": 0.6036160747025378,
+   "investor_net_at_best": 11162026428.659657,
+   "investor_net_at_sharpe_best": -2307491843.397686
+  },
+  {
+   "aum": 100000000000.0,
+   "investor_best_rate": 0.5,
+   "manager_best_rate": 0.5,
+   "sharpe_best_rate": 0.02,
+   "sharpe_at_investor_best": 0.3988159532198567,
+   "sharpe_best": 0.5985154987232874,
+   "investor_net_at_best": 5821034080.717003,
+   "investor_net_at_sharpe_best": -18275745811.65161
   }
  ]
 }

@@ -763,7 +763,7 @@ def test_a_section_run_refuses_a_different_tape_but_not_a_rerounded_one():
 def test_a_section_that_prints_beside_an_earlier_one_says_so_when_it_is_missing(capsys):
     prices, opens, volumes = _tape()
     sections = _sections(prices, opens, volumes, quick=True)
-    assert list(sections) == list(range(1, 12))
+    assert list(sections) == list(range(1, 13))
     # section 9 prints against section 8's rows; with nothing on disk it has to stop
     with pytest.raises(SystemExit, match="section 8"):
         sections[9]({})
@@ -771,3 +771,89 @@ def test_a_section_that_prints_beside_an_earlier_one_says_so_when_it_is_missing(
     added = sections[11]({})
     capsys.readouterr()
     assert set(added) == {"surface_aums", "capacity_surface", "surface_knees"}
+    # section 12 is arithmetic on section 11, so it needs it and runs nothing
+    with pytest.raises(SystemExit, match="section 11"):
+        sections[12]({"bars": len(prices)})
+    fees = sections[12]({**added, "bars": len(prices)})
+    capsys.readouterr()
+    assert set(fees) == {"mgmt_fee", "perf_fee", "fee_surface", "fee_alignment", "rate_alignment"}
+    assert len(fees["fee_surface"]) == len(added["capacity_surface"])
+
+
+# ---------- 12. put a fee on the surface ----------
+
+from fill_realism import fee_alignment, fee_economics, rate_alignment
+
+
+def _flat_surface(gross=1.0e9, knee=2e9, rates=(0.02, 0.10), aums=(1e9, 2e9, 5e9, 1e10)):
+    """Section 11's shape by hand: gross rises to the knee and is flat past it,
+    and the position the budget allows is a fixed number of dollars from the
+    knee up, so position_share falls as 1/AUM."""
+    rows, knees = [], []
+    for rate in rates:
+        k = knee * rate / 0.02       # the knee scales with the rate, as on the real tape
+        g = gross * rate / 0.02
+        for aum in aums:
+            share = min(1.0, 0.68 * k / aum)
+            pl = g if aum >= k else g * aum / k
+            rows.append({"aum": aum, "participation": rate, "final": aum + pl,
+                         "sharpe": 0.6 - 2 * rate, "position_share": share})
+        bound = [a for a in aums if 0.68 * k / a < 0.999]
+        knees.append({"participation": rate, "knee_aum": bound[0] if bound else None})
+    return rows, knees
+
+
+def test_the_fee_is_two_and_twenty_on_each_basis_and_the_lump_has_no_incentive_in_a_loss():
+    rows, _ = _flat_surface()
+    cells = fee_economics(rows, bars=2520, mgmt=0.02, perf=0.20)
+    c = next(c for c in cells if c["aum"] == 5e9 and c["participation"] == 0.02)
+    assert c["years"] == pytest.approx(10.0)
+    assert c["gross_pl"] == pytest.approx(1.0e9)
+    # on the AUM: 2% of $5bn for ten years is $1bn, which is the whole gross
+    assert c["on_aum"]["management"] == pytest.approx(1.0e9)
+    assert c["on_aum"]["incentive"] == 0.0
+    assert c["on_aum"]["investor_net"] == pytest.approx(0.0)
+    # on the position the budget allowed: 2% of $1.36bn for ten years
+    held = 5e9 * c["position_share"]
+    assert c["on_deployed"]["management"] == pytest.approx(0.02 * held * 10)
+    assert c["on_deployed"]["incentive"] == pytest.approx(0.2 * (1.0e9 - 0.02 * held * 10))
+    assert c["on_deployed"]["investor_net"] + c["on_deployed"]["manager_take"] == pytest.approx(1.0e9)
+    # a cell that lost money pays the management fee and no incentive, and
+    # reports no share of a gross it does not have
+    lost = fee_economics([{**rows[0], "final": rows[0]["aum"] * 0.9}], bars=2520)[0]
+    assert lost["on_aum"]["incentive"] == 0.0
+    assert lost["on_aum"]["fee_share_of_gross"] is None
+    assert lost["on_aum"]["investor_net"] == pytest.approx(-0.1 * rows[0]["aum"] - lost["on_aum"]["management"])
+
+
+def test_on_the_aum_the_two_sides_part_at_the_knee_and_on_the_position_they_do_not():
+    rows, knees = _flat_surface()
+    cells = fee_economics(rows, bars=2520)
+    al = {a["participation"]: a for a in fee_alignment(cells, knees)}
+    a = al[0.02]
+    # the manager's take on the AUM only grows: best is the top of the surface
+    assert a["manager_best_aum"]["on_aum"] == 1e10
+    # the investor's best on the AUM is the knee, where the gross stops growing
+    assert a["investor_best_aum"]["on_aum"] == a["knee_aum"] == 2e9
+    # past the knee the fee eats the flat gross at gross / (2% x years): $5bn
+    assert a["break_even_aum"] == pytest.approx(5e9)
+    assert a["break_even_over_knee"] == pytest.approx(2.5)
+    # on the position the budget allowed, neither side's number moves past the knee
+    assert a["spread_past_knee"]["on_deployed"]["manager_take"] == pytest.approx(0.0, abs=1e-9)
+    assert a["spread_past_knee"]["on_deployed"]["investor_net"] == pytest.approx(0.0, abs=1e-9)
+    # while on the AUM both still do
+    assert a["spread_past_knee"]["on_aum"]["manager_take"] > 0.5
+    assert a["spread_past_knee"]["on_aum"]["investor_net"] > 0.5
+    # a rate whose knee is off the top of the surface reports no multiple
+    assert al[0.10]["knee_aum"] == 1e10 and al[0.10]["break_even_over_knee"] == pytest.approx(2.5)
+
+
+def test_along_the_rate_axis_the_fee_points_both_sides_at_the_same_rung():
+    rows, _ = _flat_surface(rates=(0.02, 0.05, 0.10, 0.20))
+    cells = fee_economics(rows, bars=2520)
+    for r in rate_alignment(cells):
+        assert r["investor_best_rate"] == r["manager_best_rate"]
+        # and the Sharpe's own pick is the most patient rate in every row
+        assert r["sharpe_best_rate"] == 0.02
+        assert r["sharpe_best"] >= r["sharpe_at_investor_best"]
+        assert r["investor_net_at_best"] >= r["investor_net_at_sharpe_best"]
