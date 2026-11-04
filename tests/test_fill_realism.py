@@ -763,7 +763,7 @@ def test_a_section_run_refuses_a_different_tape_but_not_a_rerounded_one():
 def test_a_section_that_prints_beside_an_earlier_one_says_so_when_it_is_missing(capsys):
     prices, opens, volumes = _tape()
     sections = _sections(prices, opens, volumes, quick=True)
-    assert list(sections) == list(range(1, 13))
+    assert list(sections) == list(range(1, 14))
     # section 9 prints against section 8's rows; with nothing on disk it has to stop
     with pytest.raises(SystemExit, match="section 8"):
         sections[9]({})
@@ -778,6 +778,13 @@ def test_a_section_that_prints_beside_an_earlier_one_says_so_when_it_is_missing(
     capsys.readouterr()
     assert set(fees) == {"mgmt_fee", "perf_fee", "fee_surface", "fee_alignment", "rate_alignment"}
     assert len(fees["fee_surface"]) == len(added["capacity_surface"])
+    # section 13 is arithmetic on both, and every sized row now carries the
+    # yearly curve it needs
+    assert all("year_ends" in r for r in added["capacity_surface"])
+    yearly = sections[13]({**added, **fees, "bars": len(prices)})
+    capsys.readouterr()
+    assert set(yearly) == {"crystallized_surface", "crystallized_alignment"}
+    assert len(yearly["crystallized_surface"]) == len(added["capacity_surface"])
 
 
 # ---------- 12. put a fee on the surface ----------
@@ -857,3 +864,126 @@ def test_along_the_rate_axis_the_fee_points_both_sides_at_the_same_rung():
         assert r["sharpe_best_rate"] == 0.02
         assert r["sharpe_best"] >= r["sharpe_at_investor_best"]
         assert r["investor_net_at_best"] >= r["investor_net_at_sharpe_best"]
+
+
+# ---------- 13. crystallize the fee on the curve ----------
+
+from fill_realism import (crystallized_alignment, crystallized_fee,
+                          crystallized_surface, year_end_equity)
+
+
+def _curve(gains, aum=1e9, bars=252):
+    """A ten-year gross curve from a list of yearly gains, in [date, equity,
+    bars] form, each year a full 252 bars."""
+    out, eq = [], aum
+    for i, g in enumerate(gains):
+        eq += g
+        out.append([f"{2015 + i}-12-31", eq, bars])
+    return out
+
+
+def test_year_end_equity_keeps_the_last_bar_of_each_year_and_counts_its_bars():
+    idx = pd.bdate_range("2020-01-01", "2022-12-31")
+    eq = pd.Series(np.arange(len(idx), dtype=float), index=idx)
+    ends = year_end_equity(eq)
+    assert [e[0] for e in ends] == ["2020-12-31", "2021-12-31", "2022-12-30"]
+    assert [e[1] for e in ends] == [float(eq["2020"].iloc[-1]), float(eq["2021"].iloc[-1]),
+                                    float(eq["2022"].iloc[-1])]
+    assert [e[2] for e in ends] == [len(eq["2020"]), len(eq["2021"]), len(eq["2022"])]
+    assert sum(e[2] for e in ends) == len(idx)
+
+
+def test_the_yearly_fee_is_a_fifth_above_the_mark_and_nothing_under_it():
+    # +100m, +100m, -150m, +100m on $1bn, no management fee, so the mark is
+    # the only thing in play: paid, paid, nothing, and then nothing again
+    # because +100m does not get back to the 1,200m mark
+    ends = _curve([100e6, 100e6, -150e6, 100e6])
+    f = crystallized_fee(ends, 1e9, 1e9, mgmt=0.0, perf=0.2)
+    inc = [y["incentive"] for y in f["schedule"]]
+    assert inc[0] == pytest.approx(20e6) and inc[1] == pytest.approx(20e6)
+    assert inc[2] == 0.0 and inc[3] == 0.0
+    assert f["years_incentive_paid"] == 2 and f["years_ending_under_the_mark"] == 2
+    # the mark is the net asset value after the fee, not the gross
+    assert f["schedule"][1]["high_water_mark"] == pytest.approx(1e9 + 160e6)
+    # and the investor's net is what the final NAV says
+    assert f["final_nav"] == pytest.approx(1e9 + f["investor_net"])
+    assert f["management"] == 0.0
+    assert f["mark_shortfall"] == pytest.approx(1160e6 - f["final_nav"])
+
+
+def test_the_management_fee_is_prorated_by_bars_so_it_matches_the_lump_to_the_dollar():
+    ends = _curve([10e6] * 10, bars=252)
+    ends[3][2] = 250
+    ends[7][2] = 254
+    f = crystallized_fee(ends, 1e9, 1e9, mgmt=0.02, perf=0.0)
+    assert f["management"] == pytest.approx(0.02 * 1e9 * sum(e[2] for e in ends) / 252)
+    # charged on the position rather than the AUM, it is that much smaller
+    g = crystallized_fee(ends, 1e9, 0.4e9, mgmt=0.02, perf=0.0)
+    assert g["management"] == pytest.approx(0.4 * f["management"])
+
+
+def test_the_yearly_take_over_the_lump_is_a_fifth_of_how_far_under_its_mark_the_fund_finishes():
+    # a good decade with a bad year in it: the lump pays a fifth of the net
+    # gain once; the yearly fee paid for the 2020 high and never gave it back
+    gains = [50e6, 80e6, 120e6, -60e6, 90e6, 300e6, 400e6, -500e6, 100e6, 150e6]
+    rows = [{"aum": 1e9, "participation": 0.1, "final": 1e9 + sum(gains),
+             "position_share": 1.0, "year_ends": _curve(gains)}]
+    lump = [{"aum": 1e9, "participation": 0.1,
+             "on_aum": {"manager_take": 0.02 * 1e9 * 10 + 0.2 * (sum(gains) - 0.02 * 1e9 * 10),
+                        "incentive": 0.2 * (sum(gains) - 0.02 * 1e9 * 10)},
+             "on_deployed": {"manager_take": 0.02 * 1e9 * 10 + 0.2 * (sum(gains) - 0.02 * 1e9 * 10),
+                             "incentive": 0.2 * (sum(gains) - 0.02 * 1e9 * 10)}}]
+    cell = crystallized_surface(rows, lump, mgmt=0.02, perf=0.2)[0]["on_aum"]
+    assert cell["mark_shortfall"] > 0
+    assert cell["over_the_lump"] == pytest.approx(0.2 * cell["mark_shortfall"])
+    assert cell["over_the_lump"] == pytest.approx(cell["incentive"] - cell["lump_incentive"])
+    # a decade that finishes at its mark has paid for every dollar exactly once
+    steady = [100e6] * 10
+    rows2 = [{"aum": 1e9, "participation": 0.1, "final": 2e9, "position_share": 1.0,
+              "year_ends": _curve(steady)}]
+    lump2 = [{"aum": 1e9, "participation": 0.1,
+              "on_aum": {"manager_take": 0.2e9 + 0.2 * 0.8e9, "incentive": 0.2 * 0.8e9},
+              "on_deployed": {"manager_take": 0.2e9 + 0.2 * 0.8e9, "incentive": 0.2 * 0.8e9}}]
+    cell2 = crystallized_surface(rows2, lump2, mgmt=0.02, perf=0.2)[0]["on_aum"]
+    assert cell2["mark_shortfall"] == pytest.approx(0.0, abs=1.0)
+    assert cell2["over_the_lump"] == pytest.approx(0.0, abs=1.0)
+    assert cell2["years_incentive_paid"] == 10
+
+
+def test_crystallized_alignment_keeps_the_knee_and_reports_the_extra_past_it():
+    gains = [50e6, 80e6, 120e6, -60e6, 90e6, 300e6, 400e6, -500e6, 100e6, 150e6]
+    rows, knees = [], [{"participation": 0.1, "knee_aum": 2e9}]
+    for aum in (1e9, 2e9, 5e9):
+        # below the knee the position is the AUM and the gross scales with it;
+        # from the knee up the position is the budget and the gross is flat
+        scaled = [g * min(1.0, aum / 2e9) for g in gains]
+        rows.append({"aum": aum, "participation": 0.1, "final": aum + sum(scaled),
+                     "position_share": min(1.0, 2e9 / aum), "year_ends": _curve(scaled, aum=aum)})
+    lump = []
+    for r in rows:
+        g = r["final"] - r["aum"]
+        lump.append({"aum": r["aum"], "participation": 0.1,
+                     **{b: {"manager_take": 0.2 * cap + 0.2 * max(g - 0.2 * cap, 0.0),
+                            "incentive": 0.2 * max(g - 0.2 * cap, 0.0)}
+                        for b, cap in (("on_aum", r["aum"]), ("on_deployed", r["aum"] * r["position_share"]))}})
+    cells = crystallized_surface(rows, lump)
+    a = crystallized_alignment(cells, knees)[0]
+    assert a["knee_aum"] == 2e9
+    # the gross is flat, the management fee grows: the investor's best is the
+    # knee and the manager's is the top, as on the lump
+    assert a["investor_best_aum"]["on_aum"] == 2e9 and a["manager_best_aum"]["on_aum"] == 5e9
+    extra = {c["aum"]: c["on_aum"]["over_the_lump"] for c in cells}
+    assert a["extra_take_past_knee"]["low"] == pytest.approx(min(extra[2e9], extra[5e9]))
+    assert a["extra_take_past_knee"]["high"] == pytest.approx(max(extra[2e9], extra[5e9]))
+    assert a["years_paid_at_top"] == cells[-1]["on_aum"]["years_incentive_paid"]
+
+
+def test_section_13_needs_the_yearly_curve_on_section_11(monkeypatch):
+    prices, opens, volumes = _tape()
+    sections = _sections(prices, opens, volumes, quick=True)
+    assert 13 in sections
+    stale = {"capacity_surface": [{"aum": 1e9, "participation": 0.1, "final": 1.1e9,
+                                   "position_share": 1.0, "sharpe": 0.5}],
+             "fee_surface": [], "surface_knees": [], "bars": 2520}
+    with pytest.raises(SystemExit, match="section 11"):
+        sections[13](stale)

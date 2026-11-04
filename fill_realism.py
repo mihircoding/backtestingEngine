@@ -994,7 +994,8 @@ def _sized_row(prices, opens, volumes, aum: float, fill_days: float | None,
                      "sizings_capped": pf.liquidity_capped,
                      "trims": pf.liquidity_trims,
                      "fills": pf.n_fills,
-                     "borrow_paid_bps": pf.borrow_paid / aum * 1e4}
+                     "borrow_paid_bps": pf.borrow_paid / aum * 1e4,
+                     "year_ends": year_end_equity(eq)}
     # What the budget let the desk hold, as a share of the AUM: the median
     # liquidity budget over the run against the shares the AUM asked for.
     # Reported from the data rather than from inside a run so that the same
@@ -1555,6 +1556,186 @@ def print_fee_surface(cells: list[dict], alignment: list[dict], by_aum: list[dic
               f"{r['investor_net_at_best'] / 1e6:>14,.0f}m {r['investor_net_at_sharpe_best'] / 1e6:>17,.0f}m")
 
 
+# ---------- 13. crystallize the fee on the curve ----------
+
+def year_end_equity(equity: pd.Series) -> list[list]:
+    """The equity curve at the last bar of each calendar year, as
+    [date, equity, bars in the year].
+
+    Section 12 charged ten years as one lump because the surface's rows
+    kept nothing of the curve but its ends. This is the curve at yearly
+    resolution, which is what a fee that crystallizes once a year needs
+    and all it needs; kept on every sized row so a fee study is arithmetic
+    on the results file rather than a 45-second re-run. The bar count is
+    there so a year's management fee can be prorated the way section 12's
+    lump was (bars over 252), and the two agree to the dollar on it.
+    """
+    by_year = equity.groupby(equity.index.year)
+    return [[f"{group.index[-1]:%Y-%m-%d}", float(group.iloc[-1]), int(len(group))]
+            for _, group in by_year]
+
+
+def crystallized_fee(year_ends: list[list], aum: float, capital: float,
+                     mgmt: float = MGMT_FEE, perf: float = PERF_FEE,
+                     bars_per_year: int = TRADING_DAYS) -> dict:
+    """Two-and-twenty as a fund actually charges it, year by year on the curve.
+
+    At each year-end: the management fee for the year comes off, then the
+    incentive fee is a fifth of whatever the net asset value is above its
+    high-water mark, and the mark moves up to the new net. In a down year
+    nothing is paid and nothing is refunded, and the mark stays where it
+    was until the fund earns back through it. The investor's net is the
+    gross P&L less every fee paid; it is also what the final NAV says, which
+    the test checks.
+
+    `capital` is what the management fee is charged on - the AUM, or the
+    position the budget let the desk hold - and `aum` is the starting NAV.
+    The gross P&L each year is taken off the curve, which is the strategy's
+    dollars on a fixed position: fees come out of the investor's pocket, not
+    the desk's book, so paying them does not change what the desk trades.
+    Each year's management fee is prorated by its bars over `bars_per_year`,
+    which is how section 12 counted the lump's ten years, so the two
+    management totals match to the dollar and whatever is left between the
+    two takes is the incentive fee and nothing else.
+    """
+    nav = aum
+    mark = aum
+    prev = aum
+    paid = {"management": 0.0, "incentive": 0.0}
+    years_paid, years_under = 0, 0
+    schedule = []
+    for date, gross_equity, bars_in_year in year_ends:
+        gain = gross_equity - prev
+        prev = gross_equity
+        fee = mgmt * capital * bars_in_year / bars_per_year
+        pre = nav + gain - fee
+        incentive = perf * max(pre - mark, 0.0)
+        nav = pre - incentive
+        paid["management"] += fee
+        paid["incentive"] += incentive
+        if incentive > 0:
+            years_paid += 1
+        if nav < mark:
+            years_under += 1
+        mark = max(mark, nav)
+        schedule.append({"year": date[:4], "gross_gain": gain, "management": fee,
+                         "incentive": incentive, "nav": nav, "high_water_mark": mark})
+    take = paid["management"] + paid["incentive"]
+    gross = prev - aum
+    # How far under its mark the fund finishes. The yearly incentive is the
+    # lump's plus a fifth of this, exactly, whenever the lump paid anything:
+    # every dollar the fund ever stood above its mark was charged once and
+    # the ones it later gave back were not refunded (tested).
+    return {**paid, "manager_take": take, "investor_net": gross - take,
+            "investor_net_return": (gross - take) / aum,
+            "years": len(year_ends), "years_incentive_paid": years_paid,
+            "years_ending_under_the_mark": years_under,
+            "final_nav": nav, "high_water_mark": mark,
+            "mark_shortfall": mark - nav, "schedule": schedule}
+
+
+def crystallized_surface(rows: list[dict], lump: list[dict], mgmt: float = MGMT_FEE,
+                         perf: float = PERF_FEE) -> list[dict]:
+    """Section 12's lump beside the yearly fee, on every cell, both bases.
+
+    The lump was the floor on the incentive fee, and the gap between the
+    two is the price of the high-water mark being a floor and not a refund:
+    the up years' fifth, paid, minus the down years' fifth, which is never
+    handed back. On the management fee the two agree to the dollar, since
+    2% a year for ten years is 20% whether it is paid once or ten times.
+    """
+    floor = {(c["aum"], c["participation"]): c for c in lump}
+    out = []
+    for r in rows:
+        key = (r["aum"], r["participation"])
+        cell = {"aum": r["aum"], "participation": r["participation"],
+                "gross_pl": r["final"] - r["aum"], "position_share": r["position_share"]}
+        for basis, capital in (("on_aum", r["aum"]),
+                               ("on_deployed", r["aum"] * r["position_share"])):
+            yearly = crystallized_fee(r["year_ends"], r["aum"], capital, mgmt, perf)
+            one = floor[key][basis] if key in floor else None
+            cell[basis] = {
+                **{k: v for k, v in yearly.items() if k != "schedule"},
+                "lump_take": one["manager_take"] if one else None,
+                "lump_incentive": one["incentive"] if one else None,
+                "over_the_lump": (yearly["manager_take"] - one["manager_take"]) if one else None,
+                "over_the_lump_share": ((yearly["manager_take"] - one["manager_take"]) / one["manager_take"]
+                                        if one and one["manager_take"] > 0 else None),
+            }
+        cell["schedule_on_aum"] = crystallized_fee(r["year_ends"], r["aum"], r["aum"],
+                                                   mgmt, perf)["schedule"]
+        out.append(cell)
+    return out
+
+
+def crystallized_alignment(cells: list[dict], knees: list[dict]) -> list[dict]:
+    """Per rate: whether the yearly fee moves where either side would stop.
+
+    Section 12's alignment was on the lump. The incentive fee is the part
+    that changes, and it is a share of the P&L, which is flat past the
+    knee; so the prediction is that the investor's best AUM does not move,
+    the manager's does not move, and the whole of the extra take is the
+    same dollars in every cell past the knee at a rate.
+    """
+    knee_at = {k["participation"]: k["knee_aum"] for k in knees}
+    out = []
+    for rate in sorted({c["participation"] for c in cells}):
+        col = sorted((c for c in cells if c["participation"] == rate), key=lambda c: c["aum"])
+        knee = knee_at.get(rate)
+        past = [c for c in col if knee is not None and c["aum"] >= knee] or [col[-1]]
+        extra = [c["on_aum"]["over_the_lump"] for c in past]
+        out.append({
+            "participation": rate,
+            "knee_aum": knee,
+            "investor_best_aum": {b: max(col, key=lambda c: c[b]["investor_net"])["aum"] for b in BASES},
+            "manager_best_aum": {b: max(col, key=lambda c: c[b]["manager_take"])["aum"] for b in BASES},
+            "incentive_at_top": {b: col[-1][b]["incentive"] for b in BASES},
+            "lump_incentive_at_top": {b: col[-1][b]["lump_incentive"] for b in BASES},
+            "extra_take_past_knee": {"low": min(extra), "high": max(extra)},
+            "years_paid_at_top": col[-1]["on_aum"]["years_incentive_paid"],
+            "years_under_at_top": col[-1]["on_aum"]["years_ending_under_the_mark"],
+        })
+    return out
+
+
+def print_crystallized(cells: list[dict], alignment: list[dict], mgmt: float = MGMT_FEE,
+                       perf: float = PERF_FEE) -> None:
+    aums = sorted({c["aum"] for c in cells})
+    rates = sorted({c["participation"] for c in cells})
+    cell = {(c["aum"], c["participation"]): c for c in cells}
+    print(f"\n13. CRYSTALLIZE THE FEE ON THE CURVE   {mgmt:.0%} and {perf:.0%} paid yearly, "
+          f"high-water mark, fee on the AUM")
+    print(f"\n   the manager's take, $m, and in brackets what it is over section 12's lump:")
+    print(f"\n{'AUM':>9} " + " ".join(f"{p:>16.0%}" for p in rates))
+    for aum in aums:
+        print(f"{aum / 1e9:>7.1f}bn " + " ".join(
+            f"{cell[(aum, p)]['on_aum']['manager_take'] / 1e6:>8,.0f} "
+            f"({cell[(aum, p)]['on_aum']['over_the_lump'] / 1e6:>+5,.0f})" for p in rates))
+    print(f"\n   incentive fee alone, $m, yearly against the lump, with the years it was paid in:")
+    print(f"\n{'AUM':>9} " + " ".join(f"{p:>18.0%}" for p in rates))
+    for aum in aums:
+        print(f"{aum / 1e9:>7.1f}bn " + " ".join(
+            f"{cell[(aum, p)]['on_aum']['incentive'] / 1e6:>6,.0f} vs "
+            f"{cell[(aum, p)]['on_aum']['lump_incentive'] / 1e6:>5,.0f} "
+            f"{cell[(aum, p)]['on_aum']['years_incentive_paid']:>2}y" for p in rates))
+    print(f"\n   Per rate, whether the yearly fee moves anybody:")
+    print(f"\n{'rate':>5} {'knee':>8} {'investor best':>14} {'manager best':>13} "
+          f"{'extra past knee':>17} {'incentive at top':>17} {'lump':>8} {'paid in':>8} {'under':>6}")
+    for a in alignment:
+        knee = f"{a['knee_aum'] / 1e9:.0f}bn" if a["knee_aum"] else "never"
+        lo, hi = a["extra_take_past_knee"]["low"] / 1e6, a["extra_take_past_knee"]["high"] / 1e6
+        print(f"{a['participation']:>5.0%} {knee:>8} {a['investor_best_aum']['on_aum'] / 1e9:>12.0f}bn "
+              f"{a['manager_best_aum']['on_aum'] / 1e9:>11.0f}bn {lo:>7,.0f}-{hi:<8,.0f} "
+              f"{a['incentive_at_top']['on_aum'] / 1e6:>15,.0f}m {a['lump_incentive_at_top']['on_aum'] / 1e6:>7,.0f}m "
+              f"{a['years_paid_at_top']:>5}/{len(cells[0]['schedule_on_aum'])} {a['years_under_at_top']:>6}")
+    top = cell[(aums[-1], rates[0])]
+    print(f"\n   The year by year at ${aums[-1] / 1e9:.0f}bn and {rates[0]:.0%}, fee on the AUM, $m:")
+    print(f"\n{'year':>6} {'gross gain':>11} {'mgmt':>8} {'incentive':>10} {'NAV':>10} {'mark':>10}")
+    for y in top["schedule_on_aum"]:
+        print(f"{y['year']:>6} {y['gross_gain'] / 1e6:>+11,.0f} {y['management'] / 1e6:>8,.0f} "
+              f"{y['incentive'] / 1e6:>10,.0f} {y['nav'] / 1e6:>10,.0f} {y['high_water_mark'] / 1e6:>10,.0f}")
+
+
 # ---------- reporting ----------
 
 def print_cost_curves(rows: list[dict], cross: float | None, price: float,
@@ -1904,8 +2085,18 @@ def _sections(prices, opens, volumes, quick: bool) -> dict:
         return {"mgmt_fee": MGMT_FEE, "perf_fee": PERF_FEE, "fee_surface": cells,
                 "fee_alignment": alignment, "rate_alignment": by_aum}
 
+    def s13(have):
+        surface = need(have, "capacity_surface", 11)
+        if not all("year_ends" in r for r in surface):
+            raise SystemExit("section 11 in the results file predates the yearly curve: "
+                             "run `python fill_realism.py --section 11 --section 13`")
+        cells = crystallized_surface(surface, need(have, "fee_surface", 12))
+        alignment = crystallized_alignment(cells, need(have, "surface_knees", 11))
+        print_crystallized(cells, alignment)
+        return {"crystallized_surface": cells, "crystallized_alignment": alignment}
+
     return {1: s1, 2: s2, 3: s3, 4: s4, 5: s5, 6: s6, 7: s7, 8: s8, 9: s9, 10: s10, 11: s11,
-            12: s12}
+            12: s12, 13: s13}
 
 
 def main() -> None:

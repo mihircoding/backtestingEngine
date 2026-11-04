@@ -102,14 +102,24 @@ stop at the knee. Along the rate axis the fee already aligns them: at
 every AUM the rate the investor nets most at is the rate the manager
 takes most at, and the Sharpe's pick, 2% in every row, leaves the $10bn
 investor $311m down net of fees where the fee's pick leaves them $5.7bn
-up.
+up. The tenth pays that fee the way a fund does, yearly against a
+high-water mark on the equity curve, having called the lump a floor on
+it — and finds the floor was the number in 36 cells of 42, because the
+yearly fee exceeds the lump by exactly a fifth of how far under its mark
+the fund finishes, and this decade ended at its high. The six cells
+where it does not are the ones where one year, 2021, set a mark that
+2022 broke and nothing recovered: at $100bn and 50% the manager is paid
+$2.2bn on a high the investor never saw again, and the extra past the
+knee is $0, $21m, $130m, $0 up the column on a P&L that is the same in
+every cell, because the fee on the denominator decides whether the
+numerator ever crosses the mark.
 [RESULTS.md](RESULTS.md) has all of it, and the corrections.
 
-387 tests.
+393 tests.
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                 # 387 passed
+python -m pytest -q                 # 393 passed
 
 # the two halves together
 python fill_realism.py              # fill models compared, the headline result

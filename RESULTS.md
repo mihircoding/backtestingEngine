@@ -1224,8 +1224,8 @@ the AUM), which is what section 11 found the P&L comes from.
 | $2bn | **949** | 1,547 | 1,552 | 1,396 | 1,382 | 1,378 |
 | $5bn | 549 | **2,164** | 3,347 | 3,201 | 3,066 | 2,941 |
 | $10bn | −311 | 1,555 | **3,796** | 5,682 | 5,426 | 5,215 |
-| $20bn | −2,307 | −52 | 2,549 | **6,368** | 11,162 | 10,795 |
-| $100bn | −18,276 | −16,021 | −12,782 | −7,710 | −1,752 | 5,821 |
+| $20bn | −2,307 | −52 | 2,550 | **6,367** | 11,163 | 10,795 |
+| $100bn | −18,276 | −16,021 | −12,781 | −7,711 | −1,753 | 5,822 |
 
 and the manager's take, same cells:
 
@@ -1233,7 +1233,7 @@ and the manager's take, same cells:
 |---|---|---|---|---|---|---|
 | $2bn | 636 | 786 | 787 | 748 | 745 | 744 |
 | $10bn | 1,996 | 2,385 | 2,945 | 3,416 | 3,352 | 3,300 |
-| $20bn | 3,992 | 3,992 | 4,629 | 5,584 | 6,783 | 6,691 |
+| $20bn | 3,992 | 3,992 | 4,630 | 5,584 | 6,783 | 6,691 |
 | $100bn | 19,960 | 19,960 | 19,960 | 19,960 | 19,960 | 21,416 |
 
 Bold is the knee from section 11, and in every column where the knee is on
@@ -1286,6 +1286,112 @@ position, both are paid for the P&L column, and the one free choice left
 is the rate, on which the two sides already agree. The patient desk has
 the best Sharpe and the smallest P&L, and now also the smallest fee.
 
+### 13. Crystallize the fee on the curve, and find the floor was the number — except where one year set the mark
+
+Reproduce with: `python fill_realism.py --section 11 --section 13` (section
+13 of the printout; section 11 has to be re-run once, because its rows now
+keep the equity curve at year-ends, and after that 13 is arithmetic)
+
+Section 12 charged the ten years as one lump and called it the floor on the
+incentive fee: a real one is paid in the up years and not refunded in the
+down ones, so it can only be more. This pays it the real way. Every sized
+row now carries `year_ends`, the curve at the last bar of each calendar
+year, and `crystallized_fee` walks it: the year's management fee comes off,
+a fifth of whatever the net asset value stands above its high-water mark is
+paid, and the mark moves up to the new net. In a down year nothing is paid
+and the mark stays where it was until the fund earns back through it. The
+management fee is prorated by bars the way the lump was, so the two
+management totals match to the dollar and whatever is left between the two
+takes is the mark and nothing else. The prediction, written first: the
+yearly take is above the lump in every cell, by the same dollars in every
+cell past the knee at a rate, because the incentive is a share of a P&L that
+is flat there.
+
+**The floor was the number.** The manager's take, $m, fee on the AUM, and in
+brackets what it is over section 12's lump:
+
+| AUM | 2% | 5% | 10% | 20% | 30% | 50% |
+|---|---|---|---|---|---|---|
+| $1bn | 398 (0) | 410 (0) | 397 (0) | 395 (0) | 395 (0) | 395 (0) |
+| $2bn | 636 (0) | 786 (0) | 787 (0) | 748 (0) | 745 (0) | 744 (0) |
+| $5bn | 1,153 (**+18**) | 1,539 (0) | 1,835 (0) | 1,798 (0) | 1,765 (0) | 1,733 (0) |
+| $10bn | 2,011 (**+15**) | 2,406 (**+21**) | 2,945 (0) | 3,416 (0) | 3,352 (0) | 3,300 (0) |
+| $20bn | 3,992 (0) | 4,122 (**+130**) | 4,689 (**+59**) | 5,584 (0) | 6,783 (0) | 6,691 (0) |
+| $100bn | 19,960 (0) | 19,960 (0) | 19,960 (0) | 19,960 (0) | 19,960 (0) | 22,190 (**+775**) |
+
+In 36 of the 42 cells the yearly fee with a high-water mark is the lump to
+the million, and on the deployed basis it is in all 42. The first half of
+the prediction — "above in every cell" — is wrong, and the reason is an
+identity worth having: the yearly incentive is the lump's plus a fifth of
+*how far under its mark the fund finishes*, exactly, whenever the lump paid
+anything (tested). Every dollar the fund ever stood above its mark was
+charged once; the ones it later gave back were not refunded; so the two
+differ by a fifth of the give-back that was never earned back. On this
+tape 2024 was an up year, 30 of the 42 curves finish at a new high, and in
+those cells the mark cost the investor nothing — not because the fee was
+kind but because the decade ended at its best. The lump was never a floor
+on this sample. It was the answer, in every cell that finishes on a high
+and in every cell so deep under its mark that neither fee pays anything.
+
+**And the six cells where it is not are the cells where one year set the
+mark.** At $100bn and 50%, the year by year, $m:
+
+| year | gross gain | management | incentive | NAV | mark |
+|---|---|---|---|---|---|
+| 2015 | −2,620 | 2,000 | 0 | 95,380 | 100,000 |
+| 2016 | −1,776 | 2,000 | 0 | 91,604 | 100,000 |
+| 2017 | +4,967 | 1,992 | 0 | 94,579 | 100,000 |
+| 2018 | −1,484 | 1,992 | 0 | 91,103 | 100,000 |
+| 2019 | +2,803 | 2,000 | 0 | 91,907 | 100,000 |
+| 2020 | +9,893 | 2,008 | 0 | 99,791 | 100,000 |
+| 2021 | +13,359 | 2,000 | **2,230** | 108,920 | 108,920 |
+| 2022 | −14,937 | 1,992 | 0 | 91,991 | 108,920 |
+| 2023 | +3,352 | 1,984 | 0 | 93,359 | 108,920 |
+| 2024 | +13,680 | 1,992 | 0 | 105,047 | 108,920 |
+
+Six years under the starting mark, because the $2bn-a-year management fee
+is bigger than most years' gross; then 2021 clears it by $8.9bn and pays
+$2.23bn of incentive in one year; then 2022 gives $14.9bn back, and the
+fund finishes the decade $3.9bn under the mark it paid for. The lump's
+incentive was $1,455m, a fifth of the whole decade's net. The yearly one is
+$2,230m, a fifth of one year's, and the difference is a fifth of the $3.9bn
+shortfall to the dollar. The investor's net on the decade goes from $5.8bn
+to $5.0bn for the same P&L, and the manager was paid $2.2bn on a high the
+investor never saw again. The same shape at $20bn and 5%: 2021 clears the
+mark by $650m, pays $130m, 2022 takes $1.56bn back, and the lump — which
+paid nothing, because the gross never beat the management fee over the
+decade — is $130m under the real fee. In every one of the six cells the
+mark was set in 2021, broken in 2022, and not recovered by the end of 2024.
+
+**So the second half of the prediction is wrong too, and the reason is the
+better finding.** Past the knee at 5% the extra is $0, $21m, $130m and $0
+at $5bn, $10bn, $20bn and $100bn — on a gross that is the same $3.94bn in
+all four. The incentive is a share of the P&L, and the P&L is flat; but
+whether the fund ever stands above its mark depends on the P&L *net of the
+management fee*, and the management fee grows with the AUM. At $5bn the
+fee is $100m a year and the curve climbs through its mark in five separate
+years, so the yearly fee and the lump see the same decade. At $20bn the fee
+is $400m a year, the curve is under water for six years, and only 2021
+clears it. At $100bn the fee is $2bn a year and nothing ever does — the
+incentive is zero both ways, and the lump matches again. The high-water
+mark is where the two fees meet: the fee on the denominator decides whether
+the numerator ever crosses the mark, and the cell where the mark costs the
+most is not the top of the surface but the rung where the management fee
+is just small enough to let one good year through and just large enough to
+stop the recovery. Neither side's best AUM moves at any rate — the investor
+still stops at the knee and the manager still wants the top — because $775m
+is 4% of a $20bn fee. What moves is the shape of the extra, and it is a
+hump, not a plateau.
+
+What this does not do: the mark is a plain high-water mark, with no hurdle
+and no clawback, and the year-end is the calendar year-end on a curve that
+is the strategy's dollars on a fixed position — the fees come out of the
+investor's pocket, not the desk's book, so paying them does not change what
+the desk trades. A fund that paid fees out of its own NAV would trade a
+smaller position every year the mark was cleared, and the P&L column of
+section 11 would start to depend on the fee. That is the next thing on the
+surface that is not flat.
+
 ### What this still does not model
 
 - One bar is one book. A day's liquidity is pooled into a single snapshot at
@@ -1334,7 +1440,15 @@ the best Sharpe and the smallest P&L, and now also the smallest fee.
   rate makes the same dollars to the dollar — $1.7bn at 2%, $7.2bn at 10%,
   $27bn at 50% — and the AUM is a number on the account statement. The
   knee is $0.68bn of position per point of participation and week, and the
-  rate is the trade between the Sharpe column and the P&L column.
+  rate is the trade between the Sharpe column and the P&L column. Section
+  12 puts two-and-twenty on it as one lump and finds the manager is paid on
+  the denominator; section 13 pays the fee yearly against a high-water
+  mark and finds the lump was the number in 36 cells of 42, because the
+  difference is a fifth of how far under its mark the fund finishes and
+  this decade finished at its high. What is still not modeled: a fund that
+  pays its fees out of its own NAV, so that clearing the mark shrinks the
+  position the desk trades the next year — the one way the fee gets into
+  the P&L column rather than sitting beside it.
 - Every order is a taker. Passive execution is deliberately absent, and the
   reason is a measurement: pooling a day's volume puts ~153,000 shares at the
   touch, and section 8 of notes/exchange.md already showed that an order
