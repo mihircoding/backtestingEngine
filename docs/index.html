@@ -88,6 +88,7 @@ ul{color:var(--ink2);padding-left:20px;margin:0 0 14px}
 li{margin-bottom:7px}
 footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);font-size:13.5px}
 @media(max-width:860px){.grid2{grid-template-columns:1fr}h1{font-size:30px}}
+.short ul{margin:4px 0 10px;padding-left:20px;color:var(--ink2)}.short li{margin:4px 0}.short .terms{font-size:13.5px;color:var(--ink3);margin:0}details.more{margin-top:28px;border:1px solid var(--line);border-radius:var(--radius);padding:4px 18px;background:var(--surface)}details.more>summary{cursor:pointer;font-weight:600;padding:10px 0;color:var(--ink)}details.more[open]>summary{border-bottom:1px solid var(--line);margin-bottom:14px}
 </style>
 
 </head>
@@ -95,12 +96,13 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
 
 <header>
 <div class="wrap">
-  <div class="tagline">One question: what price did the trade actually get?</div>
+  <div class="tagline">What does a trade really cost?</div>
   <h1>Market Simulation Stack</h1>
-  <p class="lede">A backtester and a simulated exchange, wired together. Most backtesters guess what a trade costs with a formula. This one sends the order into an order book and reads off what it got. <strong style="color:var(--ink)">The usual flat slippage guess is about 5x too expensive for small orders and 14x too cheap for big ones.</strong> 393 tests.</p>
-  <div class="note blue" style="max-width:70ch">
-    <p><strong>In plain English.</strong> A backtester replays history and asks "what if I had traded this way?" The weak spot is always the price you assume you got, because in real life a big order moves the price against you. I built the matching part of an exchange from scratch, then made the backtester trade through it, so the cost of each trade comes from how much is actually for sale at each price instead of from a number I picked.</p>
-    <p>Then I made the simulated book more realistic one step at a time (thin at the best price, shallower on wild days, emptier far out, and able to remember yesterday's trades). Each step changed the cost of trading. None of them changed how much money the strategy could run, which told me which number on this page was the solid one.</p>
+  <p class="lede">A trading simulator with its own fake stock exchange. Instead of guessing what each trade costs, it sends the order to the exchange and sees what price it actually gets.</p>
+  <div class="note blue short" style="max-width:70ch">
+    <p><strong>The short version</strong></p>
+    <ul><li>The usual shortcut for trading costs is wrong both ways: about <strong>5x too high</strong> for small orders and <strong>14x too low</strong> for big ones.</li><li>Big funds can't trade like small ones. This strategy stops getting better at about <strong>$12 billion</strong>, because past that its own orders move the price.</li><li>The classic &ldquo;buy when the 50-day average crosses the 200-day&rdquo; rule lost to simply holding the S&amp;P 500 from 2015 to 2024, and the page shows exactly where the money went.</li></ul>
+    <p class="terms"><strong>Backtest</strong>: replaying history to see how a strategy would have done. <strong>Order book</strong>: the list of everyone waiting to buy or sell at each price. <strong>Sharpe ratio</strong>: return per unit of risk; higher is better.</p>
   </div>
   <div class="links">
     <a class="btn primary" href="#fills">The fill result</a>
@@ -134,6 +136,9 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
     </tbody>
   </table>
   <p style="margin-top:14px">Basis points per share. Against a <em>flat</em> book, the crossover is <strong style="color:var(--ink)">1.96% of a day's volume</strong> — 1.5M shares, about $408M of SPY. Below that every cost figure in the write-up is pessimistic; above it, optimistic.</p>
+
+  <details class="more">
+  <summary>The full research log: 13 follow-up studies</summary>
 
   <h3 style="margin-top:32px">The book was not flat either, and fixing that moved the crossover 5x</h3>
   <p>Seeding every price level with the same size says the touch is as attractive a place to rest as a level ten ticks behind it. That is backwards — the touch is where you get filled by whoever knows something, so it is the <em>least</em> attractive place to leave size, and real books lean the other way. The <span class="mono">shape</span> parameter thins the front and thickens the back, holding the book's <strong style="color:var(--ink)">total</strong> size fixed at 30.6M shares either way.</p>
@@ -357,6 +362,7 @@ footer{padding:36px 0 56px;border-top:1px solid var(--line);color:var(--ink3);fo
   <p>And the extra past the knee is not a plateau but a hump: $0, $21m, $130m, $0 up the 5% column on a P&amp;L that is the same $3.94bn in every cell. Whether the fund ever stands above its mark depends on the P&amp;L net of a management fee that grows with the AUM &mdash; $100m a year at $5bn, which the curve climbs through in five separate years; $400m at $20bn, under water for six years until 2021; $2bn at $100bn, which nothing ever clears. The high-water mark is where the two fees meet: the fee on the denominator decides whether the numerator ever crosses the mark, and the cell where the mark costs most is not the top of the surface but the rung where the management fee is just small enough to let one good year through and just large enough to stop the recovery. Neither side's best AUM moves; $775m is 4% of a $20bn fee.</p>
 
   <p><a href="exchange/">The matching engine's own results &rarr;</a> — emergent spread and impact, mean reversion, venue fees, latency, the opening auction, and what a place in the queue is worth.</p>
+</details>
 </div>
 </section>
 
