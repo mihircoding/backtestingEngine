@@ -59,6 +59,7 @@ header{padding:60px 0 46px}
 .note.blue{border-color:var(--blue);background:var(--blue-bg)}
 .note p{margin:0;color:var(--ink);font-size:14.5px}
 .note p+p{margin-top:9px}
+.short ul{margin:4px 0 10px;padding-left:20px;color:var(--ink2)}.short li{margin:4px 0}.short .terms{font-size:13.5px;color:var(--ink3);margin:0}details.more{margin-top:4px;border:1px solid var(--line);border-radius:var(--radius);padding:4px 18px;background:var(--surface)}details.more>summary{cursor:pointer;font-weight:600;padding:10px 0;color:var(--ink)}details.more[open]>summary{border-bottom:1px solid var(--line);margin-bottom:14px}details.more .sub{padding:30px 0 8px;border-top:1px solid var(--line)}details.more .sub:first-of-type{border-top:0;padding-top:10px}details.more .sub>.wrap{padding:0}
 table{width:100%;border-collapse:collapse;font-size:13.5px}
 th{text-align:left;font-weight:600;color:var(--ink2);padding:9px 10px;border-bottom:1px solid var(--line2);
   white-space:nowrap;font-size:12.5px}
@@ -119,9 +120,10 @@ input[type=number]{padding:7px 10px;border:1px solid var(--line2);border-radius:
   <h1>Limit Order Book &amp; Matching Engine</h1>
   <p class="lede">The part of an exchange that matches buyers to sellers, built from scratch, plus a crowd of simulated traders who place orders at random. <strong style="color:var(--ink)">The traders have no strategy at all, and the market still comes out with a realistic spread, big orders that move the price less than proportionally, and a price that wobbles back after each trade, the way real tick data does.</strong> None of that was programmed in.</p>
   <p style="font-size:14px;margin:-4px 0 16px"><a href="../">&larr; Market Simulation Stack</a> &middot; the venue half</p>
-  <div class="note blue" style="max-width:70ch">
-    <p><strong>In plain English.</strong> An exchange is mostly a queue. Buyers and sellers post the prices they will accept, the best prices sit at the front, and when somebody agrees to pay the going rate the trade goes to whoever got there first. I built that queue, then pointed thousands of coin-flipping robots at it to see what a market made of pure noise looks like.</p>
-    <p>It looks surprisingly real, and that is the warning this page is about: a lot of patterns that look like trader behaviour are just the matching rules at work. Then I used the engine for questions that only make sense once you have one. What happens to a market maker whose connection is slightly slower than a rival&rsquo;s (it keeps trading, it just trades with the wrong people). Whether the rebates exchanges pay for quoting are what keeps that slower trader in business (they are). And how the opening and closing auctions, where everyone gets one price, differ from the rest of the day.</p>
+  <div class="note blue short" style="max-width:70ch">
+    <p><strong>The short version</strong></p>
+    <ul><li>An exchange is mostly a queue: the best price goes first, and at the same price whoever got there first. This is that queue, built from scratch, with thousands of coin-flipping robots trading on it.</li><li>Traders with no strategy at all still produce a market that looks real &mdash; a spread, big orders that move the price less than proportionally, prices that bounce back after trades. <strong>A lot of what looks like trader behaviour is just the matching rules at work.</strong></li><li>A market maker on a slightly slower connection keeps trading, but with the wrong people; the rebates exchanges pay for quoting are what keep it in business. In an auction, where everyone gets one price, almost none of this applies.</li></ul>
+    <p class="terms"><strong>Limit order</strong>: an offer to buy or sell at a set price or better, which waits in the queue. <strong>Market order</strong>: trade now, at whatever the best price is. <strong>Spread</strong>: the gap between the best buy and the best sell price. <strong>Market maker</strong>: a trader who quotes both sides and earns the spread. <strong>Rebate</strong>: a small payment an exchange makes for posting orders others trade against.</p>
   </div>
   <div class="links">
     <a class="btn primary" href="#demo">Trade against the book</a>
@@ -279,6 +281,10 @@ input[type=number]{padding:7px 10px;border:1px solid var(--line2);border-radius:
 
 <section>
 <div class="wrap">
+<details class="more">
+<summary>The full research log: 4 follow-up studies</summary>
+<div class="sub">
+<div class="wrap">
   <div class="eyebrow">Performance</div>
   <h2>The comment that said "fine at this scale"</h2>
   <p class="lede">Best price used to be <span class="mono">max(bids)</span> / <span class="mono">min(asks)</span> over the price dictionary, with a comment saying a sorted structure was "a profiling-driven optimization, not where you start." That's a reasonable place to start and a bad place to stay: the lookup is read on every quote, every pass of the matching loop and every event the simulator generates, and it's the one operation in the book whose cost grows with depth.</p>
@@ -316,9 +322,9 @@ input[type=number]{padding:7px 10px;border:1px solid var(--line2);border-radius:
 
   <p style="font-size:13.5px;color:var(--ink3)">One run, CPython on a shared VM; the figures move 10&ndash;20% between runs. The shape &mdash; flat versus linear in depth &mdash; is the finding, not the nanoseconds.</p>
 </div>
-</section>
+</div>
 
-<section id="latency">
+<div class="sub" id="latency">
 <div class="wrap">
   <div class="eyebrow">Latency</div>
   <h2>Two identical market makers, one longer wire</h2>
@@ -364,9 +370,9 @@ input[type=number]{padding:7px 10px;border:1px solid var(--line2);border-radius:
 
   <p style="font-size:13.5px;color:var(--ink3)">Latency is one-way and outbound only: both makers see the jump instantly, and there is no gateway queueing, market-data delay or engine processing time. Co-location is bought mostly to see faster, and that half is missing. The makers also never adapt &mdash; a real slow maker would quote wider, so the slow column is what happens to one that doesn't.</p>
 </div>
-</section>
+</div>
 
-<section id="fees">
+<div class="sub" id="fees">
 <div class="wrap">
   <div class="eyebrow">Economics</div>
   <h2>Nobody trades for free</h2>
@@ -400,9 +406,9 @@ input[type=number]{padding:7px 10px;border:1px solid var(--line2);border-radius:
 
   <p style="font-size:13.5px;color:var(--ink3)">Real rate cards are tiered by monthly volume and run to several pages; these are top-line numbers, not a quote. And a maker facing an inverted venue's fee would widen its quote rather than keep paying it &mdash; the fixed one-tick edge here doesn't let it.</p>
 </div>
-</section>
+</div>
 
-<section id="auction">
+<div class="sub" id="auction">
 <div class="wrap">
   <div class="eyebrow">A different mechanism</div>
   <h2>The cross, where almost none of this applies</h2>
@@ -444,6 +450,9 @@ input[type=number]{padding:7px 10px;border:1px solid var(--line2);border-radius:
   </div>
 
   <p style="font-size:13.5px;color:var(--ink3);margin-top:20px">Not modelled: auction order types (market-on-open, limit-on-close, imbalance-only), each with its own eligibility window and priority tier &mdash; the allocation here is one tier, filled in arrival order. And nobody responds to the published imbalance, which on a real venue is the entire point of publishing it. The depth is the zero-intelligence simulator's, so the basis-point magnitudes inherit the same caveat as everywhere else on this page: these impacts are far too small.</p>
+</div>
+</div>
+</details>
 </div>
 </section>
 
@@ -1026,6 +1035,29 @@ if (L) {
   }).join('');
 })();
 
+</script>
+<script>
+// The research log is folded by default. A link into it (the header buttons,
+// or a shared #anchor) has to open the fold, and Chart.js needs a nudge to
+// size the canvases it drew while the fold was display:none.
+(function () {
+  function openFor(hash) {
+    if (!hash) return;
+    var target = document.querySelector(hash);
+    var fold = target && target.closest('details');
+    if (fold && !fold.open) { fold.open = true; target.scrollIntoView(); }
+  }
+  document.querySelectorAll('details.more').forEach(function (d) {
+    d.addEventListener('toggle', function () {
+      if (!d.open || !window.Chart) return;
+      d.querySelectorAll('canvas').forEach(function (c) {
+        var chart = Chart.getChart(c); if (chart) chart.resize();
+      });
+    });
+  });
+  window.addEventListener('hashchange', function () { openFor(location.hash); });
+  openFor(location.hash);
+})();
 </script>
 </body>
 </html>
