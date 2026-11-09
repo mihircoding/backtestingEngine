@@ -1736,6 +1736,214 @@ def print_crystallized(cells: list[dict], alignment: list[dict], mgmt: float = M
               f"{y['incentive'] / 1e6:>10,.0f} {y['nav'] / 1e6:>10,.0f} {y['high_water_mark'] / 1e6:>10,.0f}")
 
 
+# ---------- 14. pay the fee out of the fund ----------
+
+def yearly_gains(cell: dict) -> list[float]:
+    """The gross dollars a cell's fixed position made in each calendar year,
+    read off its `year_ends`."""
+    ends = [cell["aum"]] + [y[1] for y in cell["year_ends"]]
+    return [b - a for a, b in zip(ends, ends[1:])]
+
+
+def gain_at(column: list[dict], nav: float, year: int) -> float:
+    """What the column says a fund of `nav` made in `year`, between the rungs.
+
+    Linear in the AUM between the two surface cells either side of the NAV,
+    through the origin below the smallest rung, flat above the largest.
+    Below the knee the position is the AUM, so the dollars scale with it and
+    the line between rungs is the cost curve's bend; from the knee up every
+    cell at a rate is the same run (section 11), so the line is flat and the
+    NAV does not matter. Capacity enters only through which side of the
+    knee the NAV sits on, which is the whole point of walking it this way
+    rather than re-running the engine at every NAV the fund passes through.
+    """
+    aums = [0.0] + [c["aum"] for c in column]
+    gains = [0.0] + [yearly_gains(c)[year] for c in column]
+    return float(np.interp(nav, aums, gains))
+
+
+def fund_walk(column: list[dict], start: float, knee: float | None,
+              mgmt: float = MGMT_FEE, perf: float = PERF_FEE,
+              bars_per_year: int = TRADING_DAYS) -> dict:
+    """Run the fund on its own NAV: gains stay in, fees come out, and the
+    position each year is whatever the NAV can hold.
+
+    Section 13 charged the fee on a fixed position and took it out of the
+    investor's pocket, so the desk traded the same shares whether or not
+    anyone was paid. This is the other arrangement, and the usual one: the
+    fund is the only pot. Each year the desk sizes on the NAV, the year's
+    gross comes off the surface at that NAV, the management fee comes out
+    of the NAV, a fifth of what stands above the mark follows it, and next
+    year's position is sized on what is left. A fund that pays itself out
+    of its own book trades a smaller book for it, and a fund that keeps its
+    winnings trades a bigger one - so past the knee the gross is still
+    section 11's flat dollars, but the fee basis moves every year, and
+    under the knee the gross moves with it.
+    """
+    nav = mark = start
+    paid = {"management": 0.0, "incentive": 0.0}
+    gross = 0.0
+    schedule = []
+    crossed_down = crossed_up = None
+    for i, (date, _, bars) in enumerate(column[0]["year_ends"]):
+        sized_on = nav
+        gain = gain_at(column, nav, i)
+        fee = mgmt * nav * bars / bars_per_year
+        pre = nav + gain - fee
+        incentive = perf * max(pre - mark, 0.0)
+        nav = pre - incentive
+        mark = max(mark, nav)
+        gross += gain
+        paid["management"] += fee
+        paid["incentive"] += incentive
+        if knee is not None:
+            # Only a fund that STARTED on one side counts as crossing to the
+            # other: a cell sitting on the knee rung dips under it in any
+            # losing year and climbs back, which is the rung, not a crossing.
+            if start > knee > nav and crossed_down is None:
+                crossed_down = date[:4]
+            if start < knee <= nav and crossed_up is None:
+                crossed_up = date[:4]
+        schedule.append({"year": date[:4], "sized_on": sized_on, "gross_gain": gain,
+                         "management": fee, "incentive": incentive, "nav": nav,
+                         "high_water_mark": mark,
+                         "under_the_knee": (knee is not None and sized_on < knee)})
+    take = paid["management"] + paid["incentive"]
+    return {**paid, "manager_take": take, "gross_pl": gross, "investor_net": gross - take,
+            "investor_net_return": (gross - take) / start, "start": start, "final_nav": nav,
+            "nav_change": nav / start - 1.0, "high_water_mark": mark,
+            "crossed_knee_down": crossed_down, "crossed_knee_up": crossed_up,
+            "schedule": schedule}
+
+
+def fee_capacity(column: list[dict], knee: float | None, mgmt: float = MGMT_FEE,
+                 perf: float = PERF_FEE, position_at_knee: float = 1.0) -> dict:
+    """The AUM a self-paying fund drifts toward, and how fast.
+
+    Past the knee the gross is a fixed G a year. The NAV moves by the gross
+    less the fees, which is (1 - perf) x (G - mgmt x NAV) in a year the mark
+    is cleared and G - mgmt x NAV in one it is not; either way it is zero at
+    NAV = G / mgmt, positive under it and negative over it. So a fund past
+    its knee is pulled toward G / mgmt from both sides - that is the AUM at
+    which the management fee alone is the whole gross and the investor's
+    net is nothing - and the incentive fee does not move the point, only
+    the speed, because at the point there is nothing above the mark to take
+    a fifth of. The pull is proportional, at a rate of (1 - perf) x mgmt a
+    year, so the half-life of the distance is ln 2 over that: 43 years at
+    two-and-twenty. G is the mean yearly gross of the cells from the knee
+    up, which section 11 showed are one run.
+
+    The knee is a rung of the grid, not the point the budget binds at; the
+    dollars the budget lets the desk hold are the knee times the position
+    share there (`budget_aum`), and the fee capacity over THAT is the gross
+    return on the deployed position over the management fee - a ratio with
+    no AUM in it, which is why it is the number to quote.
+    """
+    past = [c for c in column if knee is not None and c["aum"] >= knee] or [column[-1]]
+    flat = float(np.mean([sum(yearly_gains(c)) / len(c["year_ends"]) for c in past]))
+    rate = (1.0 - perf) * mgmt
+    budget = knee * position_at_knee if knee else None
+    return {"flat_gross_per_year": flat, "fee_capacity": flat / mgmt if mgmt else None,
+            "knee_aum": knee, "budget_aum": budget,
+            "return_on_budget": (flat / budget) if budget else None,
+            "capacity_over_budget": (flat / mgmt / budget) if budget and mgmt else None,
+            "drift_rate": rate, "half_life_years": float(np.log(2) / rate) if rate else None}
+
+
+def self_financed_surface(rows: list[dict], knees: list[dict], crystallized: list[dict],
+                          mgmt: float = MGMT_FEE, perf: float = PERF_FEE) -> list[dict]:
+    """Section 13's fee beside the self-paid one, on every cell of the surface.
+
+    The prediction, written first. Past the knee the desk's position is the
+    budget, not the NAV, so the gross is the same flat dollars whichever pot
+    pays, and the only thing that moves is the management-fee basis: up
+    where the fund starts under its fee capacity, because the winnings it
+    keeps outgrow the fee it pays, and down where it starts over it. So the
+    manager's take should be above section 13's in the cells between the
+    knee and G / mgmt and below it in the cells past G / mgmt - and no cell
+    on the surface should be pushed back under its knee inside a decade,
+    because the pull is 1.6% a year and the nearest cell above a knee is a
+    factor of two away. Under the knee the gross is not flat, and a fund
+    that keeps a doubling decade's winnings should grow through the knee
+    before the decade is out.
+    """
+    knee_at = {k["participation"]: k for k in knees}
+    fixed = {(c["aum"], c["participation"]): c["on_aum"] for c in crystallized}
+    out = []
+    for rate in sorted({r["participation"] for r in rows}):
+        col = sorted((r for r in rows if r["participation"] == rate), key=lambda r: r["aum"])
+        k = knee_at.get(rate, {})
+        knee = k.get("knee_aum")
+        cap = fee_capacity(col, knee, mgmt, perf, k.get("position_at_knee", 1.0))
+        for r in col:
+            walk = fund_walk(col, r["aum"], knee, mgmt, perf)
+            pocket = fixed.get((r["aum"], rate))
+            out.append({"aum": r["aum"], "participation": rate, "knee_aum": knee,
+                        **{key: cap[key] for key in ("fee_capacity", "budget_aum", "flat_gross_per_year",
+                                                     "return_on_budget", "capacity_over_budget",
+                                                     "half_life_years")},
+                        "over_fee_capacity": cap["fee_capacity"] is not None and r["aum"] > cap["fee_capacity"],
+                        "fixed_gross": r["final"] - r["aum"],
+                        "fixed_take": pocket["manager_take"] if pocket else None,
+                        "fixed_investor_net": pocket["investor_net"] if pocket else None,
+                        **{key: v for key, v in walk.items() if key != "schedule"},
+                        "gross_given_up": (r["final"] - r["aum"]) - walk["gross_pl"],
+                        "take_over_fixed": (walk["manager_take"] - pocket["manager_take"]) if pocket else None,
+                        "schedule": walk["schedule"]})
+    return out
+
+
+def print_self_financed(cells: list[dict], mgmt: float = MGMT_FEE, perf: float = PERF_FEE) -> None:
+    aums = sorted({c["aum"] for c in cells})
+    rates = sorted({c["participation"] for c in cells})
+    cell = {(c["aum"], c["participation"]): c for c in cells}
+    print(f"\n14. PAY THE FEE OUT OF THE FUND   {mgmt:.0%} and {perf:.0%} out of the NAV, "
+          f"the position sized on what is left")
+    print(f"\n   where the NAV finishes the decade, as a share of where it started "
+          f"(* = started past its fee capacity):")
+    print(f"\n{'AUM':>9} " + " ".join(f"{p:>10.0%}" for p in rates))
+    for aum in aums:
+        print(f"{aum / 1e9:>7.1f}bn " + " ".join(
+            f"{1 + cell[(aum, p)]['nav_change']:>8.2f}x{'*' if cell[(aum, p)]['over_fee_capacity'] else ' '}"
+            for p in rates))
+    print(f"\n   the manager's take, $m, and in brackets what it is over section 13's "
+          f"fee from the investor's pocket:")
+    print(f"\n{'AUM':>9} " + " ".join(f"{p:>17.0%}" for p in rates))
+    for aum in aums:
+        print(f"{aum / 1e9:>7.1f}bn " + " ".join(
+            f"{cell[(aum, p)]['manager_take'] / 1e6:>8,.0f} "
+            f"({cell[(aum, p)]['take_over_fixed'] / 1e6:>+6,.0f})" for p in rates))
+    print(f"\n   gross P&L the self-paid fund gave up against the fixed position, $m "
+          f"(a smaller book in the years after a loss):")
+    print(f"\n{'AUM':>9} " + " ".join(f"{p:>10.0%}" for p in rates))
+    for aum in aums:
+        print(f"{aum / 1e9:>7.1f}bn " + " ".join(
+            f"{cell[(aum, p)]['gross_given_up'] / 1e6:>10,.0f}" for p in rates))
+    print(f"\n   Per rate: the knee rung, the position the budget lets the desk hold, the flat gross "
+          f"past the knee, and the AUM at which {mgmt:.0%} of it is that gross:")
+    print(f"\n{'rate':>5} {'knee':>6} {'budget':>8} {'gross/yr':>9} {'on budget':>10} "
+          f"{'fee capacity':>13} {'x budget':>9} {'crossed up':>14} {'crossed down':>14}")
+    for p in rates:
+        first = cell[(aums[0], p)]
+        col = [cell[(a, p)] for a in aums]
+        up = [f"{c['aum'] / 1e9:g}bn in {c['crossed_knee_up']}" for c in col if c["crossed_knee_up"]]
+        down = [f"{c['aum'] / 1e9:g}bn in {c['crossed_knee_down']}" for c in col if c["crossed_knee_down"]]
+        knee = f"{first['knee_aum'] / 1e9:.0f}bn" if first["knee_aum"] else "never"
+        budget = f"{first['budget_aum'] / 1e9:.1f}bn" if first["budget_aum"] else "-"
+        print(f"{p:>5.0%} {knee:>6} {budget:>8} {first['flat_gross_per_year'] / 1e6:>8,.0f}m "
+              f"{first['return_on_budget'] or float('nan'):>9.1%} {first['fee_capacity'] / 1e9:>11.1f}bn "
+              f"{first['capacity_over_budget'] or float('nan'):>9.1f} "
+              f"{', '.join(up) or '-':>14} {', '.join(down) or '-':>14}")
+    print(f"\n   The pull toward the fee capacity is {(1 - perf) * mgmt:.1%} of the distance a year, "
+          f"a half-life of {cells[0]['half_life_years']:.0f} years.")
+    one = cell[(aums[-1], rates[0])]
+    print(f"\n   The year by year at ${aums[-1] / 1e9:.0f}bn and {rates[0]:.0%}, $m:")
+    print(f"\n{'year':>6} {'sized on':>10} {'gross gain':>11} {'mgmt':>8} {'incentive':>10} {'NAV':>10}")
+    for y in one["schedule"]:
+        print(f"{y['year']:>6} {y['sized_on'] / 1e6:>10,.0f} {y['gross_gain'] / 1e6:>+11,.0f} "
+              f"{y['management'] / 1e6:>8,.0f} {y['incentive'] / 1e6:>10,.0f} {y['nav'] / 1e6:>10,.0f}")
+
+
 # ---------- reporting ----------
 
 def print_cost_curves(rows: list[dict], cross: float | None, price: float,
@@ -2095,8 +2303,18 @@ def _sections(prices, opens, volumes, quick: bool) -> dict:
         print_crystallized(cells, alignment)
         return {"crystallized_surface": cells, "crystallized_alignment": alignment}
 
+    def s14(have):
+        surface = need(have, "capacity_surface", 11)
+        if not all("year_ends" in r for r in surface):
+            raise SystemExit("section 11 in the results file predates the yearly curve: "
+                             "run `python fill_realism.py --section 11 --section 13 --section 14`")
+        cells = self_financed_surface(surface, need(have, "surface_knees", 11),
+                                      need(have, "crystallized_surface", 13))
+        print_self_financed(cells)
+        return {"self_financed_surface": cells}
+
     return {1: s1, 2: s2, 3: s3, 4: s4, 5: s5, 6: s6, 7: s7, 8: s8, 9: s9, 10: s10, 11: s11,
-            12: s12, 13: s13}
+            12: s12, 13: s13, 14: s14}
 
 
 def main() -> None:

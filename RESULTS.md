@@ -1392,6 +1392,138 @@ smaller position every year the mark was cleared, and the P&L column of
 section 11 would start to depend on the fee. That is the next thing on the
 surface that is not flat.
 
+### 14. Pay the fee out of the fund, and find the fee is the capacity — four to six times the position, forty years away
+
+Reproduce with: `python fill_realism.py --section 14` (arithmetic on sections
+11 and 13; nothing is re-run)
+
+Section 13 ended on the thing it did not do: the fee came out of the
+investor's pocket, so the desk traded the same shares whether or not anyone
+was paid. A fund has one pot. This walks each cell of the surface as a fund:
+each year the desk sizes on the NAV, the year's gross comes off the surface
+at that NAV (linear between the rungs, through the origin below the smallest,
+flat above the largest — past the knee every cell is one run, so the line is
+flat there by section 11's result, not by assumption), the 2% comes out of
+the NAV, a fifth of what stands above the mark follows it, and next year's
+book is whatever is left. `fund_walk` does the walking, `fee_capacity` the
+algebra, and nothing in the engine runs.
+
+The prediction, written first. Past the knee the budget sizes the book, not
+the NAV, so the gross is section 11's flat dollars whichever pot pays, and
+all that moves is the fee basis. The NAV moves by the gross less the fees,
+which is zero where 2% of the NAV *is* the gross — call that AUM the fee
+capacity, G/0.02 — positive under it and negative over it; so a fund past
+its knee is pulled toward its fee capacity from both sides, the manager's
+take should be above section 13's between the knee and the fee capacity
+and below it past it, and nothing on the surface should be pushed back
+under its knee inside a decade, because the pull is (1 − 20%) × 2% = 1.6%
+of the distance a year. Under the knee the gross is not flat, and a fund
+that keeps a doubling decade's winnings should grow through the knee before
+the decade is out.
+
+**Where the NAV finishes the decade, as a multiple of where it started**
+(\* = started past its fee capacity):
+
+| AUM | 2% | 5% | 10% | 20% | 30% | 50% |
+|---|---|---|---|---|---|---|
+| $1bn | 1.73 | 1.77 | 1.73 | 1.66 | 1.66 | 1.66 |
+| $2bn | 1.46 | 1.69 | 1.65 | 1.59 | 1.58 | 1.57 |
+| $5bn | 1.10 | 1.42 | 1.59 | 1.48 | 1.47 | 1.43 |
+| $10bn | 0.97\* | 1.15 | 1.37 | 1.50 | 1.45 | 1.39 |
+| $20bn | 0.90\* | 1.00\* | 1.12 | 1.30 | 1.52 | 1.48 |
+| $100bn | 0.83\* | 0.85\* | 0.89\* | 0.93\* | 0.99\* | 1.05 |
+
+**The fee is the capacity, and it is four to six times the position.** Per
+rate: the rung the budget binds on, the dollars it lets the desk hold, the
+flat gross past the knee, that gross as a return on the position, and the
+AUM at which 2% of it is the whole gross:
+
+| rate | knee rung | position | gross / yr | on the position | fee capacity | × position |
+|---|---|---|---|---|---|---|
+| 2% | $2bn | $1.4bn | $166m | 12.3% | $8.3bn | 6.1 |
+| 5% | $5bn | $3.4bn | $388m | 11.5% | $19.4bn | 5.7 |
+| 10% | $10bn | $6.8bn | $703m | 10.4% | $35.2bn | 5.2 |
+| 20% | $20bn | $13.5bn | $1,210m | 8.9% | $60.5bn | 4.5 |
+| 30% | $100bn | $20.3bn | $1,821m | 9.0% | $91.0bn | 4.5 |
+| 50% | $100bn | $33.9bn | $2,724m | 8.0% | $136.2bn | 4.0 |
+
+Section 12 found the fee had eaten the whole profit at three to four times
+the knee. This is the same number from the other side, and it has no AUM in
+it: the fee capacity over the position is the gross return on the deployed
+book over the management fee, 12% on 2% at the patient rate and 8% on 2% at
+the aggressive one, because the aggressive desk pays its extra position
+away in impact (section 10). A fund can be five parts cash to one part
+position before the fee is the alpha — and the incentive fee does not move
+that point at all, only the speed toward it, since at the point there is
+nothing above the mark to take a fifth of (tested, at 0%, 20% and 50%).
+The $100bn book at 30% is the cell that sits on its capacity: NAV 0.99×,
+$18.1bn gross, $19.0bn of fees, the investor down $903m for the decade on
+a strategy that made money every year it was asked to.
+
+**But the pull is 1.6% a year, so nobody gets anywhere.** No cell crosses
+its knee in either direction. The $100bn desk at 2% pays $2bn, then $1.96bn,
+then $1.92bn, and finishes at $83bn — $17bn lighter, still forty times its
+knee, having made $1.7bn gross and paid $18.4bn, which is $1.6bn *less*
+than section 13 charged the same fund, because the basis shrank. The
+half-life of the distance to the fee capacity is ln 2 / 0.016 = 43 years.
+The first half of the prediction holds in 14 of the 16 cells at or past a
+knee: the take is above section 13's between the knee and the capacity, and
+below it past the capacity, at 2%, 5% and 10% without exception; the two
+misses, $20bn at 20% and $100bn at 50%, are both cells that lose first, and
+the table below is about them. The second half — grow through the knee
+from below — fails in every cell: the $1bn desk at 2% doubled its gross,
+$1,137m on $1,000m, and finishes at $1.73bn, under the $2bn knee, because
+$411m of the doubling was the fee. In a decade the fee moves the fund by
+less than the gap between two rungs of the grid, in either direction.
+
+**What a decade does move is the fund that loses first.** Gross P&L the
+self-paid fund gave up against the fixed position, $m:
+
+| AUM | 2% | 5% | 10% | 20% | 30% | 50% |
+|---|---|---|---|---|---|---|
+| $1bn | 55 | 76 | 60 | 144 | 148 | 148 |
+| $2bn | 3 | 177 | 300 | 274 | 283 | 287 |
+| $5bn | 2 | 20 | 420 | **993** | 935 | 1,020 |
+| $10bn | 0 | 6 | 56 | 788 | 1,264 | 1,710 |
+| $20bn | 0 | 0 | 22 | 289 | 691 | 1,549 |
+| $100bn | 0 | 0 | 0 | 18 | 85 | 1,436 |
+
+Past the knee at the low rates the column is zero to the dollar, which is
+the test that the walk is doing what section 11 said. Under it the sign is
+the order of the years. At $5bn and 20% the fixed book made $4,999m; the
+self-paid one made $4,006m, a fifth less, and its year by year says why:
+2015 and 2016 lose $242m and pay $194m of fees, the book is $4.6bn going
+into 2017, and from there the good years — 2021's $1,868m, 2024's $2,761m —
+are traded on a smaller position than the one that lost the money. The
+fixed position's $1,744m in 2021 becomes $1,868m here only because 2017–20
+had rebuilt the NAV past $5bn; 2022 then takes $2.5bn off a $6.7bn book and
+2024 is traded at $4.9bn. The fee is 2% of the NAV, the losses are ten
+times that, and the losses decide the book. That is also where the two
+misses come from: the knee cell at 20% starts with −$514m
+and −$187m, drops under its rung, and trades 2017 at $18.5bn; the manager's
+take at the knee is $14m *under* section 13's, not over, because the desk
+was paid on a book the first two years had shrunk. Where the first years
+win, the sign flips — the $1bn desk at 2% is paid $13m more than section
+13 said, on a book its own winnings grew — and the whole table is 13 cells
+above and 29 below.
+
+So: the next flat thing on the surface was not flat, and the amount it
+bends is the sequence of the years, not the fee. The fee's own effect is
+the slow one — a point of attraction four to six times the position that
+takes a generation to reach — and the number worth keeping is the ratio,
+because it is the only one here with the AUM divided out: gross return on
+the deployed book, over the management fee, is how many times its position
+a fund can be before its manager is its only investor.
+
+What this does not do: the walk is yearly and the gross between rungs is a
+straight line, so a fund crossing a rung mid-year is charged the year's
+gross at the NAV it started the year with, and the 30% and 50% columns' "knee
+rung" is the top of the grid, where the surface is already nearly flat; the
+position the budget allows there is read off the position share, not off a
+rung. No flows: nobody subscribes to a winning fund or redeems from a
+losing one, which is the half of the capacity story the equilibrium
+literature is about and the half this repository has no data for.
+
 ### What this still does not model
 
 - One bar is one book. A day's liquidity is pooled into a single snapshot at

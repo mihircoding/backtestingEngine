@@ -112,10 +112,21 @@ where it does not are the ones where one year, 2021, set a mark that
 $2.2bn on a high the investor never saw again, and the extra past the
 knee is $0, $21m, $130m, $0 up the column on a P&L that is the same in
 every cell, because the fee on the denominator decides whether the
-numerator ever crosses the mark.
+numerator ever crosses the mark. The eleventh pays the fee out of the
+fund itself, so the book next year is what is left after this year's
+bill, and finds the fee is the capacity: a self-paying fund past its
+knee is pulled toward the AUM at which 2% of it is the whole gross, and
+that AUM is four to six times the position the budget lets it hold —
+the gross return on the deployed book over the management fee, 12% on
+2% at the patient rate, 8% on 2% at the aggressive one. But the pull is
+1.6% of the distance a year, a half-life of 43 years, so in a decade no
+cell crosses its knee in either direction; what a decade does move is
+the fund that loses first, which trades its good years on the smaller
+book its bad years left it and gives up a fifth of its gross at $5bn
+and 20%.
 [RESULTS.md](RESULTS.md) has all of it, and the corrections.
 
-393 tests.
+399 tests.
 
 ```bash
 pip install -r requirements.txt

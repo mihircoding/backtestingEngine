@@ -763,7 +763,7 @@ def test_a_section_run_refuses_a_different_tape_but_not_a_rerounded_one():
 def test_a_section_that_prints_beside_an_earlier_one_says_so_when_it_is_missing(capsys):
     prices, opens, volumes = _tape()
     sections = _sections(prices, opens, volumes, quick=True)
-    assert list(sections) == list(range(1, 14))
+    assert list(sections) == list(range(1, 15))
     # section 9 prints against section 8's rows; with nothing on disk it has to stop
     with pytest.raises(SystemExit, match="section 8"):
         sections[9]({})
@@ -785,6 +785,11 @@ def test_a_section_that_prints_beside_an_earlier_one_says_so_when_it_is_missing(
     capsys.readouterr()
     assert set(yearly) == {"crystallized_surface", "crystallized_alignment"}
     assert len(yearly["crystallized_surface"]) == len(added["capacity_surface"])
+    # and section 14 walks the same cells, one self-paid fund per cell
+    walked = sections[14]({**added, **fees, **yearly, "bars": len(prices)})
+    capsys.readouterr()
+    assert set(walked) == {"self_financed_surface"}
+    assert len(walked["self_financed_surface"]) == len(added["capacity_surface"])
 
 
 # ---------- 12. put a fee on the surface ----------
@@ -987,3 +992,126 @@ def test_section_13_needs_the_yearly_curve_on_section_11(monkeypatch):
              "fee_surface": [], "surface_knees": [], "bars": 2520}
     with pytest.raises(SystemExit, match="section 11"):
         sections[13](stale)
+
+
+# ---------- 14. pay the fee out of the fund ----------
+
+from fill_realism import (fee_capacity, fund_walk, gain_at, self_financed_surface,
+                          yearly_gains)
+
+
+def _column(gains, aums=(1e9, 2e9, 5e9), knee=2e9):
+    """A surface column: below the knee the position is the AUM and the
+    gross scales with it; from the knee up every cell is the same run."""
+    col = []
+    for aum in aums:
+        scaled = [g * min(1.0, aum / knee) for g in gains]
+        col.append({"aum": aum, "participation": 0.1, "final": aum + sum(scaled),
+                    "position_share": min(1.0, knee / aum), "year_ends": _curve(scaled, aum=aum)})
+    return col
+
+
+def test_the_gain_between_rungs_is_linear_through_the_origin_and_flat_past_the_top():
+    gains = [100e6, -50e6, 200e6]
+    col = _column(gains)
+    assert yearly_gains(col[0]) == pytest.approx([50e6, -25e6, 100e6])
+    assert gain_at(col, 0.0, 0) == 0.0
+    assert gain_at(col, 0.5e9, 0) == pytest.approx(25e6)          # half of the $1bn rung
+    assert gain_at(col, 1.5e9, 2) == pytest.approx(150e6)         # halfway up to the knee
+    assert gain_at(col, 3e9, 1) == pytest.approx(-50e6)           # flat from the knee up
+    assert gain_at(col, 50e9, 0) == pytest.approx(100e6)          # and past the top rung
+
+
+def test_past_the_knee_the_gross_is_the_fixed_positions_and_only_the_fee_basis_moves():
+    gains = [100e6] * 10
+    col = _column(gains)
+    walk = fund_walk(col, 5e9, knee=2e9, mgmt=0.02, perf=0.2)
+    # every year's gross is the knee cell's: the budget sizes the book, not the NAV
+    assert walk["gross_pl"] == pytest.approx(sum(gains))
+    assert all(not y["under_the_knee"] for y in walk["schedule"])
+    # $100m a year on a $5bn fund is 2% - the fund sits on its fee capacity
+    # and the NAV does not move, so the management fee is the lump's
+    assert walk["final_nav"] == pytest.approx(5e9, rel=1e-9)
+    assert walk["incentive"] == pytest.approx(0.0)
+    assert walk["management"] == pytest.approx(0.02 * 5e9 * 10)
+    # over the capacity the NAV shrinks every year and the fee basis with it
+    over = fund_walk(col, 10e9, knee=2e9, mgmt=0.02, perf=0.2)
+    navs = [y["nav"] for y in over["schedule"]]
+    assert all(b < a for a, b in zip([10e9] + navs, navs))
+    assert over["management"] < 0.02 * 10e9 * 10
+    assert over["crossed_knee_down"] is None
+    # under it the NAV grows, and the fee basis with it
+    under = fund_walk(col, 3e9, knee=2e9, mgmt=0.02, perf=0.2)
+    assert under["final_nav"] > 3e9
+    assert under["management"] > 0.02 * 3e9 * 10
+
+
+def test_the_fee_capacity_is_the_flat_gross_over_the_fee_and_the_incentive_does_not_move_it():
+    gains = [100e6] * 10
+    col = _column(gains)
+    cap = fee_capacity(col, knee=2e9, mgmt=0.02, perf=0.2, position_at_knee=1.0)
+    assert cap["flat_gross_per_year"] == pytest.approx(100e6)
+    assert cap["fee_capacity"] == pytest.approx(5e9)
+    assert cap["capacity_over_budget"] == pytest.approx(2.5)
+    assert cap["return_on_budget"] == pytest.approx(0.05)
+    assert cap["half_life_years"] == pytest.approx(np.log(2) / 0.016)
+    # the same point with no incentive fee at all, or a bigger one
+    assert fee_capacity(col, 2e9, 0.02, 0.0)["fee_capacity"] == pytest.approx(5e9)
+    assert fee_capacity(col, 2e9, 0.02, 0.5)["fee_capacity"] == pytest.approx(5e9)
+    # ... and the walk agrees: a fund started on it ends on it, whatever the incentive
+    for perf in (0.0, 0.2, 0.5):
+        assert fund_walk(col, 5e9, 2e9, 0.02, perf)["final_nav"] == pytest.approx(5e9, rel=1e-9)
+
+
+def test_a_fund_under_the_knee_that_keeps_its_winnings_grows_through_it():
+    # 30% a year gross on the position, which fees cannot keep under the knee
+    gains = [300e6] * 10
+    col = _column(gains, knee=1e9)
+    walk = fund_walk(col, 0.5e9, knee=1e9, mgmt=0.02, perf=0.2)
+    assert walk["crossed_knee_up"] is not None
+    assert walk["schedule"][0]["under_the_knee"] and not walk["schedule"][-1]["under_the_knee"]
+    # and once over it the gross is the flat dollars, not the NAV's share
+    assert walk["schedule"][-1]["gross_gain"] == pytest.approx(300e6)
+    # a cell that starts ON the knee and dips under it in a losing year is
+    # not a crossing: it started there
+    dip = fund_walk(_column([-100e6] + [100e6] * 9), 2e9, knee=2e9, mgmt=0.02, perf=0.2)
+    assert dip["schedule"][1]["under_the_knee"]
+    assert dip["crossed_knee_down"] is None and dip["crossed_knee_up"] is None
+
+
+def test_the_self_financed_surface_reads_the_take_against_section_13_and_the_gross_given_up():
+    gains = [-100e6, 150e6, 150e6, 150e6, 150e6, 150e6, 150e6, 150e6, 150e6, 150e6]
+    rows = _column(gains)
+    knees = [{"participation": 0.1, "knee_aum": 2e9, "position_at_knee": 1.0}]
+    fixed = [{"aum": r["aum"], "participation": 0.1,
+              "on_aum": {"manager_take": 1.0, "investor_net": 2.0}} for r in rows]
+    cells = self_financed_surface(rows, knees, fixed, mgmt=0.02, perf=0.2)
+    by = {c["aum"]: c for c in cells}
+    assert set(by) == {1e9, 2e9, 5e9}
+    for c in cells:
+        assert c["take_over_fixed"] == pytest.approx(c["manager_take"] - 1.0)
+        assert c["fixed_investor_net"] == 2.0
+        assert c["gross_given_up"] == pytest.approx(c["fixed_gross"] - c["gross_pl"])
+    # past the knee nothing is given up. On it, the losing first year
+    # shrinks the book the good years trade on. Under it, a fund earning
+    # 7.5% on its book keeps 5.5% after the fee, and the growing book
+    # out-earns the fixed one: given up is negative
+    assert by[5e9]["gross_given_up"] == pytest.approx(0.0, abs=1.0)
+    assert by[2e9]["gross_given_up"] > 0
+    assert by[1e9]["gross_given_up"] < 0 and by[1e9]["final_nav"] > 1e9
+    assert by[5e9]["fee_capacity"] == pytest.approx(sum(gains) / 10 / 0.02)
+    assert by[5e9]["over_fee_capacity"] is False and by[1e9]["over_fee_capacity"] is False
+
+
+def test_section_14_needs_sections_11_and_13(monkeypatch):
+    prices, opens, volumes = _tape()
+    sections = _sections(prices, opens, volumes, quick=True)
+    assert 14 in sections
+    stale = {"capacity_surface": [{"aum": 1e9, "participation": 0.1, "final": 1.1e9,
+                                   "position_share": 1.0, "sharpe": 0.5}],
+             "surface_knees": [], "bars": 2520}
+    with pytest.raises(SystemExit, match="section 11"):
+        sections[14](stale)
+    fresh = {"capacity_surface": _column([100e6] * 10), "surface_knees": [], "bars": 2520}
+    with pytest.raises(SystemExit, match="section 13"):
+        sections[14](fresh)
