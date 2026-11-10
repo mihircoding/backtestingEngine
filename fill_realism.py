@@ -1944,6 +1944,192 @@ def print_self_financed(cells: list[dict], mgmt: float = MGMT_FEE, perf: float =
               f"{y['management'] / 1e6:>8,.0f} {y['incentive'] / 1e6:>10,.0f} {y['nav'] / 1e6:>10,.0f}")
 
 
+# Section 15: the same walk at other fee schedules. The point of attraction
+# has only the management fee in it, so this is where that claim gets its
+# test - and the investor's side, which section 14 did not look at.
+FEE_SCHEDULES = ((0.02, 0.20), (0.01, 0.10), (0.00, 0.30), (0.02, 0.00))
+
+
+def indifference_return(a: tuple, b: tuple) -> float | None:
+    """The gross return on the NAV at which an investor is paid the same under
+    schedule `a` as under `b`, each a (mgmt, perf) pair.
+
+    In a year the mark is cleared the investor keeps (1 - perf) of the gross
+    less the management fee, so with g the gross as a share of the NAV the
+    two schedules pay the same at (1 - p_a)(g - m_a) = (1 - p_b)(g - m_b),
+    which is g* = ((1 - p_a) m_a - (1 - p_b) m_b) / (p_b - p_a). Above g*
+    the schedule with the higher incentive fee costs the investor more;
+    below it the one with the higher management fee does. Two schedules
+    with the same incentive fee never cross - the lower management fee is
+    cheaper at every return - and that is the None.
+    """
+    (ma, pa), (mb, pb) = a, b
+    if pa == pb:
+        return None
+    return ((1.0 - pa) * ma - (1.0 - pb) * mb) / (pb - pa)
+
+
+def fee_schedule_sweep(rows: list[dict], knees: list[dict],
+                       schedules=FEE_SCHEDULES) -> list[dict]:
+    """Section 14's walk on every cell of the surface at each fee schedule.
+
+    The prediction, written first. The fee capacity is G / mgmt, so halving
+    the management fee doubles it and dropping it removes it: at 1-and-10
+    the "four to six times the position" becomes eight to twelve, and at
+    0-and-30 there is no size at which the manager is the only investor,
+    because an incentive fee is only ever a share of a profit. The pull is
+    (1 - perf) x mgmt, so 1-and-10 drifts at 0.9% a year and 0-and-30 does
+    not drift at all; 2-and-0 drifts fastest, at the full 2%. On the
+    investor's side the algebra in `indifference_return` says 0-and-30 is
+    the cheaper schedule below a 16% gross return on the NAV and 1-and-10
+    below 7%, and no cell on the surface grosses 16% on its NAV, so the
+    investor should prefer 0-and-30 in every cell and 1-and-10 in every
+    cell past the AUM at which the flat gross is 7% of it. The high-water
+    mark is the thing the algebra leaves out: in a cell that loses first,
+    the incentive fee is not taken until the loss is made back, which is
+    cheaper for the investor than the formula's share, and should bend the
+    realized split toward the schedules that lean on the incentive fee.
+    """
+    knee_at = {k["participation"]: k for k in knees}
+    out = []
+    for rate in sorted({r["participation"] for r in rows}):
+        col = sorted((r for r in rows if r["participation"] == rate), key=lambda r: r["aum"])
+        k = knee_at.get(rate, {})
+        knee = k.get("knee_aum")
+        for mgmt, perf in schedules:
+            cap = fee_capacity(col, knee, mgmt, perf, k.get("position_at_knee", 1.0))
+            for r in col:
+                walk = fund_walk(col, r["aum"], knee, mgmt, perf)
+                out.append({"mgmt": mgmt, "perf": perf, "aum": r["aum"], "participation": rate,
+                            "knee_aum": knee, "fee_capacity": cap["fee_capacity"],
+                            "capacity_over_budget": cap["capacity_over_budget"],
+                            "half_life_years": cap["half_life_years"],
+                            "flat_gross_per_year": cap["flat_gross_per_year"],
+                            "over_fee_capacity": (cap["fee_capacity"] is not None
+                                                  and r["aum"] > cap["fee_capacity"]),
+                            **{key: walk[key] for key in ("management", "incentive", "manager_take",
+                                                          "gross_pl", "investor_net", "final_nav",
+                                                          "nav_change", "high_water_mark",
+                                                          "crossed_knee_down", "crossed_knee_up")},
+                            "ends_at_the_mark": walk["final_nav"] >= walk["high_water_mark"] * (1 - 1e-12),
+                            "gross_on_nav_per_year": walk["gross_pl"] / r["aum"] / len(walk["schedule"]),
+                            "investor_share": (walk["investor_net"] / walk["gross_pl"]
+                                               if walk["gross_pl"] > 0 else None)})
+    return out
+
+
+def schedule_comparison(cells: list[dict], base: tuple = (MGMT_FEE, PERF_FEE)) -> list[dict]:
+    """Each schedule against the base, cell by cell: who is paid more, and
+    whether the sign is the one the indifference return says.
+
+    The algebra's call for a cell is made on the decade's mean gross as a
+    share of the starting NAV; the realized call is the walk's investor net.
+    They differ where the high-water mark or a moving NAV got between the
+    formula and the fund, and `agrees` counts how often that mattered.
+    """
+    by = {(c["mgmt"], c["perf"], c["aum"], c["participation"]): c for c in cells}
+    out = []
+    for c in cells:
+        if (c["mgmt"], c["perf"]) == base:
+            continue
+        ref = by[(base[0], base[1], c["aum"], c["participation"])]
+        g_star = indifference_return(base, (c["mgmt"], c["perf"]))
+        if g_star is None:
+            # same incentive fee: the lower management fee is cheaper, full stop
+            predicted = c["mgmt"] < base[0]
+        else:
+            # above g* the higher incentive fee costs more, below it the
+            # higher management fee does; which schedule that favours
+            # depends on which side of the base this one sits
+            higher_perf = c["perf"] > base[1]
+            predicted = (ref["gross_on_nav_per_year"] < g_star) == higher_perf
+        gap = c["investor_net"] - ref["investor_net"]
+        # to the dollar: a cell no year's gross clears the fee in is charged
+        # no incentive under either schedule, and the two are the same fee
+        tie = abs(gap) < 1.0
+        realized = gap > 0
+        out.append({"mgmt": c["mgmt"], "perf": c["perf"], "aum": c["aum"],
+                    "participation": c["participation"],
+                    "indifference_return": g_star,
+                    "indifference_aum": (c["flat_gross_per_year"] / g_star
+                                         if g_star and g_star > 0 else None),
+                    "gross_on_nav_per_year": ref["gross_on_nav_per_year"],
+                    "investor_net_over_base": gap,
+                    "take_over_base": c["manager_take"] - ref["manager_take"],
+                    "investor_prefers_this": realized, "tie": tie,
+                    "algebra_prefers_this": predicted,
+                    "agrees": tie or realized == predicted})
+    return out
+
+
+def print_fee_schedules(cells: list[dict], comparison: list[dict],
+                        base: tuple = (MGMT_FEE, PERF_FEE)) -> None:
+    schedules = sorted({(c["mgmt"], c["perf"]) for c in cells}, key=lambda s: (-s[0], s[1]))
+    aums = sorted({c["aum"] for c in cells})
+    rates = sorted({c["participation"] for c in cells})
+    cell = {(c["mgmt"], c["perf"], c["aum"], c["participation"]): c for c in cells}
+    label = {s: f"{s[0] * 100:g}-and-{s[1] * 100:g}" for s in schedules}
+    print(f"\n15. THE SAME WALK AT OTHER FEE SCHEDULES   "
+          f"{', '.join(label[s] for s in schedules)}, out of the NAV")
+    print(f"\n   Per schedule and rate: the fee capacity as a multiple of the position, "
+          f"and the half-life of the pull toward it:")
+    print(f"\n{'rate':>5} " + " ".join(f"{label[s]:>19}" for s in schedules))
+    for p in rates:
+        parts = []
+        for s in schedules:
+            c = cell[(s[0], s[1], aums[0], p)]
+            if c["fee_capacity"] is None:
+                parts.append(f"{'none':>12} {'-':>6}")
+            elif c["capacity_over_budget"] is None:
+                # no knee on this column, so no position to quote it against
+                parts.append(f"{c['fee_capacity'] / 1e9:>10.1f}bn {c['half_life_years']:>6.0f}y")
+            else:
+                parts.append(f"{c['capacity_over_budget']:>9.1f}x {c['half_life_years']:>6.0f}y")
+        print(f"{p:>5.0%} " + " ".join(f"{x:>19}" for x in parts))
+    print(f"\n   The investor's decade, net of fees, $m, at each schedule "
+          f"(* = started past the schedule's fee capacity):")
+    for s in schedules:
+        print(f"\n   {label[s]}")
+        print(f"{'AUM':>9} " + " ".join(f"{p:>10.0%}" for p in rates))
+        for aum in aums:
+            print(f"{aum / 1e9:>7.1f}bn " + " ".join(
+                f"{cell[(s[0], s[1], aum, p)]['investor_net'] / 1e6:>9,.0f}"
+                f"{'*' if cell[(s[0], s[1], aum, p)]['over_fee_capacity'] else ' '}" for p in rates))
+    print(f"\n   The investor's share of the gross, where there was one, at {label[base]} "
+          f"against the others (same cells, same gross):")
+    print(f"\n{'AUM':>9} " + " ".join(f"{label[s]:>12}" for s in schedules))
+    for aum in aums:
+        mid = rates[len(rates) // 2]
+        row = []
+        for s in schedules:
+            share = cell[(s[0], s[1], aum, mid)]["investor_share"]
+            row.append(f"{share:>11.0%} " if share is not None else f"{'-':>12}")
+        print(f"{aum / 1e9:>7.1f}bn " + " ".join(row) + f"   (at {mid:.0%})")
+    print(f"\n   Against {label[base]}: the indifference gross return on the NAV, the AUM at "
+          f"which the flat gross is that return, and how often the walk agreed with the algebra:")
+    print(f"\n{'schedule':>12} {'g*':>6} {'rate':>5} {'indiff. AUM':>12} {'investor better':>16} "
+          f"{'ties':>5} {'agrees':>7} {'of':>3}")
+    for s in schedules:
+        if s == base:
+            continue
+        for p in rates:
+            rows = [c for c in comparison if (c["mgmt"], c["perf"]) == s and c["participation"] == p]
+            g = rows[0]["indifference_return"]
+            ind = rows[0]["indifference_aum"]
+            better = sum(c["investor_prefers_this"] for c in rows)
+            ties = sum(c["tie"] for c in rows)
+            agree = sum(c["agrees"] for c in rows)
+            # a g* at or under zero is a schedule the investor prefers at any profit
+            g_text = "never" if g is None else ("any" if g <= 0 else f"{g:.0%}")
+            print(f"{label[s]:>12} {g_text:>6} {p:>5.0%} "
+                  f"{f'{ind / 1e9:.1f}bn' if ind else '-':>12} {better:>7} of {len(rows):<5} "
+                  f"{ties:>5} {agree:>7} {len(rows):>3}")
+    worst = max(cells, key=lambda c: c["manager_take"])
+    print(f"\n   The largest take on the surface is {label[(worst['mgmt'], worst['perf'])]} at "
+          f"${worst['aum'] / 1e9:.0f}bn and {worst['participation']:.0%}: "
+          f"${worst['manager_take'] / 1e6:,.0f}m on ${worst['gross_pl'] / 1e6:,.0f}m gross.")
+
+
 # ---------- reporting ----------
 
 def print_cost_curves(rows: list[dict], cross: float | None, price: float,
@@ -2313,8 +2499,19 @@ def _sections(prices, opens, volumes, quick: bool) -> dict:
         print_self_financed(cells)
         return {"self_financed_surface": cells}
 
+    def s15(have):
+        surface = need(have, "capacity_surface", 11)
+        if not all("year_ends" in r for r in surface):
+            raise SystemExit("section 11 in the results file predates the yearly curve: "
+                             "run `python fill_realism.py --section 11 --section 15`")
+        cells = fee_schedule_sweep(surface, need(have, "surface_knees", 11))
+        comparison = schedule_comparison(cells)
+        print_fee_schedules(cells, comparison)
+        return {"fee_schedules": [list(s) for s in FEE_SCHEDULES],
+                "fee_schedule_sweep": cells, "fee_schedule_comparison": comparison}
+
     return {1: s1, 2: s2, 3: s3, 4: s4, 5: s5, 6: s6, 7: s7, 8: s8, 9: s9, 10: s10, 11: s11,
-            12: s12, 13: s13, 14: s14}
+            12: s12, 13: s13, 14: s14, 15: s15}
 
 
 def main() -> None:

@@ -763,7 +763,7 @@ def test_a_section_run_refuses_a_different_tape_but_not_a_rerounded_one():
 def test_a_section_that_prints_beside_an_earlier_one_says_so_when_it_is_missing(capsys):
     prices, opens, volumes = _tape()
     sections = _sections(prices, opens, volumes, quick=True)
-    assert list(sections) == list(range(1, 15))
+    assert list(sections) == list(range(1, 16))
     # section 9 prints against section 8's rows; with nothing on disk it has to stop
     with pytest.raises(SystemExit, match="section 8"):
         sections[9]({})
@@ -1115,3 +1115,119 @@ def test_section_14_needs_sections_11_and_13(monkeypatch):
     fresh = {"capacity_surface": _column([100e6] * 10), "surface_knees": [], "bars": 2520}
     with pytest.raises(SystemExit, match="section 13"):
         sections[14](fresh)
+
+
+# ---------- 15. the same walk at other fee schedules ----------
+
+from fill_realism import (FEE_SCHEDULES, fee_schedule_sweep, indifference_return,
+                          schedule_comparison)
+
+
+def test_the_indifference_return_is_where_two_schedules_pay_the_investor_the_same():
+    # 2-and-20 against 0-and-30: 0.8 x (g - 2%) = 0.7 x g at g = 16%
+    g = indifference_return((0.02, 0.20), (0.0, 0.30))
+    assert g == pytest.approx(0.16)
+    assert 0.8 * (g - 0.02) == pytest.approx(0.7 * g)
+    # and the order of the arguments does not move it
+    assert indifference_return((0.0, 0.30), (0.02, 0.20)) == pytest.approx(0.16)
+    # 1-and-10 is half of 2-and-20 in both halves, so it is cheaper at any
+    # profit: the crossing is at a loss, which the mark never charges anyway
+    assert indifference_return((0.02, 0.20), (0.01, 0.10)) < 0
+    # same incentive fee, different management fee: no crossing at all
+    assert indifference_return((0.02, 0.20), (0.01, 0.20)) is None
+    # the same management fee crosses where the incentive first bites
+    assert indifference_return((0.02, 0.20), (0.02, 0.0)) == pytest.approx(0.02)
+
+
+def test_halving_the_management_fee_doubles_the_fee_capacity_and_dropping_it_removes_it():
+    col = _column([100e6] * 10)
+    knees = [{"participation": 0.1, "knee_aum": 2e9, "position_at_knee": 1.0}]
+    cells = fee_schedule_sweep(col, knees, schedules=((0.02, 0.2), (0.01, 0.1), (0.0, 0.3), (0.02, 0.0)))
+    by = {(c["mgmt"], c["perf"]): c for c in cells if c["aum"] == 5e9}
+    assert by[(0.02, 0.2)]["fee_capacity"] == pytest.approx(5e9)
+    assert by[(0.01, 0.1)]["fee_capacity"] == pytest.approx(10e9)
+    assert by[(0.0, 0.3)]["fee_capacity"] is None and by[(0.0, 0.3)]["over_fee_capacity"] is False
+    # the incentive fee only sets the speed: 2-and-0 pulls at the full 2%
+    assert by[(0.02, 0.2)]["half_life_years"] == pytest.approx(np.log(2) / 0.016)
+    assert by[(0.01, 0.1)]["half_life_years"] == pytest.approx(np.log(2) / 0.009)
+    assert by[(0.02, 0.0)]["half_life_years"] == pytest.approx(np.log(2) / 0.02)
+    assert by[(0.0, 0.3)]["half_life_years"] is None
+    # a fund with no management fee is never pulled anywhere: the NAV only
+    # ever goes up with the gross, so past the knee the gross is the same
+    # dollars at every AUM and nothing is given up to the fee basis
+    free = [c for c in cells if (c["mgmt"], c["perf"]) == (0.0, 0.3) and c["aum"] >= 2e9]
+    assert all(c["gross_pl"] == pytest.approx(1e9) for c in free)
+    assert all(c["nav_change"] > 0 for c in free)
+
+
+def test_with_no_management_fee_the_investor_keeps_one_minus_the_incentive_whatever_the_path():
+    # the mark only moves in a year the fee is charged, and it moves by
+    # (1 - perf) of what was charged, so a fund that finishes on its mark
+    # has paid exactly perf of its gross however the years were ordered -
+    # the loss that was made back on the way was charged once it was
+    for gains in ([100e6] * 10, [-300e6, 50e6, 400e6, -100e6, 200e6, 300e6, -50e6, 100e6, 100e6, 500e6]):
+        col = _column(gains)
+        cells = fee_schedule_sweep(col, [], schedules=((0.0, 0.3),))
+        for c in cells:
+            assert c["ends_at_the_mark"]
+            assert c["investor_share"] == pytest.approx(0.7)
+            assert c["management"] == 0.0
+    # finish under the mark and the investor's share is lower than that:
+    # the highs on the way up were charged and the last loss is not refunded
+    under = fee_schedule_sweep(_column([200e6] * 9 + [-100e6]), [], schedules=((0.0, 0.3),))
+    assert all(not c["ends_at_the_mark"] and c["investor_share"] < 0.7 for c in under)
+    # past the knee, nine $200m new highs are charged 30% of $1.8bn and the
+    # $100m loss at the end is not refunded, on a $1.7bn gross
+    past = [c for c in under if c["aum"] == 5e9][0]
+    assert past["incentive"] == pytest.approx(0.3 * 1.8e9)
+    assert past["investor_share"] == pytest.approx((1.7e9 - 0.3 * 1.8e9) / 1.7e9)
+
+
+def test_the_comparison_reads_each_schedule_against_two_and_twenty_and_scores_the_algebra():
+    # 10% a year on a $1bn position; past the $2bn knee the fund grosses 5%
+    # on $2bn, 2% on $5bn, 1% on $10bn: the 2-and-0 crossing at 2% sits on
+    # the $5bn rung and 0-and-30's at 16% is under every rung
+    col = _column([100e6] * 10, aums=(1e9, 2e9, 5e9, 1e10))
+    knees = [{"participation": 0.1, "knee_aum": 2e9, "position_at_knee": 1.0}]
+    cells = fee_schedule_sweep(col, knees, schedules=((0.02, 0.2), (0.02, 0.0), (0.0, 0.3), (0.01, 0.1)))
+    comp = schedule_comparison(cells, base=(0.02, 0.2))
+    assert len(comp) == 3 * 4
+    assert all((c["mgmt"], c["perf"]) != (0.02, 0.2) for c in comp)
+    by = {(c["mgmt"], c["perf"], c["aum"]): c for c in comp}
+    # 0-and-30 is the investor's schedule in every cell, and the algebra said so
+    for aum in (1e9, 2e9, 5e9, 1e10):
+        c = by[(0.0, 0.3, aum)]
+        assert c["indifference_return"] == pytest.approx(0.16)
+        assert c["indifference_aum"] == pytest.approx(100e6 / 0.16)
+        assert c["investor_prefers_this"] and c["algebra_prefers_this"] and c["agrees"]
+    # 1-and-10 likewise, with no AUM to quote because there is no crossing
+    assert all(by[(0.01, 0.1, a)]["agrees"] and by[(0.01, 0.1, a)]["indifference_aum"] is None
+               for a in (1e9, 2e9, 5e9, 1e10))
+    # 2-and-0: better where the incentive would have been charged, a tie to
+    # the dollar where no year clears the 2%, and the algebra agrees on both
+    assert by[(0.02, 0.0, 1e9)]["investor_prefers_this"] and by[(0.02, 0.0, 1e9)]["agrees"]
+    assert by[(0.02, 0.0, 1e10)]["tie"] and by[(0.02, 0.0, 1e10)]["agrees"]
+    assert by[(0.02, 0.0, 1e10)]["investor_net_over_base"] == pytest.approx(0.0, abs=1.0)
+    assert by[(0.02, 0.0, 1e10)]["take_over_base"] == pytest.approx(0.0, abs=1.0)
+    assert by[(0.02, 0.0, 5e9)]["indifference_aum"] == pytest.approx(5e9)
+
+
+def test_section_15_walks_every_cell_at_every_schedule_and_needs_the_yearly_curve(capsys):
+    prices, opens, volumes = _tape()
+    sections = _sections(prices, opens, volumes, quick=True)
+    assert list(sections) == list(range(1, 16))
+    with pytest.raises(SystemExit, match="section 11"):
+        sections[15]({"bars": 2520})
+    stale = {"capacity_surface": [{"aum": 1e9, "participation": 0.1, "final": 1.1e9,
+                                   "position_share": 1.0, "sharpe": 0.5}],
+             "surface_knees": [], "bars": 2520}
+    with pytest.raises(SystemExit, match="section 11"):
+        sections[15](stale)
+    col = _column([100e6] * 10)
+    added = sections[15]({"capacity_surface": col, "surface_knees": [], "bars": 2520})
+    out = capsys.readouterr().out
+    assert set(added) == {"fee_schedules", "fee_schedule_sweep", "fee_schedule_comparison"}
+    assert added["fee_schedules"] == [list(s) for s in FEE_SCHEDULES]
+    assert len(added["fee_schedule_sweep"]) == len(FEE_SCHEDULES) * len(col)
+    assert len(added["fee_schedule_comparison"]) == (len(FEE_SCHEDULES) - 1) * len(col)
+    assert "15. THE SAME WALK AT OTHER FEE SCHEDULES" in out and "0-and-30" in out

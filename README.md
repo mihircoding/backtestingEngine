@@ -123,14 +123,26 @@ the gross return on the deployed book over the management fee, 12% on
 cell crosses its knee in either direction; what a decade does move is
 the fund that loses first, which trades its good years on the smaller
 book its bad years left it and gives up a fifth of its gross at $5bn
-and 20%.
+and 20%. The twelfth runs that walk at one-and-ten, zero-and-thirty
+and two-and-nothing beside two-and-twenty, and finds the capacity
+doubles when the management fee halves, 12× the position, and vanishes
+when it goes, while the incentive fee only sets the speed of the drift —
+and, turning the table round, that the investor should have signed
+zero-and-thirty at every size on the surface: two schedules pay the
+investor the same at one gross return on the NAV, 16% a year for
+zero-and-thirty against two-and-twenty, and no cell gets there. Under
+zero-and-thirty the investor's share is 70% in all 42 cells, which is an
+identity about the high-water mark — it moves when the investor pays,
+not how much — and under two-and-twenty it runs from 67% at $100m to
+−54% at $100bn, the spread being the management fee, the one part of
+the bill that scales with the account.
 [RESULTS.md](RESULTS.md) has all of it, and the corrections.
 
-399 tests.
+404 tests.
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                 # 393 passed
+python -m pytest -q                 # 404 passed
 
 # the two halves together
 python fill_realism.py              # fill models compared, the headline result

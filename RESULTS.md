@@ -1524,6 +1524,156 @@ rung. No flows: nobody subscribes to a winning fund or redeems from a
 losing one, which is the half of the capacity story the equilibrium
 literature is about and the half this repository has no data for.
 
+### 15. Run the walk at other fee schedules, and find the capacity doubles when the fee halves and vanishes when it goes — and that the investor should never have signed two-and-twenty
+
+Reproduce with: `python fill_realism.py --section 15` (arithmetic on section
+11; nothing is re-run)
+
+Section 14 said the point a self-paying fund drifts toward has only the
+management fee in it, and said so on one schedule. This runs the same walk on
+every cell at four: two-and-twenty, one-and-ten, zero-and-thirty, and
+two-and-nothing, the last to take the incentive fee out on its own. Same
+surface, same yearly gross, same high-water mark; only the fee changes. It
+also turns the question round, because section 14 only looked at the
+manager's side: which schedule does the investor want, and does it depend on
+the size of the fund.
+
+The prediction, written first. The fee capacity is G / mgmt, so halving the
+management fee should double it — the four-to-six-times-the-position becomes
+eight to twelve — and dropping it should remove it: an incentive fee is only
+ever a share of a profit, so there is no size at which a zero-and-thirty
+manager is the only investor. The pull is (1 − perf) × mgmt a year, so
+one-and-ten drifts at 0.9% (a half-life of 77 years), two-and-nothing at the
+full 2% (35 years) and zero-and-thirty not at all. On the investor's side,
+in a year the mark is cleared the investor keeps (1 − perf) × (g − mgmt) of
+the NAV, g the gross return on it, so two schedules pay the investor the
+same at g\* = ((1 − p₁) m₁ − (1 − p₂) m₂) / (p₂ − p₁), the higher incentive
+fee costing more above g\* and the higher management fee below it. Against
+two-and-twenty that is 16% for zero-and-thirty, 2% for two-and-nothing, and
+a negative number for one-and-ten, which is half of two-and-twenty in both
+halves and cheaper at any profit. No cell on the surface grosses 16% a year
+on its NAV — the best is 12% on the *position* at the knee — so the investor
+should prefer zero-and-thirty in all 42 cells, one-and-ten in all 42, and
+two-and-nothing wherever the gross clears 2% of the NAV. The thing the
+algebra leaves out is the mark: it charges the incentive on the decade's
+mean, and the walk charges it year by year on the new highs only, which
+should make the schedules that lean on the incentive fee cheaper than the
+formula says in the cells that lose first.
+
+**The capacity, per schedule and rate** — the fee capacity as a multiple of
+the position the budget lets the desk hold, and the half-life of the pull:
+
+| rate | 2-and-0 | 2-and-20 | 1-and-10 | 0-and-30 |
+|---|---|---|---|---|
+| 2% | 6.1× · 35y | 6.1× · 43y | 12.3× · 77y | none |
+| 5% | 5.7× · 35y | 5.7× · 43y | 11.5× · 77y | none |
+| 10% | 5.2× · 35y | 5.2× · 43y | 10.4× · 77y | none |
+| 20% | 4.5× · 35y | 4.5× · 43y | 8.9× · 77y | none |
+| 30% | 4.5× · 35y | 4.5× · 43y | 9.0× · 77y | none |
+| 50% | 4.0× · 35y | 4.0× · 43y | 8.0× · 77y | none |
+
+The first half of the prediction holds to the digit, which it had to: the
+columns are the algebra, and the walk agrees with them in the way section 14
+showed — a fund started on its capacity ends on it. Two-and-nothing has
+two-and-twenty's capacity and a faster pull, because the incentive fee was
+never part of the point, only a brake on the drift toward it: a fifth of
+every year's gain above the mark goes to the manager instead of into next
+year's fee basis. The number of cells that start past their capacity falls
+from 8 at two-and-twenty to 4 at one-and-ten to none at zero-and-thirty.
+
+**The investor's decade, net of fees, $m** — the same 42 cells under each
+schedule (\* = started past that schedule's fee capacity):
+
+| AUM | 2-and-20 | | | 1-and-10 | | | 0-and-30 | | |
+|---|---|---|---|---|---|---|---|---|---|
+| | 2% | 10% | 50% | 2% | 10% | 50% | 2% | 10% | 50% |
+| $1bn | 726 | 731 | 656 | 932 | 1,019 | 905 | 820 | 870 | 790 |
+| $5bn | 522 | 2,946 | 2,163 | 1,043 | 3,866 | 3,111 | 1,179 | 3,472 | 2,884 |
+| $20bn | −2,069\* | 2,463 | 9,577 | −286\* | 4,579 | 12,797 | 1,179 | 5,025 | 11,686 |
+| $100bn | −16,677\* | −11,468\* | 4,502 | −7,911\* | −2,562\* | 14,979 | 1,179 | 5,026 | 18,988 |
+
+(The other three rates are in the results file; they sit between these.)
+
+**The investor should have signed zero-and-thirty, at every size.** Across
+the surface the investor is better off under zero-and-thirty than under
+two-and-twenty in 42 cells of 42, and under one-and-ten in 42 of 42, which
+is what g\* said. Under two-and-twenty the investor finishes the decade down
+in 8 cells and the manager's take across the surface is $178bn on $202bn
+of gross; under zero-and-thirty no cell is down, the take is $63bn on
+$210bn, and the gross is higher — $8bn more, because a fund nobody charges
+2% of trades a bigger book every year. The $100bn desk at 30% participation
+is the cell that sat on its fee capacity in section 14: $18.1bn gross,
+$19.0bn to the manager, the investor $903m down. At one-and-ten the same
+fund pays $10.7bn and the investor nets $7.5bn; at zero-and-thirty it pays
+$5.5bn and nets $12.7bn. The take at $100bn is $18.4bn, $9.6bn and $0.5bn
+at the patient rate on a gross of $1.7bn, which is the whole of section 12
+in one row: on the denominator, the fee is a function of the AUM, and
+zero-and-thirty is the only schedule on the surface that is a function of
+the P&L.
+
+**And the investor's share under zero-and-thirty is 70% in every cell, to
+the fourth decimal.** This is an identity, not a result of the tape, and
+it is why the second half of the prediction was wrong. The mark only moves
+in a year the fee is charged, and it moves by (1 − perf) of the gross that
+was charged, so a fund that finishes the decade on its mark has paid
+exactly perf of its whole gross — however the years were ordered, and
+whatever the losses on the way were. The loss that was "protected" by the
+mark was charged the year it was made back. All 42 zero-and-thirty cells
+end on their mark — with no management fee the NAV only moves with the
+gross, and the decade ended at a high — so all 42 split 70/30. Thirty of
+the two-and-twenty cells do; the other 12 are the 8 past their capacity,
+where the fee takes the NAV down every year and the mark is the starting
+NAV, and four more where 2021's mark is still standing over a NAV the fee
+has not let back up to it. The mark changes *when* the
+investor pays, not how much, unless the fund ends under it — and then the
+investor's share is *lower* than 1 − perf, not higher, because the highs on
+the way up were charged and the last loss is not refunded. Under
+two-and-twenty the share runs from 67% at $100m down to 52% at $20bn and
+to −54% at $100bn, and that spread is the management fee, which is the
+only part of the bill that scales with the account.
+
+**The algebra's call was right in 123 cells of 126.** Against
+two-and-twenty, each schedule's indifference return, the AUM at which the
+flat gross is that return, and the walk's score:
+
+| schedule | g\* | indifference AUM (2% … 50%) | investor better | ties | agrees |
+|---|---|---|---|---|---|
+| 2-and-0 | 2% | $8.3bn … $136bn (= the fee capacity) | 37 of 42 | 5 | 39 of 42 |
+| 1-and-10 | any profit | — | 42 of 42 | 0 | 42 of 42 |
+| 0-and-30 | 16% | $1.0bn … $17bn | 42 of 42 | 0 | 42 of 42 |
+
+Two-and-nothing's indifference AUM is the fee capacity, by construction: g\*
+is the management fee, and the AUM at which the flat gross is 2% of it is
+where section 14 said the fund drifts. The five ties are the cells past it,
+where no year's gross clears the 2% and no incentive is ever charged, so
+the two schedules are the same bill to the dollar. The three misses are the
+cells just under it — $10bn at 2%, $20bn at 5%, $100bn at 30%, grossing
+1.7%, 2.0% and 1.8% of the NAV on the decade's mean — where the algebra on
+the mean says the incentive never bites and the walk charged it anyway,
+$23m, $139m and $71m, in the years the gross was above the mean. The
+formula is a statement about a flat decade; this one had 2021 and 2024 in
+it.
+
+So: the management fee sets where a fund settles and the incentive fee only
+sets how fast, which section 14 said and this shows in the table, 6.1× at
+two-and-twenty and at two-and-nothing, 12.3× at one-and-ten, nowhere at
+zero-and-thirty. And on the other side of the table, a strategy that makes
+8–12% on its position and less on its NAV is one whose investor should
+never take a schedule with a management fee in it: the indifference return
+against two-and-twenty is 16% on the NAV, the strategy never gets there at
+any size, and the one schedule that pays the manager out of the P&L rather
+than the account is the one under which the split is a constant.
+
+What this does not do: the four schedules are four points, not a sweep,
+and none has a hurdle, a clawback or a crystallization period other than
+the calendar year, each of which would move the mark and with it the
+timing — not, by the identity above, the amount — of the incentive fee. The
+investor's preference is on the decade's net dollars, which is the right
+number for one investor and the wrong one for a fund that is raising
+money: a manager on zero-and-thirty who makes nothing in a year makes
+nothing, and the equilibrium-size literature is about why that manager
+charges 2% anyway.
+
 ### What this still does not model
 
 - One bar is one book. A day's liquidity is pooled into a single snapshot at
