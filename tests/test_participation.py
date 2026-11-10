@@ -10,12 +10,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.engine import Backtest
 from src.events import OrderEvent
 from src.execution import (NextBarOpenExecutionHandler,
                            ParticipationLimitedExecutionHandler)
 from src.portfolio import Portfolio
-from src.strategy import MovingAverageCrossStrategy
 from tests.conftest import make_handler_with_volumes
 
 FLAT = [100.0] * 12
@@ -254,7 +252,7 @@ def test_the_slice_form_charges_every_slice_the_root_of_the_cap():
                        impact_on="slice", sigma_bps=SIGMA)
     data.next_bar()
     ex.execute(OrderEvent(time=data.current_time(), symbol="AAA", quantity=500))
-    fills = work(ex, data)
+    work(ex, data)
     expected = 2.0 + SIGMA * np.sqrt(100 / 1000)
     assert ex.slice_cost_bps == pytest.approx([expected] * 5)
 
@@ -279,7 +277,7 @@ def test_a_fixed_sigma_is_used_even_during_warmup():
     data, ex = handler(volume=10_000.0, n=12, slippage_bps=0.0, sigma_bps=SIGMA)
     data.next_bar()
     ex.execute(OrderEvent(time=data.current_time(), symbol="AAA", quantity=100))
-    fills = work(ex, data)
+    work(ex, data)
     assert ex.slice_cost_bps[0] == pytest.approx(SIGMA * np.sqrt(100 / 10_000))
 
     data, ex = handler(volume=10_000.0, n=12, slippage_bps=0.0)

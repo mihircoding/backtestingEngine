@@ -187,7 +187,6 @@ def crossover_by_shape(price: float, volume: float, depth_frac: float = 0.002,
         curve = cost_curves(price, volume, depth_frac=depth_frac, levels=levels,
                             size_fracs=grid, shape=shape)
         cross = crossover(curve)
-        touch = curve[0]["book_bps"] if curve else float("nan")
         sizes = _level_sizes(depth_frac, volume, levels, shape)
         rows.append({
             "shape": shape,

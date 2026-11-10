@@ -5,7 +5,7 @@ Real systems store integer ticks; the round-trip through round() here is the
 readable compromise and the docstrings say why.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 
 TICK = 0.01  # minimum price increment

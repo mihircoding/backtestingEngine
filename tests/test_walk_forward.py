@@ -125,7 +125,7 @@ class TestSelection:
         """It is the maximum over the whole sample by construction, so no
         individual pair may beat it. Cheap, but it is the number the write-up
         calls a ceiling, and a ceiling that isn't one would be misleading."""
-        from run_backtest import param_grid, stats
+        from run_backtest import param_grid
         prices = _multi_year_prices(years=4)
         result = walk_forward_selection(prices, trade_size=10, train_years=2,
                                         short_windows=SHORTS, long_windows=LONGS)

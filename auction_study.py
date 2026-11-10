@@ -31,7 +31,7 @@ leaving a few hundred shares on the screen at a time.
 import numpy as np
 
 from exchange.auction import AuctionOrder, book_from_levels, indicative, uncross
-from exchange.order import Side, to_tick
+from exchange.order import Side
 from exchange.orderbook import LimitOrderBook
 from exchange.simulator import seed_book, simulate
 

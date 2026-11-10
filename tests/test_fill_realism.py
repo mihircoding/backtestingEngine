@@ -523,7 +523,7 @@ def test_the_ladder_slices_identically_under_all_three_handlers():
 
 # ---------- 8. send what you can get done ----------
 
-from fill_realism import fill_days_sweep, invested, sized_ladder, time_in_market
+from fill_realism import fill_days_sweep, sized_ladder, time_in_market
 
 
 def _tape(n=320, seed=4, volume=1e6):

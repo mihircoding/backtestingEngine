@@ -36,7 +36,7 @@ import numpy as np
 import pandas as pd
 
 import significance as sig
-from run_backtest import TRADING_DAYS, run, stats
+from run_backtest import TRADING_DAYS, run, stats  # noqa: F401 - the tests read it from here
 from src.strategy import BuyAndHoldStrategy, MovingAverageCrossStrategy
 
 START = "2015-01-01"

@@ -55,8 +55,7 @@ import argparse
 import json
 
 from exchange.fees import MAKER_TAKER
-from exchange.queue_position import (HORIZON_EVENTS, bucket, rest_one_order,
-                                warm_book)
+from exchange.queue_position import bucket, rest_one_order, warm_book
 
 PADS = (0, 500, 2_000, 8_000, 30_000)
 HORIZON = 1_000
