@@ -398,7 +398,7 @@ def print_significance(rep: dict) -> None:
     print(f"\n50/200 Sharpe {c['sharpe']:.2f}, 95% bootstrap interval "
           f"[{c['lo']:.2f}, {c['hi']:.2f}]")
     print(f"  P(Sharpe <= 0) = {c['p_le_zero']:.1%} - resampling in ~1 month blocks, "
-          f"so a position\n  held for weeks is resampled as a block instead of as "
+          "so a position\n  held for weeks is resampled as a block instead of as "
           "independent days.")
 
     g = rep["vs_buy_and_hold"]
@@ -409,7 +409,7 @@ def print_significance(rep: dict) -> None:
     print(f"\nGrid of {rep['pairs']} window pairs: Sharpes vary by "
           f"{rep['sharpe_spread']:.2f} (sd). The curves are")
     print(f"so alike that they amount to {rep['effective_pairs']:.1f} independent "
-          f"strategies, which is\nwhy that spread - and so the luck bar below - is small.")
+          "strategies, which is\nwhy that spread - and so the luck bar below - is small.")
     print(f"  best cell {d['sharpe']:.2f} at {rep['best']['pair'][0]}/"
           f"{rep['best']['pair'][1]}")
     print(f"  best of {rep['pairs']} worthless variants this alike reaches "
@@ -653,7 +653,7 @@ def main() -> None:
             wf = walk_forward_selection(spy, trade_size=200)
             print(f"\nWalk-forward parameter selection - SPY, best of {wf['n_pairs']} "
                   f"(short, long) pairs by Sharpe on the trailing {WF_TRAIN_YEARS} "
-                  f"years, traded the next one:")
+                  "years, traded the next one:")
             print(f"{'year':>6} {'picked':>10} {'train sharpe':>13} {'that year OOS':>14}")
             for p in wf["picks"]:
                 pair = f"{p['short']}/{p['long']}"
@@ -676,7 +676,7 @@ def main() -> None:
             changes = sum(1 for a, b in zip(picks, picks[1:])
                           if (a["short"], a["long"]) != (b["short"], b["long"]))
             print(f"\nThe selection averaged {mean_train:.2f} Sharpe on the data it was "
-                  f"chosen on and delivered")
+                  "chosen on and delivered")
             print(f"{stats(wf['walk_forward'])['sharpe']:.2f} on the data it was not. It "
                   f"changed its pick at {changes} of {len(picks) - 1} handovers.")
             return

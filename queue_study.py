@@ -162,9 +162,9 @@ def main() -> None:
 
     two = table_two(seeds)
     be = breakeven_queue(two)
-    print(f"\n\nJoin the touch, or pay a tick to stand at the front of a new "
+    print("\n\nJoin the touch, or pay a tick to stand at the front of a new "
           f"level\n({two['front_n']} books where the spread left room to "
-          f"improve)\n")
+          "improve)\n")
     print(f"{'shares ahead':>13} {'fills':>7} {'value':>8}")
     for r in two["rows"]:
         print(f"{r['median_ahead']:>13,} {r['join_fill_rate']:>6.0%} "

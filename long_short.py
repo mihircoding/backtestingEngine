@@ -226,7 +226,7 @@ def print_report(rep: dict, sens: list[dict], short: int, long: int) -> None:
           f"{rep['n_assets']} assets against the long-only version.")
 
     lo, ls = rep["lo_pooled"], rep["ls_pooled"]
-    print(f"\nEqual-weight across everything, rule minus hold:")
+    print("\nEqual-weight across everything, rule minus hold:")
     print(f"  long only    Sharpe {lo['sharpe']:>+6.2f}  "
           f"95% [{lo['lo']:+.2f}, {lo['hi']:+.2f}]")
     print(f"  long/short   Sharpe {ls['sharpe']:>+6.2f}  "

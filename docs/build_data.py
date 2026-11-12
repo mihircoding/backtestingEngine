@@ -32,9 +32,9 @@ from cross_section import UNIVERSE as CS_UNIVERSE
 from cross_section import cross_section as run_cross_section
 from cross_section import fetch_universe
 from run_backtest import (capacity_sweep, cost_sensitivity, fetch_opens, fetch_prices,
-                          fetch_volumes, make_opens, make_prices, param_grid,
-                          realized_vol, run, significance_report, stats,
-                          vol_target_comparison, walk_forward_selection)
+                          fetch_volumes, make_prices, param_grid, run,
+                          significance_report, stats, vol_target_comparison,
+                          walk_forward_selection)
 from src.execution import NextBarOpenExecutionHandler
 from src.strategy import BuyAndHoldStrategy, MovingAverageCrossStrategy
 
@@ -288,7 +288,7 @@ def report_crosssection(cs):
     print(f"  cross-section: beat buy & hold on {cs['wins']}/{cs['n_assets']}, "
           f"mean gap {cs['mean_diff']:+.2f}, pooled sharpe "
           f"{cs['pooled']['sharpe']:+.2f}, {cs['effective_assets']:.1f} "
-          f"effective tests")
+          "effective tests")
 
 
 SECTIONS = {"capacity": capacity, "significance": significance,

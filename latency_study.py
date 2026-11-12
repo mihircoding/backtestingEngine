@@ -230,7 +230,7 @@ def run(slow_us: float, seed: int = 0) -> dict:
 
 
 def main() -> None:
-    print(f"Two makers, identical logic and identical information, quoting "
+    print("Two makers, identical logic and identical information, quoting "
           f"{QUOTE_SIZE} x {EDGE_TICKS} tick either side of fair value.")
     print(f"{N_ROUNDS:,} rounds. Fair value jumps {JUMP_TICKS:.0f} ticks with "
           f"probability {P_JUMP:.0%}; informed flow reacts in "

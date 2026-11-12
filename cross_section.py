@@ -212,7 +212,7 @@ def print_report(rep: dict, short: int = 50, long: int = 200) -> None:
           f"{rep['effective_assets']:.1f} independent tests.")
 
     p = rep["pooled"]
-    print(f"\nEqual-weight across everything, rule minus hold: Sharpe "
+    print("\nEqual-weight across everything, rule minus hold: Sharpe "
           f"{p['sharpe']:+.2f}, 95% [{p['lo']:+.2f}, {p['hi']:+.2f}], "
           f"P(no better) {p['p_le_zero']:.1%}")
 

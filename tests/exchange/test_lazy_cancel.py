@@ -12,8 +12,6 @@ trade and every quote comes out the same. An optimization that changes an
 answer is not an optimization.
 """
 
-from collections import deque
-
 import numpy as np
 import pytest
 

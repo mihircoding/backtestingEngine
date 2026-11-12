@@ -1235,8 +1235,7 @@ def test_section_15_walks_every_cell_at_every_schedule_and_needs_the_yearly_curv
 
 # ---------- 16. a hurdle in the clause ----------
 
-from fill_realism import (HURDLES, HURDLE_FORMS, hurdle_comparison, hurdle_incentive,
-                          hurdle_sweep, hurdle_verdicts)
+from fill_realism import HURDLES, HURDLE_FORMS, hurdle_incentive, hurdle_sweep
 
 
 def test_the_three_hurdle_forms_split_one_year_three_ways_and_no_hurdle_is_the_plain_fifth():

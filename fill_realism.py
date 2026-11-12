@@ -760,12 +760,12 @@ def closest_to_square_root(exponents: list[dict]) -> dict:
 
 def print_metaorders(rows: list[dict], exponents: list[dict],
                      best: dict, participation: float = 0.10) -> None:
-    print(f"\n6. THE SQUARE ROOT WAS IN THE SLICE, NOT THE ORDER   one order, "
-          f"worked to completion on a flat tape")
-    print(f"   Cost is implementation shortfall in bps against the arrival "
+    print("\n6. THE SQUARE ROOT WAS IN THE SLICE, NOT THE ORDER   one order, "
+          "worked to completion on a flat tape")
+    print("   Cost is implementation shortfall in bps against the arrival "
           f"mid. '{'formula':>7}' is what execution.py charges")
-    print(f"   for the same order; 'sqrt law' is sigma * sqrt(order / day's "
-          f"volume), which is what the formula is named after.")
+    print("   for the same order; 'sqrt law' is sigma * sqrt(order / day's "
+          "volume), which is what the formula is named after.")
     settings = [(e["persistence"], e["recovery"]) for e in exponents]
     fracs = sorted({r["total_frac"] for r in rows})
     head = " ".join(f"{f:>7.2f}" for f in fracs)
@@ -783,8 +783,8 @@ def print_metaorders(rows: list[dict], exponents: list[dict],
     print(f"{'':>8} {'':>9} | {'sqrt law':>15} "
           + " ".join(f"{first[f]['sqrt_order_bps']:>7.1f}" for f in fracs))
 
-    print(f"\n   Impact exponent (slope of log cost on log size), orders that "
-          f"fit in one bar | orders that are sliced:")
+    print("\n   Impact exponent (slope of log cost on log size), orders that "
+          "fit in one bar | orders that are sliced:")
     print(f"{'persist':>8} {'recovery':>9} {'book':>14} {'formula':>14} "
           f"{'sqrt law':>14} {'implied Y':>10}")
     for e in exponents:
@@ -795,7 +795,7 @@ def print_metaorders(rows: list[dict], exponents: list[dict],
               f"{e['sqrt_order_bps_single']:>6.2f} | {e['sqrt_order_bps_sliced']:>5.2f} "
               f"{e['y_sliced']:>10.2f}")
     rec = "never" if best["recovery"] is None else f"{best['recovery']:.0f} bars"
-    print(f"\n   Nearest to the square-root law across sliced orders: "
+    print("\n   Nearest to the square-root law across sliced orders: "
           f"persistence {best['persistence']:.2f}, recovery {rec}, "
           f"exponent {best['book_bps_sliced']:.2f}, implied Y "
           f"{best['y_sliced']:.2f}.")
@@ -1110,10 +1110,10 @@ def long_short_ladder(prices, opens, volumes, aums=AUMS, fill_days: float | None
 def print_exit_and_flip(trimmed: list[dict], sized: list[dict], ls_free: list[dict],
                         ls_capped: list[dict], baseline: float, ls_baseline: float,
                         fill_days: float) -> None:
-    print(f"\n9. THE BUDGET ON THE WAY OUT, AND THE RULE THAT FLIPS")
-    print(f"\n   Section 8's ladder, the book handler, with the position sold down "
+    print("\n9. THE BUDGET ON THE WAY OUT, AND THE RULE THAT FLIPS")
+    print("\n   Section 8's ladder, the book handler, with the position sold down "
           f"whenever it is over\n   what {fill_days:g} days of participation could "
-          f"get out of. 'entry only' is section 8's row.")
+          "get out of. 'entry only' is section 8's row.")
     print(f"\n{'AUM':>8} {'Sharpe entry':>13} {'trimmed':>8} {'return entry':>13} "
           f"{'trimmed':>8} {'invested':>9} {'trimmed':>8} {'longest':>8} {'trimmed':>8} "
           f"{'trims':>6} {'fills':>6} {'trimmed':>8} {'cost':>6} {'trimmed':>8}")
@@ -1214,7 +1214,7 @@ def trim_bootstrap(prices, opens, volumes, aums=BOOTSTRAP_AUMS, fill_days: float
 
 def print_participation(rows: list[dict], boot: list[dict], aum: float,
                         fill_days: float) -> None:
-    print(f"\n10. THE ONE FREE PARAMETER, AND THE RESULT THAT WAS NOISE")
+    print("\n10. THE ONE FREE PARAMETER, AND THE RESULT THAT WAS NOISE")
     print(f"\n   Section 9's trimmed ${aum / 1e9:.0f}bn row at every participation rate, "
           f"{fill_days:g}-day budget, all three handlers.")
     print(f"\n{'rate':>5} {'position':>9} {'Sharpe slice':>13} {'order':>7} {'book':>7} "
@@ -1225,8 +1225,8 @@ def print_participation(rows: list[dict], boot: list[dict], aum: float,
               f"{r['book']['total_return']:>12.1%} {r['book']['max_delay_bars']:>8d} "
               f"{r['book']['trims']:>6d} {r['slice']['cost_bps']:>11.1f} "
               f"{r['order']['cost_bps']:>7.1f} {r['book']['cost_bps']:>7.1f}")
-    print(f"\n   The trim rows' Sharpe difference, trimmed minus entry-only, book handler, "
-          f"bootstrapped on the same days:")
+    print("\n   The trim rows' Sharpe difference, trimmed minus entry-only, book handler, "
+          "bootstrapped on the same days:")
     print(f"\n{'AUM':>8} {'entry only':>11} {'trimmed':>8} {'diff':>7} {'95% interval':>17} "
           f"{'P(diff<=0)':>11} {'days that differ':>17}")
     for b in boot:
@@ -1237,10 +1237,10 @@ def print_participation(rows: list[dict], boot: list[dict], aum: float,
 
 def print_sized_ladder(rows: list[dict], sweep: list[dict], ladder: list[dict],
                        baseline: float, fill_days: float) -> None:
-    print(f"\n8. SEND WHAT YOU CAN GET DONE   the position capped at what "
+    print("\n8. SEND WHAT YOU CAN GET DONE   the position capped at what "
           f"participation fills inside {fill_days:g} bars")
-    print(f"\n   First, section 7's ladder read by how much of the book was in the "
-          f"market, averaged over the run,\n   against the unconstrained rule's "
+    print("\n   First, section 7's ladder read by how much of the book was in the "
+          "market, averaged over the run,\n   against the unconstrained rule's "
           f"{baseline:.0%}. The 'deployed' column was the last order's fill.")
     print(f"\n{'AUM':>8} {'deployed':>9} {'invested':>9} {'of baseline':>12} {'longest':>8}")
     for r in ladder:
@@ -1248,7 +1248,7 @@ def print_sized_ladder(rows: list[dict], sweep: list[dict], ladder: list[dict],
               f"{r['book']['invested']:>9.0%} {r['book']['invested'] / baseline:>12.0%} "
               f"{r['book']['max_delay_bars']:>8d}")
     print(f"\n   Then the same ladder with the position capped at {fill_days:g} days "
-          f"of participation:")
+          "of participation:")
     print(f"\n{'AUM':>8} {'position':>9} {'invested':>9} {'Sharpe slice':>13} {'order':>7} "
           f"{'book':>7} {'return slice':>13} {'order':>7} {'book':>7} "
           f"{'cost slice':>11} {'order':>7} {'book':>7} {'longest':>8}")
@@ -1276,8 +1276,8 @@ def print_sized_ladder(rows: list[dict], sweep: list[dict], ladder: list[dict],
 
 def print_law_ladder(rows: list[dict], exponents: list[dict],
                      curves: list[dict]) -> None:
-    print(f"\n7. CHARGE THE ORDER, NOT THE SLICE   the formula handler on the "
-          f"flat tape, from the handler itself")
+    print("\n7. CHARGE THE ORDER, NOT THE SLICE   the formula handler on the "
+          "flat tape, from the handler itself")
     fracs = sorted({r["total_frac"] for r in curves})
     print(f"\n{'':>24} | {'days of volume:':>15} "
           + " ".join(f"{f:>7.2f}" for f in fracs))
@@ -1291,8 +1291,8 @@ def print_law_ladder(rows: list[dict], exponents: list[dict],
         print(f"   exponent, impact on the {e['impact_on']}: "
               f"{e['single']:.2f} inside one bar | {e['sliced']:.2f} sliced")
 
-    print(f"\n   The capacity ladder under three handlers: formula on the slice "
-          f"(ships), formula on the order (the law), book with memory.")
+    print("\n   The capacity ladder under three handlers: formula on the slice "
+          "(ships), formula on the order (the law), book with memory.")
     print(f"\n{'AUM':>8} {'Sharpe slice':>13} {'order':>7} {'book':>7} "
           f"{'cost slice':>11} {'order':>7} {'book':>7} {'deployed':>9}")
     for r in rows:
@@ -1375,15 +1375,15 @@ def print_surface(rows: list[dict], knees: list[dict], fill_days: float) -> None
     rates = sorted({r["participation"] for r in rows})
     cell = {(r["aum"], r["participation"]): r for r in rows}
     print(f"\n11. THE CAPACITY SURFACE   book handler, trimmed, {fill_days:g}-day budget: "
-          f"Sharpe at every AUM and every participation rate")
+          "Sharpe at every AUM and every participation rate")
     print(f"\n{'AUM':>9} " + " ".join(f"{p:>8.0%}" for p in rates))
     for aum in aums:
         print(f"{aum / 1e9:>7.1f}bn " + " ".join(f"{cell[(aum, p)]['sharpe']:>8.2f}" for p in rates))
-    print(f"\n   and the share of the AUM the budget let the desk hold:")
+    print("\n   and the share of the AUM the budget let the desk hold:")
     print(f"\n{'AUM':>9} " + " ".join(f"{p:>8.0%}" for p in rates))
     for aum in aums:
         print(f"{aum / 1e9:>7.1f}bn " + " ".join(f"{cell[(aum, p)]['position_share']:>8.0%}" for p in rates))
-    print(f"\n   Where the budget first binds, and what the Sharpe does from there up:")
+    print("\n   Where the budget first binds, and what the Sharpe does from there up:")
     print(f"\n{'rate':>5} {'knee AUM':>9} {'holds':>6} {'Sharpe, last whole':>19} "
           f"{'past the knee':>15} {'spread':>7} {'cost bps past knee':>19}")
     for k in knees:
@@ -1524,18 +1524,18 @@ def print_fee_surface(cells: list[dict], alignment: list[dict], by_aum: list[dic
     cell = {(c["aum"], c["participation"]): c for c in cells}
     years = cells[0]["years"]
     print(f"\n12. PUT A FEE ON THE SURFACE   {mgmt:.0%} and {perf:.0%}, {years:.1f} years as one lump, "
-          f"no high-water mark")
-    print(f"\n   the investor's net, $m, fee charged on the AUM:")
+          "no high-water mark")
+    print("\n   the investor's net, $m, fee charged on the AUM:")
     print(f"\n{'AUM':>9} " + " ".join(f"{p:>9.0%}" for p in rates))
     for aum in aums:
         print(f"{aum / 1e9:>7.1f}bn " + " ".join(
             f"{cell[(aum, p)]['on_aum']['investor_net'] / 1e6:>9,.0f}" for p in rates))
-    print(f"\n   and the manager's take, $m, same basis:")
+    print("\n   and the manager's take, $m, same basis:")
     print(f"\n{'AUM':>9} " + " ".join(f"{p:>9.0%}" for p in rates))
     for aum in aums:
         print(f"{aum / 1e9:>7.1f}bn " + " ".join(
             f"{cell[(aum, p)]['on_aum']['manager_take'] / 1e6:>9,.0f}" for p in rates))
-    print(f"\n   Where each side would stop, per rate:")
+    print("\n   Where each side would stop, per rate:")
     print(f"\n{'rate':>5} {'knee':>8} {'gross past knee':>16} {'fee eats it at':>15} {'x knee':>7} "
           f"{'investor best':>14} {'manager best':>13} {'take at top':>12} {'on deployed':>12}")
     for a in alignment:
@@ -1545,8 +1545,8 @@ def print_fee_surface(cells: list[dict], alignment: list[dict], by_aum: list[dic
         print(f"{a['participation']:>5.0%} {knee:>8} {a['flat_gross_pl'] / 1e9:>15.2f}bn {be:>15} {mult:>7} "
               f"{a['investor_best_aum']['on_aum'] / 1e9:>12.0f}bn {a['manager_best_aum']['on_aum'] / 1e9:>11.0f}bn "
               f"{a['manager_take_at_top']['on_aum'] / 1e9:>10.1f}bn {a['manager_take_at_top']['on_deployed'] / 1e9:>10.2f}bn")
-    print(f"\n   And along the other axis, at each AUM, the rate each side would pick "
-          f"(fee on the AUM):")
+    print("\n   And along the other axis, at each AUM, the rate each side would pick "
+          "(fee on the AUM):")
     print(f"\n{'AUM':>9} {'investor':>9} {'manager':>8} {'best Sharpe at':>15} {'Sharpe there':>13} "
           f"{'Sharpe at the pick':>19} {'net at the pick':>16} {'net at best Sharpe':>19}")
     for r in by_aum:
@@ -1703,21 +1703,21 @@ def print_crystallized(cells: list[dict], alignment: list[dict], mgmt: float = M
     rates = sorted({c["participation"] for c in cells})
     cell = {(c["aum"], c["participation"]): c for c in cells}
     print(f"\n13. CRYSTALLIZE THE FEE ON THE CURVE   {mgmt:.0%} and {perf:.0%} paid yearly, "
-          f"high-water mark, fee on the AUM")
-    print(f"\n   the manager's take, $m, and in brackets what it is over section 12's lump:")
+          "high-water mark, fee on the AUM")
+    print("\n   the manager's take, $m, and in brackets what it is over section 12's lump:")
     print(f"\n{'AUM':>9} " + " ".join(f"{p:>16.0%}" for p in rates))
     for aum in aums:
         print(f"{aum / 1e9:>7.1f}bn " + " ".join(
             f"{cell[(aum, p)]['on_aum']['manager_take'] / 1e6:>8,.0f} "
             f"({cell[(aum, p)]['on_aum']['over_the_lump'] / 1e6:>+5,.0f})" for p in rates))
-    print(f"\n   incentive fee alone, $m, yearly against the lump, with the years it was paid in:")
+    print("\n   incentive fee alone, $m, yearly against the lump, with the years it was paid in:")
     print(f"\n{'AUM':>9} " + " ".join(f"{p:>18.0%}" for p in rates))
     for aum in aums:
         print(f"{aum / 1e9:>7.1f}bn " + " ".join(
             f"{cell[(aum, p)]['on_aum']['incentive'] / 1e6:>6,.0f} vs "
             f"{cell[(aum, p)]['on_aum']['lump_incentive'] / 1e6:>5,.0f} "
             f"{cell[(aum, p)]['on_aum']['years_incentive_paid']:>2}y" for p in rates))
-    print(f"\n   Per rate, whether the yearly fee moves anybody:")
+    print("\n   Per rate, whether the yearly fee moves anybody:")
     print(f"\n{'rate':>5} {'knee':>8} {'investor best':>14} {'manager best':>13} "
           f"{'extra past knee':>17} {'incentive at top':>17} {'lump':>8} {'paid in':>8} {'under':>6}")
     for a in alignment:
@@ -1953,28 +1953,28 @@ def print_self_financed(cells: list[dict], mgmt: float = MGMT_FEE, perf: float =
     rates = sorted({c["participation"] for c in cells})
     cell = {(c["aum"], c["participation"]): c for c in cells}
     print(f"\n14. PAY THE FEE OUT OF THE FUND   {mgmt:.0%} and {perf:.0%} out of the NAV, "
-          f"the position sized on what is left")
-    print(f"\n   where the NAV finishes the decade, as a share of where it started "
-          f"(* = started past its fee capacity):")
+          "the position sized on what is left")
+    print("\n   where the NAV finishes the decade, as a share of where it started "
+          "(* = started past its fee capacity):")
     print(f"\n{'AUM':>9} " + " ".join(f"{p:>10.0%}" for p in rates))
     for aum in aums:
         print(f"{aum / 1e9:>7.1f}bn " + " ".join(
             f"{1 + cell[(aum, p)]['nav_change']:>8.2f}x{'*' if cell[(aum, p)]['over_fee_capacity'] else ' '}"
             for p in rates))
-    print(f"\n   the manager's take, $m, and in brackets what it is over section 13's "
-          f"fee from the investor's pocket:")
+    print("\n   the manager's take, $m, and in brackets what it is over section 13's "
+          "fee from the investor's pocket:")
     print(f"\n{'AUM':>9} " + " ".join(f"{p:>17.0%}" for p in rates))
     for aum in aums:
         print(f"{aum / 1e9:>7.1f}bn " + " ".join(
             f"{cell[(aum, p)]['manager_take'] / 1e6:>8,.0f} "
             f"({cell[(aum, p)]['take_over_fixed'] / 1e6:>+6,.0f})" for p in rates))
-    print(f"\n   gross P&L the self-paid fund gave up against the fixed position, $m "
-          f"(a smaller book in the years after a loss):")
+    print("\n   gross P&L the self-paid fund gave up against the fixed position, $m "
+          "(a smaller book in the years after a loss):")
     print(f"\n{'AUM':>9} " + " ".join(f"{p:>10.0%}" for p in rates))
     for aum in aums:
         print(f"{aum / 1e9:>7.1f}bn " + " ".join(
             f"{cell[(aum, p)]['gross_given_up'] / 1e6:>10,.0f}" for p in rates))
-    print(f"\n   Per rate: the knee rung, the position the budget lets the desk hold, the flat gross "
+    print("\n   Per rate: the knee rung, the position the budget lets the desk hold, the flat gross "
           f"past the knee, and the AUM at which {mgmt:.0%} of it is that gross:")
     print(f"\n{'rate':>5} {'knee':>6} {'budget':>8} {'gross/yr':>9} {'on budget':>10} "
           f"{'fee capacity':>13} {'x budget':>9} {'crossed up':>14} {'crossed down':>14}")
@@ -2135,10 +2135,10 @@ def print_fee_schedules(cells: list[dict], comparison: list[dict],
     rates = sorted({c["participation"] for c in cells})
     cell = {(c["mgmt"], c["perf"], c["aum"], c["participation"]): c for c in cells}
     label = {s: f"{s[0] * 100:g}-and-{s[1] * 100:g}" for s in schedules}
-    print(f"\n15. THE SAME WALK AT OTHER FEE SCHEDULES   "
+    print("\n15. THE SAME WALK AT OTHER FEE SCHEDULES   "
           f"{', '.join(label[s] for s in schedules)}, out of the NAV")
-    print(f"\n   Per schedule and rate: the fee capacity as a multiple of the position, "
-          f"and the half-life of the pull toward it:")
+    print("\n   Per schedule and rate: the fee capacity as a multiple of the position, "
+          "and the half-life of the pull toward it:")
     print(f"\n{'rate':>5} " + " ".join(f"{label[s]:>19}" for s in schedules))
     for p in rates:
         parts = []
@@ -2152,8 +2152,8 @@ def print_fee_schedules(cells: list[dict], comparison: list[dict],
             else:
                 parts.append(f"{c['capacity_over_budget']:>9.1f}x {c['half_life_years']:>6.0f}y")
         print(f"{p:>5.0%} " + " ".join(f"{x:>19}" for x in parts))
-    print(f"\n   The investor's decade, net of fees, $m, at each schedule "
-          f"(* = started past the schedule's fee capacity):")
+    print("\n   The investor's decade, net of fees, $m, at each schedule "
+          "(* = started past the schedule's fee capacity):")
     for s in schedules:
         print(f"\n   {label[s]}")
         print(f"{'AUM':>9} " + " ".join(f"{p:>10.0%}" for p in rates))
@@ -2162,7 +2162,7 @@ def print_fee_schedules(cells: list[dict], comparison: list[dict],
                 f"{cell[(s[0], s[1], aum, p)]['investor_net'] / 1e6:>9,.0f}"
                 f"{'*' if cell[(s[0], s[1], aum, p)]['over_fee_capacity'] else ' '}" for p in rates))
     print(f"\n   The investor's share of the gross, where there was one, at {label[base]} "
-          f"against the others (same cells, same gross):")
+          "against the others (same cells, same gross):")
     print(f"\n{'AUM':>9} " + " ".join(f"{label[s]:>12}" for s in schedules))
     for aum in aums:
         mid = rates[len(rates) // 2]
@@ -2172,7 +2172,7 @@ def print_fee_schedules(cells: list[dict], comparison: list[dict],
             row.append(f"{share:>11.0%} " if share is not None else f"{'-':>12}")
         print(f"{aum / 1e9:>7.1f}bn " + " ".join(row) + f"   (at {mid:.0%})")
     print(f"\n   Against {label[base]}: the indifference gross return on the NAV, the AUM at "
-          f"which the flat gross is that return, and how often the walk agreed with the algebra:")
+          "which the flat gross is that return, and how often the walk agreed with the algebra:")
     print(f"\n{'schedule':>12} {'g*':>6} {'rate':>5} {'indiff. AUM':>12} {'investor better':>16} "
           f"{'ties':>5} {'agrees':>7} {'of':>3}")
     for s in schedules:
@@ -2397,7 +2397,7 @@ def print_hurdles(cells: list[dict], verdicts: dict, comparison: list[dict]) -> 
                     s = c["investor_share"]
                     row.append(f"{s:>12.1%}{'*' if c['over_hurdle_capacity'] else ' '} " if s is not None else f"{'-':>14}")
             print(f"{aum / 1e9:>7.1f}bn " + " ".join(row))
-        print(f"\n   (* = past the AUM at which the flat gross is the hurdle on the NAV)")
+        print("\n   (* = past the AUM at which the flat gross is the hurdle on the NAV)")
         print(f"\n   Exempt from the incentive fee across all {len(aums) * len(rates)} cells, $m, "
               f"and years charged of years up, at {mid:.0%}:")
         print(f"\n{'form':>9} " + " ".join(f"{h:>18.0%}" for h in hurdles if h > 0))
@@ -2427,9 +2427,9 @@ def print_hurdles(cells: list[dict], verdicts: dict, comparison: list[dict]) -> 
           f"and in the {v['catch_up_no_year_charged']} that charged anything the take is above "
           f"the hard hurdle's in {v['catch_up_take_above_hard']}.")
     if comparison:
-        print(f"\n   Two-and-twenty with a hard hurdle against plain zero-and-thirty: g*, how many "
-              f"cells the investor prefers the hurdled two-and-twenty in on the net and on the "
-              f"bill alone, and the algebra's score on each:")
+        print("\n   Two-and-twenty with a hard hurdle against plain zero-and-thirty: g*, how many "
+              "cells the investor prefers the hurdled two-and-twenty in on the net and on the "
+              "bill alone, and the algebra's score on each:")
         print(f"\n{'hurdle':>7} {'g*':>6} {'algebra':>8} {'net':>5} {'agrees':>7} {'bill':>5} {'agrees':>7} {'of':>3}")
         for h in sorted({c["hurdle"] for c in comparison}):
             rows = [c for c in comparison if c["hurdle"] == h]
@@ -2466,7 +2466,7 @@ def print_cost_curves(rows: list[dict], cross: float | None, price: float,
     if cross is None:
         print("\n   The book is cheaper at every size tested.")
     else:
-        print(f"\n   Crossover: the book starts costing more than a flat 2 bps "
+        print("\n   Crossover: the book starts costing more than a flat 2 bps "
               f"at {cross:.2%} of a day's volume")
         print(f"   ({int(cross * volume):,} shares, about "
               f"${cross * volume * price / 1e6:,.0f}M of {SYMBOL}).")
@@ -2475,10 +2475,10 @@ def print_cost_curves(rows: list[dict], cross: float | None, price: float,
 def print_crossover_by_shape(rows: list[dict], price: float,
                              volume: float) -> None:
     """The correction the depth profile makes to section 1's headline number."""
-    print(f"\n1b. WHAT SHAPING THE BOOK DOES TO THAT CROSSOVER")
-    print(f"    shape 0 is the flat book this handler shipped with. Total "
-          f"resting size is")
-    print(f"    identical down the column - only its distribution changes.")
+    print("\n1b. WHAT SHAPING THE BOOK DOES TO THAT CROSSOVER")
+    print("    shape 0 is the flat book this handler shipped with. Total "
+          "resting size is")
+    print("    identical down the column - only its distribution changes.")
     print(f"\n{'shape':>7} {'at the touch':>14} {'crossover':>11} "
           f"{'shares':>12} {'notional':>11}")
     for r in rows:
@@ -2496,19 +2496,19 @@ def print_crossover_by_shape(rows: list[dict], price: float,
         ratio = flat["crossover_frac"] / shaped["crossover_frac"]
         print(f"\n    At the shipped default of {SHAPE}, the crossover arrives "
               f"{ratio:.1f}x sooner than")
-        print(f"    the flat book said it would. Capacity is untouched - the "
-              f"book holds the same")
+        print("    the flat book said it would. Capacity is untouched - the "
+              "book holds the same")
         print(f"    {shaped['capacity_shares']:,} shares either way - so this "
-              f"is purely the cost of")
-        print(f"    reaching past a thinner touch.")
+              "is purely the cost of")
+        print("    reaching past a thinner touch.")
 
 
 def print_crossover_by_decay(rows: list[dict], price: float,
                              volume: float) -> None:
     print(f"\n1d. AND WHERE THE FAR BOOK EMPTIES OUT   (shape {SHAPE}, "
-          f"total size held fixed)")
-    print(f"    The ramp's heaviest level is its furthest. Letting the profile "
-          f"decay past a peak:")
+          "total size held fixed)")
+    print("    The ramp's heaviest level is its furthest. Letting the profile "
+          "decay past a peak:")
     fracs = list(rows[0]["cost_bps"])
     print(f"\n{'decay':>7} {'peak lvl':>9} {'touch':>7} {'half depth':>11} "
           f"{'lvl 200':>8}" + "".join(f"{f'{float(x):.2%}':>9}" for x in fracs)
@@ -2521,18 +2521,18 @@ def print_crossover_by_decay(rows: list[dict], price: float,
               f"{r['half_depth_level']:>11} {r['far_level_multiple']:>7.3f}x"
               + "".join(f"{r['cost_bps'][x]:>9.2f}" for x in fracs)
               + f" {cross:>11}")
-    print(f"    (cost in bps per share by order size as a share of the day; "
-          f"touch and lvl 200 as multiples of the flat per-level size)")
+    print("    (cost in bps per share by order size as a share of the day; "
+          "touch and lvl 200 as multiples of the flat per-level size)")
     lo = min(r["crossover_frac"] for r in rows if r["crossover_frac"])
     hi = max(r["crossover_frac"] for r in rows if r["crossover_frac"])
     print(f"\n    The crossover runs from {lo:.2%} to {hi:.2%} of a day's "
           f"volume - ${lo * volume * price / 1e6:,.0f}M to "
           f"${hi * volume * price / 1e6:,.0f}M of SPY -")
     print(f"    on a parameter nothing here observes. That {hi / lo:.0f}x "
-          f"range is the error bar on the headline,")
-    print(f"    and the reason the handler ships the ramp: it is the dearest "
-          f"book of the family, so")
-    print(f"    the one number it cannot do is flatter the strategy.")
+          "range is the error bar on the headline,")
+    print("    and the reason the handler ships the ramp: it is the dearest "
+          "book of the family, so")
+    print("    the one number it cannot do is flatter the strategy.")
 
 
 def print_vol_elasticity(study: dict) -> None:
@@ -2541,12 +2541,12 @@ def print_vol_elasticity(study: dict) -> None:
     flat = next((r for r in rows if r["elasticity"] == 0.0), None)
     shipped = next((r for r in rows if r["elasticity"] == VOL_ELASTICITY), None)
 
-    print(f"\n1c. AND IT IS NOT THE SAME DEPTH EVERY DAY   "
+    print("\n1c. AND IT IS NOT THE SAME DEPTH EVERY DAY   "
           f"(at ${study['aum'] / 1e9:.0f}bn)")
-    print(f"    Resting size scales as (typical vol / current vol) ** "
-          f"elasticity, measured on a")
+    print("    Resting size scales as (typical vol / current vol) ** "
+          "elasticity, measured on a")
     print(f"    {study['vol_window']}-bar window against an expanding median "
-          f"of itself. 0 is the constant book.")
+          "of itself. 0 is the constant book.")
     print(f"\n{'elasticity':>11} {'depth met':>10} {'cost/share':>11} "
           f"{'sharpe':>8} {'return':>9} {'levels':>8}")
     for r in rows:
@@ -2558,17 +2558,17 @@ def print_vol_elasticity(study: dict) -> None:
     if shipped is None or np.isnan(shipped["multiplier"]):
         return
 
-    print(f"\n    Across every bar in the sample the multiplier averages "
+    print("\n    Across every bar in the sample the multiplier averages "
           f"{study['unconditional_multiplier']:.2f}, so")
-    print(f"    the book has not been made thinner overall. On the bars this "
-          f"strategy chose to")
+    print("    the book has not been made thinner overall. On the bars this "
+          "strategy chose to")
     print(f"    trade it averages {shipped['multiplier']:.2f}. Its fills land "
           f"at the {shipped['vol_percentile'] * 100:.0f}th percentile of")
-    print(f"    realized volatility, not the 50th, because a moving-average "
-          f"crossover fires after")
-    print(f"    a trend breaks and a trend breaking IS a volatility event. "
-          f"The signal is")
-    print(f"    correlated with illiquidity by construction.")
+    print("    realized volatility, not the 50th, because a moving-average "
+          "crossover fires after")
+    print("    a trend breaks and a trend breaking IS a volatility event. "
+          "The signal is")
+    print("    correlated with illiquidity by construction.")
 
     matched = study.get("level_matched")
     if matched and flat:
@@ -2576,21 +2576,21 @@ def print_vol_elasticity(study: dict) -> None:
         level = matched["cost_bps"] - flat["cost_bps"]
         if total > 0:
             print(f"\n    Splitting that {total:+.2f} bps a share. A constant "
-                  f"book held at the same")
+                  "book held at the same")
             print(f"    {matched['matched_to']:.2f}x - thinner every day, but "
-                  f"never thinner on the days that")
+                  "never thinner on the days that")
             print(f"    matter - costs {level:+.2f} bps. So {level / total:.0%} "
-                  f"of the extra cost is nothing")
-            print(f"    but WHEN this strategy trades, and the remaining "
+                  "of the extra cost is nothing")
+            print("    but WHEN this strategy trades, and the remaining "
                   f"{1 - level / total:.0%} is the convexity")
-            print(f"    of cost in depth: the level of the co-movement matters "
+            print("    of cost in depth: the level of the co-movement matters "
                   f"{level / (total - level):.0f}x more than")
-            print(f"    the spread around it.")
+            print("    the spread around it.")
 
 
 def print_capacity(rows: list[dict]) -> None:
     base = rows[0]
-    print(f"\n2. THE SAME CAPACITY LADDER UNDER BOTH MODELS")
+    print("\n2. THE SAME CAPACITY LADDER UNDER BOTH MODELS")
     print(f"   baseline, no liquidity limit: Sharpe {base['sharpe']:.2f}")
     print(f"\n{'AUM':>8} {'days of vol':>12} {'deployed':>9} "
           f"{'sqrt sharpe':>12} {'book sharpe':>12} {'gap':>7} {'levels':>7}")
@@ -2615,7 +2615,7 @@ def print_depth_sweep(rows: list[dict], aum: float) -> None:
 
 def print_fees(bill: dict) -> None:
     free, paid = bill["no fees"], bill["maker-taker"]
-    print(f"\n4. THE VENUE'S CUT   every order is a taker, so 30 mils on all of it")
+    print("\n4. THE VENUE'S CUT   every order is a taker, so 30 mils on all of it")
     print(f"   Sharpe {free['sharpe']:.2f} with no fees, "
           f"{paid['sharpe']:.2f} on maker-taker "
           f"({paid['sharpe'] - free['sharpe']:+.2f})")
@@ -2623,8 +2623,8 @@ def print_fees(bill: dict) -> None:
 
 
 def print_memory_sweep(rows: list[dict], closes: dict) -> None:
-    print(f"\n5. WHAT THE BOOK REMEMBERS   the sliced order, charged for its "
-          f"own earlier slices")
+    print("\n5. WHAT THE BOOK REMEMBERS   the sliced order, charged for its "
+          "own earlier slices")
     print(f"\n{'aum':>6} {'persist':>8} {'recovery':>9} {'sharpe':>7} "
           f"{'sqrt':>6} {'return':>8} {'cost':>7} {'carried':>8} "
           f"{'max carried':>12} {'slices':>7} {'deployed':>9}")
@@ -2641,7 +2641,7 @@ def print_memory_sweep(rows: list[dict], closes: dict) -> None:
                  else f"with a {recovery}-bar half-life")
         if p is None:
             print(f"   ${float(aum) / 1e9:.0f}bn {where}: no persistence "
-                  f"brings the book down to the square-root model.")
+                  "brings the book down to the square-root model.")
         else:
             print(f"   ${float(aum) / 1e9:.0f}bn {where}: at or below the "
                   f"square-root model from persistence {p:.2f}.")
@@ -2713,10 +2713,10 @@ def _sections(prices, opens, volumes, quick: bool) -> dict:
         cap = capacity_under_both(prices, opens, volumes, aums=aums)
         print_capacity(cap)
         readable = interpretable_to(cap, "book")
-        print(f"\n   Both Sharpe columns are only readable up to "
+        print("\n   Both Sharpe columns are only readable up to "
               f"${readable / 1e9:.1f}bn, where 90% of the book still reaches the "
-              f"market.\n   Above that the rising Sharpe is idle cash, not "
-              f"capacity - see interpretable_to().")
+              "market.\n   Above that the rising Sharpe is idle cash, not "
+              "capacity - see interpretable_to().")
         return {"capacity": cap}
 
     def s3(have):
