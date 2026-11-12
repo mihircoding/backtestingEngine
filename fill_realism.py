@@ -1761,9 +1761,46 @@ def gain_at(column: list[dict], nav: float, year: int) -> float:
     return float(np.interp(nav, aums, gains))
 
 
+def hurdle_incentive(pre: float, mark: float, perf: float, hurdle: float,
+                     form: str = "hard") -> float:
+    """The incentive fee for one year, with a hurdle in the clause.
+
+    `pre` is the NAV after the gross and the management fee, `mark` the
+    high-water mark going in, `hurdle` the year's return on the mark the
+    fund has to make first. Three forms of clause are in use:
+
+    hard      the fee is perf of what stands above the hurdle. The first
+              `hurdle` of the return is the investor's whatever happens.
+    soft      the fee is perf of everything above the MARK, but only in a
+              year the hurdle is cleared. One dollar over the hurdle is
+              the whole year's fee; one dollar under it is none.
+    catch_up  the manager takes all of what stands above the hurdle until
+              that equals perf of what stands above the mark, then perf
+              of the rest - the private-equity waterfall. In a year big
+              enough to finish the catch-up this is the plain fee; in one
+              that is not, the manager has everything above the hurdle,
+              which is more than the hard hurdle's perf of it and less
+              than the plain fee's perf of the excess.
+
+    With no hurdle all three are the fifth above the mark.
+    """
+    excess = pre - mark
+    over = pre - mark * (1.0 + hurdle)
+    if excess <= 0.0 or over <= 0.0:
+        return 0.0
+    if form == "hard":
+        return perf * over
+    if form == "soft":
+        return perf * excess
+    if form == "catch_up":
+        return min(over, perf * excess)
+    raise ValueError(f"no hurdle form {form!r}; one of hard, soft, catch_up")
+
+
 def fund_walk(column: list[dict], start: float, knee: float | None,
               mgmt: float = MGMT_FEE, perf: float = PERF_FEE,
-              bars_per_year: int = TRADING_DAYS) -> dict:
+              bars_per_year: int = TRADING_DAYS, hurdle: float = 0.0,
+              form: str = "hard") -> dict:
     """Run the fund on its own NAV: gains stay in, fees come out, and the
     position each year is whatever the NAV can hold.
 
@@ -1778,10 +1815,18 @@ def fund_walk(column: list[dict], start: float, knee: float | None,
     winnings trades a bigger one - so past the knee the gross is still
     section 11's flat dollars, but the fee basis moves every year, and
     under the knee the gross moves with it.
+
+    `hurdle` is a yearly return on the high-water mark the fund has to
+    make before the incentive is charged, prorated by bars like the
+    management fee, and `form` is what happens when it does - see
+    hurdle_incentive(). At 0 all three forms are the plain fifth above the
+    mark that sections 13-15 charged. The hurdle is the year's, not a
+    running one: a year that does not clear it is not owed it later.
     """
     nav = mark = start
-    paid = {"management": 0.0, "incentive": 0.0}
+    paid = {"management": 0.0, "incentive": 0.0, "exempt": 0.0}
     gross = 0.0
+    years = {"up": 0, "charged": 0, "caught_up": 0}
     schedule = []
     crossed_down = crossed_up = None
     for i, (date, _, bars) in enumerate(column[0]["year_ends"]):
@@ -1789,12 +1834,21 @@ def fund_walk(column: list[dict], start: float, knee: float | None,
         gain = gain_at(column, nav, i)
         fee = mgmt * nav * bars / bars_per_year
         pre = nav + gain - fee
-        incentive = perf * max(pre - mark, 0.0)
+        excess = max(pre - mark, 0.0)
+        rate = hurdle * bars / bars_per_year
+        incentive = hurdle_incentive(pre, mark, perf, rate, form)
+        # what the plain fifth would have taken and the hurdle let through
+        exempt = perf * excess - incentive
+        caught_up = excess > 0.0 and rate > 0.0 and abs(exempt) < 1e-6 * max(perf * excess, 1.0)
         nav = pre - incentive
         mark = max(mark, nav)
         gross += gain
         paid["management"] += fee
         paid["incentive"] += incentive
+        paid["exempt"] += exempt
+        years["up"] += excess > 0.0
+        years["charged"] += incentive > 0.0
+        years["caught_up"] += caught_up
         if knee is not None:
             # Only a fund that STARTED on one side counts as crossing to the
             # other: a cell sitting on the knee rung dips under it in any
@@ -1804,7 +1858,8 @@ def fund_walk(column: list[dict], start: float, knee: float | None,
             if start < knee <= nav and crossed_up is None:
                 crossed_up = date[:4]
         schedule.append({"year": date[:4], "sized_on": sized_on, "gross_gain": gain,
-                         "management": fee, "incentive": incentive, "nav": nav,
+                         "management": fee, "incentive": incentive, "exempt": exempt,
+                         "excess_over_mark": excess, "caught_up": caught_up, "nav": nav,
                          "high_water_mark": mark,
                          "under_the_knee": (knee is not None and sized_on < knee)})
     take = paid["management"] + paid["incentive"]
@@ -1812,7 +1867,8 @@ def fund_walk(column: list[dict], start: float, knee: float | None,
             "investor_net_return": (gross - take) / start, "start": start, "final_nav": nav,
             "nav_change": nav / start - 1.0, "high_water_mark": mark,
             "crossed_knee_down": crossed_down, "crossed_knee_up": crossed_up,
-            "schedule": schedule}
+            "years_up": years["up"], "years_charged": years["charged"],
+            "years_caught_up": years["caught_up"], "schedule": schedule}
 
 
 def fee_capacity(column: list[dict], knee: float | None, mgmt: float = MGMT_FEE,
@@ -1951,7 +2007,8 @@ FEE_SCHEDULES = ((0.02, 0.20), (0.01, 0.10), (0.00, 0.30), (0.02, 0.00))
 
 def indifference_return(a: tuple, b: tuple) -> float | None:
     """The gross return on the NAV at which an investor is paid the same under
-    schedule `a` as under `b`, each a (mgmt, perf) pair.
+    schedule `a` as under `b`, each a (mgmt, perf) pair or a (mgmt, perf,
+    hurdle) triple with a hard hurdle in it.
 
     In a year the mark is cleared the investor keeps (1 - perf) of the gross
     less the management fee, so with g the gross as a share of the NAV the
@@ -1961,11 +2018,21 @@ def indifference_return(a: tuple, b: tuple) -> float | None:
     below it the one with the higher management fee does. Two schedules
     with the same incentive fee never cross - the lower management fee is
     cheaper at every return - and that is the None.
+
+    A hard hurdle h hands the investor perf x h of the NAV back in a year
+    it is cleared, so it enters as a rebate: g* picks up (p_b h_b - p_a h_a)
+    on top. Against zero-and-thirty, two-and-twenty's 16% falls by twice
+    the hurdle - 6% at a 5% hurdle, and nothing at an 8% one.
     """
-    (ma, pa), (mb, pb) = a, b
+    (ma, pa, ha), (mb, pb, hb) = _schedule(a), _schedule(b)
     if pa == pb:
         return None
-    return ((1.0 - pa) * ma - (1.0 - pb) * mb) / (pb - pa)
+    return ((1.0 - pa) * ma - (1.0 - pb) * mb + pb * hb - pa * ha) / (pb - pa)
+
+
+def _schedule(s: tuple) -> tuple:
+    """(mgmt, perf) or (mgmt, perf, hurdle), as (mgmt, perf, hurdle)."""
+    return (s[0], s[1], s[2] if len(s) > 2 else 0.0)
 
 
 def fee_schedule_sweep(rows: list[dict], knees: list[dict],
@@ -2127,6 +2194,258 @@ def print_fee_schedules(cells: list[dict], comparison: list[dict],
     print(f"\n   The largest take on the surface is {label[(worst['mgmt'], worst['perf'])]} at "
           f"${worst['aum'] / 1e9:.0f}bn and {worst['participation']:.0%}: "
           f"${worst['manager_take'] / 1e6:,.0f}m on ${worst['gross_pl'] / 1e6:,.0f}m gross.")
+
+
+# Section 16: a hurdle in the clause. Section 15's identity says the mark
+# decides when the investor pays and not how much; a hurdle is the other
+# thing an incentive clause usually has in it, and the question is which
+# of the two it moves. 2% is a cash rate, 5% and 8% are the preferred
+# returns private funds quote.
+HURDLES = (0.0, 0.02, 0.05, 0.08)
+HURDLE_FORMS = ("hard", "soft", "catch_up")
+HURDLE_SCHEDULES = ((0.0, 0.30), (0.02, 0.20))
+
+
+def hurdle_sweep(rows: list[dict], knees: list[dict], hurdles=HURDLES,
+                 forms=HURDLE_FORMS, schedules=HURDLE_SCHEDULES) -> list[dict]:
+    """Section 14's walk on every cell with a hurdle in the incentive clause,
+    at zero-and-thirty, where section 15 found the split is a constant, and
+    at two-and-twenty.
+
+    The prediction, written first, and the first half of it is the one the
+    Nov 10 note made: by section 15's identity a hurdle cannot change how
+    much the investor pays if the fund ends on its mark, only when. That
+    is wrong, and it is wrong for a reason worth having: the identity rests
+    on the mark moving by (1 - perf) of what was charged, so that every
+    dollar above the mark is charged once. A hurdle lets some of those
+    dollars through uncharged, and the mark moves up by them all the same -
+    so they are never charged later. The hurdle is an exemption, not a
+    delay. Precisely: with no management fee, in every cell that ends on
+    its mark, the investor's share is (1 - perf) plus the exempt dollars
+    over the gross, whatever the form of the clause.
+
+    How much is exempt depends on the form. HARD exempts perf x hurdle x
+    mark in every charged year, so the share rises in every cell with a
+    charged year, by more the smaller the gross on the NAV - and past the
+    AUM where the flat gross is the hurdle on the NAV (G / h, the mirror
+    of the fee capacity G / mgmt) nothing is charged at all and the
+    investor keeps everything. SOFT exempts whole years: the ones that
+    cleared the mark but not the hurdle. On a tape with 2021 and 2024 in
+    it, most years either clear a 5% hurdle by a distance or miss it by
+    one, so the soft share should be either 70% or well above it, with
+    little between. CATCH_UP restores the plain fee in a year whose excess
+    over the mark is at least hurdle / (1 - perf) of the mark - 7.1% at a
+    5% hurdle and 30% - and is the hard hurdle in any other year; so it
+    should put the share back on (1 - perf) in the cells near the knee,
+    where the gross on the NAV is 10-12%, and leave the hard hurdle's
+    share standing past the hurdle capacity.
+
+    At two-and-twenty the hurdle does not move the fee capacity, which is
+    where the management fee is the whole gross and nothing is ever above
+    the mark to hurdle. It does change the investor's answer to section 15:
+    a hard hurdle is a rebate of perf x hurdle of the NAV, so the
+    indifference return against zero-and-thirty falls by twice the hurdle,
+    from 16% to 6% at a 5% hurdle, and the cells near the knee gross more
+    than 6% on the NAV. With a 5% hurdle the investor should prefer
+    two-and-twenty in those cells and zero-and-thirty everywhere else; with
+    an 8% hurdle g* is zero and two-and-twenty should win every cell with
+    a profit in it - in the years it is charged. In the years it is not,
+    the 2% is still paid, which is where the algebra on the mean and the
+    walk should part.
+    """
+    knee_at = {k["participation"]: k for k in knees}
+    out = []
+    for rate in sorted({r["participation"] for r in rows}):
+        col = sorted((r for r in rows if r["participation"] == rate), key=lambda r: r["aum"])
+        k = knee_at.get(rate, {})
+        knee = k.get("knee_aum")
+        for mgmt, perf in schedules:
+            cap = fee_capacity(col, knee, mgmt, perf, k.get("position_at_knee", 1.0))
+            flat = cap["flat_gross_per_year"]
+            for form in forms:
+                for h in hurdles:
+                    for r in col:
+                        w = fund_walk(col, r["aum"], knee, mgmt, perf, hurdle=h, form=form)
+                        gross = w["gross_pl"]
+                        share = w["investor_net"] / gross if gross > 0 else None
+                        out.append({"mgmt": mgmt, "perf": perf, "hurdle": h, "form": form,
+                                    "aum": r["aum"], "participation": rate, "knee_aum": knee,
+                                    "fee_capacity": cap["fee_capacity"],
+                                    "hurdle_capacity": flat / h if h else None,
+                                    "over_hurdle_capacity": bool(h) and r["aum"] > flat / h,
+                                    **{key: w[key] for key in ("management", "incentive", "exempt",
+                                                               "manager_take", "gross_pl",
+                                                               "investor_net", "final_nav",
+                                                               "nav_change", "years_up",
+                                                               "years_charged", "years_caught_up")},
+                                    "ends_at_the_mark": w["final_nav"] >= w["high_water_mark"] * (1 - 1e-12),
+                                    "gross_on_nav_per_year": gross / r["aum"] / len(w["schedule"]),
+                                    "investor_share": share,
+                                    "share_over_plain": (share - (1.0 - perf)) if share is not None else None,
+                                    "exempt_share": (w["exempt"] / gross) if gross > 0 else None})
+    return out
+
+
+def hurdle_verdicts(cells: list[dict]) -> dict:
+    """The predictions in hurdle_sweep's docstring, scored on the cells.
+
+    Only the no-management-fee cells with a hurdle and a profit are read,
+    because the identity is about the incentive fee alone; the
+    two-and-twenty side is scored by hurdle_comparison().
+    """
+    free = [c for c in cells if c["mgmt"] == 0.0 and c["hurdle"] > 0 and c["gross_pl"] > 0]
+    on_mark = [c for c in free if c["ends_at_the_mark"]]
+    identity = sum(abs(c["investor_share"] - (1.0 - c["perf"]) - c["exempt_share"]) < 1e-9
+                   for c in on_mark)
+    hard = [c for c in free if c["form"] == "hard"]
+    charged = [c for c in hard if c["years_charged"] > 0]
+    past = [c for c in hard if c["over_hurdle_capacity"]]
+    soft = [c for c in free if c["form"] == "soft"]
+    cu = [c for c in free if c["form"] == "catch_up"]
+    by_hard = {(c["hurdle"], c["aum"], c["participation"]): c for c in hard}
+    every_year = [c for c in cu if c["years_caught_up"] == c["years_up"]]
+    no_year = [c for c in cu if c["years_caught_up"] == 0]
+    return {
+        "cells_read": len(free),
+        # 1. the exempt sum is the whole of the hurdle's effect on the amount
+        "on_the_mark": len(on_mark),
+        "share_is_plain_plus_exempt": identity,
+        "exempt_somewhere": sum(c["exempt"] > 0 for c in on_mark),
+        # 2. hard: above the plain share wherever a year was charged, all of
+        #    it wherever none was, and nothing charged past G / h
+        "hard_charged": len(charged),
+        "hard_share_above_plain": sum(c["share_over_plain"] > 1e-9 for c in charged),
+        "hard_uncharged_keep_everything": sum(c["investor_share"] == 1.0
+                                              for c in hard if c["years_charged"] == 0),
+        "hard_past_hurdle_capacity": len(past),
+        "hard_past_capacity_uncharged": sum(c["years_charged"] == 0 for c in past),
+        # 3. soft: whole years, so the share is the plain one or well above it
+        "soft_on_plain": sum(abs(c["share_over_plain"]) < 1e-9 for c in soft),
+        "soft_above_plain": sum(c["share_over_plain"] > 1e-9 for c in soft),
+        "soft_within_five_points": sum(1e-9 < c["share_over_plain"] < 0.05 for c in soft),
+        # 4. catch-up: the plain fee where every up year caught up, the hard
+        #    hurdle where none did
+        "catch_up_every_year": len(every_year),
+        "catch_up_restores_plain": sum(abs(c["share_over_plain"]) < 1e-9 for c in every_year),
+        "catch_up_no_year": len(no_year),
+        "catch_up_is_hard": sum(abs(c["investor_net"]
+                                    - by_hard[(c["hurdle"], c["aum"], c["participation"])]["investor_net"]) < 1.0
+                                for c in no_year),
+        "catch_up_no_year_charged": sum(c["years_charged"] > 0 for c in no_year),
+        "catch_up_take_above_hard": sum(c["incentive"]
+                                        > by_hard[(c["hurdle"], c["aum"], c["participation"])]["incentive"] + 1.0
+                                        for c in no_year if c["years_charged"] > 0),
+    }
+
+
+def hurdle_comparison(cells: list[dict], base: tuple = (0.0, 0.30),
+                      against: tuple = (MGMT_FEE, PERF_FEE), form: str = "hard") -> list[dict]:
+    """Two-and-twenty with a hurdle against plain zero-and-thirty, cell by
+    cell, scored the way section 15 scored the schedules: the algebra's call
+    is made on the decade's mean gross on the starting NAV, the realized
+    call on the walk's investor net."""
+    ref = {(c["aum"], c["participation"]): c for c in cells
+           if (c["mgmt"], c["perf"], c["hurdle"]) == (*base, 0.0) and c["form"] == form}
+    out = []
+    for c in cells:
+        if (c["mgmt"], c["perf"]) != against or c["form"] != form or c["hurdle"] == 0.0:
+            continue
+        r = ref[(c["aum"], c["participation"])]
+        g_star = indifference_return(base, (*against, c["hurdle"]))
+        gap = c["investor_net"] - r["investor_net"]
+        # the gap is a bill and a book: what the hurdled schedule charged
+        # over the base, and what the fund grossed over it on the NAV the
+        # fees left it. The algebra is a statement about the bill on one
+        # gross, so it is scored on the bill as well as on the net.
+        bill = c["manager_take"] - r["manager_take"]
+        book = c["gross_pl"] - r["gross_pl"]
+        predicted = r["gross_on_nav_per_year"] > g_star
+        out.append({"hurdle": c["hurdle"], "aum": c["aum"], "participation": c["participation"],
+                    "indifference_return": g_star,
+                    "gross_on_nav_per_year": r["gross_on_nav_per_year"],
+                    "investor_net_over_base": gap, "take_over_base": bill,
+                    "gross_over_base": book, "investor_prefers_hurdled": gap > 0,
+                    "bill_is_cheaper": bill < 0, "algebra_prefers_hurdled": predicted,
+                    "years_charged": c["years_charged"], "years_up": c["years_up"],
+                    "agrees": (gap > 0) == predicted, "agrees_on_the_bill": (bill < 0) == predicted})
+    return out
+
+
+def print_hurdles(cells: list[dict], verdicts: dict, comparison: list[dict]) -> None:
+    aums = sorted({c["aum"] for c in cells})
+    rates = sorted({c["participation"] for c in cells})
+    hurdles = sorted({c["hurdle"] for c in cells})
+    forms = [f for f in HURDLE_FORMS if any(c["form"] == f for c in cells)]
+    cell = {(c["mgmt"], c["perf"], c["form"], c["hurdle"], c["aum"], c["participation"]): c
+            for c in cells}
+    mid = rates[len(rates) // 2]
+    free = next(((m, p) for m, p, *_ in cell if m == 0.0), None)
+    print(f"\n16. A HURDLE IN THE CLAUSE   {', '.join(f'{h:.0%}' for h in hurdles)} on the mark, "
+          f"{', '.join(forms)}, at {mid:.0%} participation")
+    if free:
+        m, p = free
+        print(f"\n   The investor's share of the gross at {m * 100:g}-and-{p * 100:g}, "
+              f"which is {1 - p:.0%} with no hurdle in every cell (section 15):")
+        print(f"\n{'AUM':>9} " + " ".join(f"{f'{f} {h:.0%}':>14}" for f in forms for h in hurdles if h > 0))
+        for aum in aums:
+            row = []
+            for f in forms:
+                for h in hurdles:
+                    if h == 0:
+                        continue
+                    c = cell[(m, p, f, h, aum, mid)]
+                    s = c["investor_share"]
+                    row.append(f"{s:>12.1%}{'*' if c['over_hurdle_capacity'] else ' '} " if s is not None else f"{'-':>14}")
+            print(f"{aum / 1e9:>7.1f}bn " + " ".join(row))
+        print(f"\n   (* = past the AUM at which the flat gross is the hurdle on the NAV)")
+        print(f"\n   Exempt from the incentive fee across all {len(aums) * len(rates)} cells, $m, "
+              f"and years charged of years up, at {mid:.0%}:")
+        print(f"\n{'form':>9} " + " ".join(f"{h:>18.0%}" for h in hurdles if h > 0))
+        for f in forms:
+            parts = []
+            for h in hurdles:
+                if h == 0:
+                    continue
+                these = [c for c in cells if (c["mgmt"], c["perf"], c["form"], c["hurdle"]) == (m, p, f, h)]
+                ex = sum(c["exempt"] for c in these) / 1e6
+                at_mid = [c for c in these if c["participation"] == mid]
+                yrs = f"{sum(c['years_charged'] for c in at_mid)}/{sum(c['years_up'] for c in at_mid)}"
+                parts.append(f"{ex:>10,.0f} {yrs:>7}")
+            print(f"{f:>9} " + " ".join(parts))
+    v = verdicts
+    print(f"\n   The identity, read on the {v['on_the_mark']} cells that end on their mark: "
+          f"share = (1 - perf) + exempt / gross in {v['share_is_plain_plus_exempt']}, "
+          f"exempt > 0 in {v['exempt_somewhere']}.")
+    print(f"   Hard: above the plain share in {v['hard_share_above_plain']} of {v['hard_charged']} "
+          f"charged cells; past the hurdle capacity {v['hard_past_capacity_uncharged']} of "
+          f"{v['hard_past_hurdle_capacity']} cells were never charged.")
+    print(f"   Soft: on the plain share in {v['soft_on_plain']}, above it in {v['soft_above_plain']}, "
+          f"within five points of it in {v['soft_within_five_points']}.")
+    print(f"   Catch-up: every up year caught up in {v['catch_up_every_year']} cells, and the plain "
+          f"share is back in {v['catch_up_restores_plain']}; no year caught up in "
+          f"{v['catch_up_no_year']}, {v['catch_up_is_hard']} of those are the hard hurdle to the dollar, "
+          f"and in the {v['catch_up_no_year_charged']} that charged anything the take is above "
+          f"the hard hurdle's in {v['catch_up_take_above_hard']}.")
+    if comparison:
+        print(f"\n   Two-and-twenty with a hard hurdle against plain zero-and-thirty: g*, how many "
+              f"cells the investor prefers the hurdled two-and-twenty in on the net and on the "
+              f"bill alone, and the algebra's score on each:")
+        print(f"\n{'hurdle':>7} {'g*':>6} {'algebra':>8} {'net':>5} {'agrees':>7} {'bill':>5} {'agrees':>7} {'of':>3}")
+        for h in sorted({c["hurdle"] for c in comparison}):
+            rows = [c for c in comparison if c["hurdle"] == h]
+            print(f"{h:>7.0%} {rows[0]['indifference_return']:>6.1%} "
+                  f"{sum(c['algebra_prefers_hurdled'] for c in rows):>8} "
+                  f"{sum(c['investor_prefers_hurdled'] for c in rows):>5} "
+                  f"{sum(c['agrees'] for c in rows):>7} "
+                  f"{sum(c['bill_is_cheaper'] for c in rows):>5} "
+                  f"{sum(c['agrees_on_the_bill'] for c in rows):>7} {len(rows):>3}")
+        cheaper = [c for c in comparison if c["bill_is_cheaper"]]
+        if cheaper:
+            worst = min(cheaper, key=lambda c: c["gross_over_base"])
+            print(f"\n   Where the bill is cheaper the book is smaller: at ${worst['aum'] / 1e9:g}bn, "
+                  f"{worst['participation']:.0%} and a {worst['hurdle']:.0%} hurdle the hurdled fund "
+                  f"paid ${-worst['take_over_base'] / 1e6:,.0f}m less and grossed "
+                  f"${-worst['gross_over_base'] / 1e6:,.0f}m less, on the NAV the 2% left it.")
 
 
 # ---------- reporting ----------
@@ -2509,8 +2828,21 @@ def _sections(prices, opens, volumes, quick: bool) -> dict:
         return {"fee_schedules": [list(s) for s in FEE_SCHEDULES],
                 "fee_schedule_sweep": cells, "fee_schedule_comparison": comparison}
 
+    def s16(have):
+        surface = need(have, "capacity_surface", 11)
+        if not all("year_ends" in r for r in surface):
+            raise SystemExit("section 11 in the results file predates the yearly curve: "
+                             "run `python fill_realism.py --section 11 --section 16`")
+        cells = hurdle_sweep(surface, need(have, "surface_knees", 11))
+        verdicts = hurdle_verdicts(cells)
+        comparison = hurdle_comparison(cells)
+        print_hurdles(cells, verdicts, comparison)
+        return {"hurdles": list(HURDLES), "hurdle_forms": list(HURDLE_FORMS),
+                "hurdle_sweep": cells, "hurdle_verdicts": verdicts,
+                "hurdle_comparison": comparison}
+
     return {1: s1, 2: s2, 3: s3, 4: s4, 5: s5, 6: s6, 7: s7, 8: s8, 9: s9, 10: s10, 11: s11,
-            12: s12, 13: s13, 14: s14, 15: s15}
+            12: s12, 13: s13, 14: s14, 15: s15, 16: s16}
 
 
 def main() -> None:

@@ -1674,6 +1674,179 @@ money: a manager on zero-and-thirty who makes nothing in a year makes
 nothing, and the equilibrium-size literature is about why that manager
 charges 2% anyway.
 
+### 16. Put a hurdle in the clause, and find it is an exemption, not a delay — the mark catches up to what it let through, and a 2% hurdle draws the fee capacity's line with the sign flipped
+
+Reproduce with: `python fill_realism.py --section 16` (arithmetic on section
+11; nothing is re-run)
+
+Section 15 ended on an identity: the high-water mark decides *when* the
+investor pays the incentive fee and not how much, because a fund that ends
+on its mark has paid exactly perf of its gross. The note that closed that
+day said a hurdle rate — the other thing an incentive clause usually has
+in it — could not change the amount either, by the same identity, only the
+timing. That is a clean claim, so this section tests it. Three forms of
+hurdle are in use and all three are run: **hard**, where the fee is perf of
+what stands above the hurdle and the first few percent are the investor's
+whatever happens; **soft**, where the fee is perf of everything above the
+mark but only in a year the hurdle is cleared; and **catch-up**, the
+private-equity waterfall, where the manager takes all of what stands above
+the hurdle until that equals perf of the excess over the mark, then perf of
+the rest. Each at 2%, 5% and 8% on the mark, prorated by bars like the
+management fee and reset yearly, on every cell of the surface, at
+zero-and-thirty — the schedule section 15 found the split is a constant on
+— and at two-and-twenty.
+
+The prediction, written first. The identity is wrong about hurdles, and it
+is wrong for a reason: it rests on the mark moving by (1 − perf) of what
+was charged, so that every dollar above the mark is charged once. A hurdle
+lets some of those dollars through uncharged and the mark moves up by them
+all the same, so they are never charged later. The hurdle is an exemption,
+not a delay, and precisely: with no management fee, in every cell that
+ends on its mark, the investor's share should be (1 − perf) plus the exempt
+dollars over the gross, in all three forms. How much is exempt depends on
+the form. Hard exempts perf × hurdle × mark in every charged year, so the
+share should rise in every cell with a charged year and rise more the
+smaller the gross on the NAV; past the AUM at which the flat gross is the
+hurdle on the NAV — G / h, the mirror of the fee capacity G / mgmt — nothing
+should be charged at all. Soft exempts whole years, the ones that clear the
+mark and not the hurdle, so with 2021 and 2024 on the tape the share should
+be either the plain 70% or well above it, with little between. Catch-up
+completes in a year whose excess over the mark is at least h / (1 − perf)
+of the mark, 7.1% at a 5% hurdle and 30%, so it should put the share back
+on 70% in the cells near the knee, where the gross on the NAV is 10–12%,
+and leave the hard hurdle's share standing past G / h. At two-and-twenty
+the hurdle should not move the fee capacity, since at G / mgmt nothing is
+above the mark to hurdle; but a hard hurdle is a rebate of perf × h of the
+NAV in a charged year, so the indifference return against zero-and-thirty
+should fall by twice the hurdle, from 16% to 6% at a 5% hurdle and to zero
+at 8%, and the investor should prefer the hurdled two-and-twenty in the
+cells near the knee at 5% and in every profitable cell at 8%.
+
+**The investor's share of the gross at zero-and-thirty**, 20%
+participation, which is 70.0% in every cell with no hurdle (\* = past the
+AUM at which the flat gross is the hurdle on the NAV):
+
+| AUM | hard 2% | hard 5% | hard 8% | soft 2% | soft 5% | soft 8% | catch-up 2% | catch-up 5% | catch-up 8% |
+|---|---|---|---|---|---|---|---|---|---|
+| $0.1bn | 73.0 | 76.9 | 80.1 | 70.4 | 70.4 | 71.6 | 70.4 | 71.5 | 71.6 |
+| $1bn | 72.9 | 76.7 | 80.6 | 70.4 | 70.4 | 70.4 | 70.4 | 70.4 | 70.4 |
+| $2bn | 72.7 | 76.7 | 80.7 | 70.0 | 70.0 | 70.0 | 70.0 | 70.0 | 70.0 |
+| $5bn | 73.2 | 78.0 | 82.9 | 70.0 | 70.0 | 70.0 | 70.0 | 70.0 | 72.9 |
+| $10bn | 73.3 | 78.2 | 83.3 | 70.0 | 70.0 | 70.0 | 70.0 | 70.0 | 71.3 |
+| $20bn | 74.6 | 81.7 | 87.8\* | 70.0 | 70.0 | 78.7\* | 70.0 | 70.6 | 78.7\* |
+| $100bn | 89.4\* | 99.6\* | 100.0\* | 79.3\* | 86.8\* | 100.0\* | 79.3\* | 98.7\* | 100.0\* |
+
+**The identity was wrong, and the exemption is the whole of the
+difference.** Across the 378 no-management-fee cells with a hurdle in them,
+all 378 end on their mark — with no fee on the NAV the fund only ever moves
+with the gross, and the decade ended at a high — and in all 378 the
+investor's share is (1 − perf) + exempt / gross to the ninth decimal, where
+*exempt* is what the plain fifth would have charged and the hurdle let
+through. It is positive in 334 of them. The manager's take across the
+surface, $63bn with no hurdle, is $45bn, $32bn and $23bn at a hard 2%, 5%
+and 8%; $57bn, $52bn and $42bn soft; $56bn, $47bn and $40bn with a
+catch-up. None of that is deferred: every cell ends on its mark, so there
+is nothing left to charge. The mark is not a memory of what the investor
+was spared; it is the NAV, and the NAV includes the exemption.
+
+**A 2% hurdle draws the fee capacity's line on the surface with the sign
+flipped.** The hard hurdle's capacity, the AUM past which the flat gross
+is under the hurdle on the NAV and a flat decade charges nothing, is
+G / h — $8.3bn at the patient rate and a 2% hurdle, $19bn at 5%
+participation, $136bn at 50% — which is the fee capacity to the digit,
+because the fee capacity is G / mgmt and the management fee is also 2%.
+The AUM past which a zero-and-thirty manager with a 2% hurdle is paid
+nothing is the AUM past which a two-and-twenty manager is paid
+everything: the same denominator, read from the other side of the table.
+At 5% it is $3.3bn to $55bn, at 8% $2.1bn to $34bn. The hard share is
+above 70% in all 112 cells where anything was charged, as predicted, and
+rises down the column, 73% at $0.1bn to 89% at $100bn at a 2% hurdle,
+because perf × h × mark is a share of the NAV and the gross is not. But
+"nothing charged past G / h" held in 14 of 35 cells: the other 21 are
+the decade's shape, not its mean. The $100bn desk at 30% grosses 1.8% of
+its NAV on the decade and 5.1%, 6.9% and 7.9% in 2020, 2021 and 2024, so
+a 2% hurdle charges three years and a 5% hurdle two — 2020 and 2021,
+$624m on $18.2bn; 2024's 7.9% was still under a mark 2022 broke — and
+only the 8% hurdle finds no year to charge. Section 15's three misses were
+these same cells: a threshold in the clause is read against the years, and
+the algebra on the mean is a statement about a flat decade.
+
+**Soft was lumpy in the wrong place.** The prediction was 70% or well
+above it, with little between; 67 of the 126 soft cells sit within five
+points of 70%, and the reason is a selection the prediction missed. A soft
+hurdle exempts the whole of a year that cleared the mark and not the
+hurdle — and a year that cleared the mark and not a 2% hurdle is, by
+construction, a year that made under 2% on the mark. The years a soft
+hurdle exempts are the small years. So its cliff is as tall as the hurdle
+and no taller, and across the surface it takes $52bn at 5% where the hard
+form takes $32bn, because the hard form exempts 5% of the mark in the big
+years too. The lumps are real where they are: the $100bn desk at 2%
+participation keeps 100% at every hurdle in every form, seven years up
+and none of them over 2% of a $100bn mark, and at $20bn and 20% an 8%
+hurdle takes the soft share from 70.0% to 78.7% in one step, two years
+that cleared a 5% hurdle — 2017 at 6.2% over the mark and 2024 at 7.3% —
+dropping out whole.
+
+**Catch-up restored the plain fee in 16 cells, and in the 20 where no
+year caught up it is not the hard hurdle.** The 16 are the cells grossing
+6–11% on the NAV with four or five up years, every one of which cleared
+the 2.9%, 7.1% or 11.4% of the mark the catch-up needs — $2bn to $20bn
+at 5% to 50% participation, fifteen of them at a 2% or 5% hurdle — and
+in all 16 the share is 70.0% again, to the ninth decimal: the waterfall is a timing device
+when it completes. It does not complete at the top of the surface, and
+the second half of the prediction said that would leave the hard hurdle's
+share standing. It does not. In a year that clears the hurdle and not the
+catch-up the manager has *everything* above the hurdle, which is more than
+the hard hurdle's perf of it: at $100bn and 30% the 5% catch-up charges
+$2.1bn where the hard hurdle charges $624m. Fourteen of the 20 match the
+hard hurdle to the dollar because both charged nothing; the six that
+charged anything are above it in all six. Across the surface the order is
+hard, catch-up, soft, plain — $32bn, $47bn, $52bn, $63bn at 5% — and the
+catch-up is the form that sits closest to the plain fee in the cells that
+can clear it and closest to the hard hurdle only in the cells nothing
+clears.
+
+**Two-and-twenty with a hurdle against zero-and-thirty: the algebra was
+right about the bill and wrong about the fund.** g\* falls as predicted —
+12%, 6% and 0% against zero-and-thirty at a 2%, 5% and 8% hurdle — and
+on the fees alone the hurdled two-and-twenty is cheaper in 6, 15 and 17
+cells of 42, against the algebra's 8, 29 and 42: right in 40 of 42 at a
+2% hurdle, where g\* is 12% and the call is mostly no, and in 17 of 42 at
+8%, where g\* is zero and the call is yes everywhere. But the investor
+prefers it on the decade's *net* in 0 cells of 42, at every hurdle. Two
+things the algebra leaves out, in the order they matter. The 2% is paid
+in every year, and the rebate only in a year the hurdle is cleared: a
+cell near the knee has three losing years, two that do not get back to
+the mark and one that clears it by less than the hurdle, so an 8% hurdle
+rebates in three or four years of ten and the fee is charged in ten. And under the knee the
+2% comes out of the book: at $2bn and 50% a 5% hurdle leaves the
+two-and-twenty investor a bill $3m lower than zero-and-thirty's and a
+gross $174m lower, because the fund traded 2021 and 2024 on the NAV the
+2% left it. Section 14 found the losses decide the book; this is the fee
+deciding it, by the same mechanism, and the book outweighs the rebate in
+every cell on the surface. The hurdle makes two-and-twenty cheaper than
+section 15 said and does not make it the investor's schedule.
+
+So: a hurdle is an exemption. Section 15's identity holds for the mark
+and fails for anything that lets dollars past the mark uncharged, because
+the mark then rises by them and the fee never sees them again — which is
+what a hurdle is for. The hard form exempts a share of the NAV and so draws
+a capacity on the surface, G / h, that at a 2% hurdle is the fee capacity
+with the sign flipped; the soft form exempts whole years and so only the
+small ones; the catch-up restores the plain fee where the year is big
+enough and takes more than the hard hurdle where it is not. And against
+the schedule the investor should have signed, a hurdle on two-and-twenty
+moves the bill and not the answer, because the 2% is still on the book.
+
+What this does not do: the hurdle resets every year, so a year that misses
+it is not owed it later; a cumulative hurdle would compound against the
+mark and charge less, by the compounding, in the cells that lose first. The
+catch-up is 100%, the usual form; a partial catch-up sits between the
+hard hurdle and this one. And the comparison is still the investor's
+decade on net dollars, not a fund raising money: a two-and-twenty manager
+with an 8% hurdle made nothing in six years of ten on this tape, and the
+equilibrium-size literature is about why that manager would not sign it.
+
 ### What this still does not model
 
 - One bar is one book. A day's liquidity is pooled into a single snapshot at
@@ -1730,7 +1903,12 @@ charges 2% anyway.
   this decade finished at its high. What is still not modeled: a fund that
   pays its fees out of its own NAV, so that clearing the mark shrinks the
   position the desk trades the next year — the one way the fee gets into
-  the P&L column rather than sitting beside it.
+  the P&L column rather than sitting beside it. Sections 14 and 15 do
+  that, and section 16 puts a hurdle in the clause and finds the mark's
+  identity does not survive it: what a hurdle lets through, the mark rises
+  by, so it is an exemption and not a delay. Still not modeled: a
+  cumulative hurdle, a clawback, and any crystallization period other than
+  the calendar year.
 - Every order is a taker. Passive execution is deliberately absent, and the
   reason is a measurement: pooling a day's volume puts ~153,000 shares at the
   touch, and section 8 of notes/exchange.md already showed that an order

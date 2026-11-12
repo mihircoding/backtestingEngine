@@ -135,10 +135,23 @@ zero-and-thirty the investor's share is 70% in all 42 cells, which is an
 identity about the high-water mark — it moves when the investor pays,
 not how much — and under two-and-twenty it runs from 67% at $100m to
 −54% at $100bn, the spread being the management fee, the one part of
-the bill that scales with the account.
+the bill that scales with the account. The thirteenth puts a hurdle in
+the clause — hard, soft and with a catch-up, at 2%, 5% and 8% — having
+claimed that the same identity makes it a timing device, and finds it is
+an exemption instead: what the hurdle lets through, the mark rises by,
+so it is never charged later, and in all 378 cells the investor's share
+is 70% plus exactly the exempt dollars over the gross. A hard 2% hurdle
+draws the fee capacity's line on the surface with the sign flipped, the
+AUM past which the manager is paid nothing being the AUM past which, at
+two-and-twenty, the manager is paid everything; a soft hurdle only ever
+exempts the small years, by construction; the catch-up is the plain fee
+where the year is big enough to finish it and takes more than the hard
+hurdle where it is not. And a hurdle on two-and-twenty moves the
+investor's bill and not the answer, because the 2% still comes out of
+the book.
 [RESULTS.md](RESULTS.md) has all of it, and the corrections.
 
-404 tests.
+410 tests.
 
 ```bash
 pip install -r requirements.txt

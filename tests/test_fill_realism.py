@@ -763,7 +763,7 @@ def test_a_section_run_refuses_a_different_tape_but_not_a_rerounded_one():
 def test_a_section_that_prints_beside_an_earlier_one_says_so_when_it_is_missing(capsys):
     prices, opens, volumes = _tape()
     sections = _sections(prices, opens, volumes, quick=True)
-    assert list(sections) == list(range(1, 16))
+    assert list(sections) == list(range(1, 17))
     # section 9 prints against section 8's rows; with nothing on disk it has to stop
     with pytest.raises(SystemExit, match="section 8"):
         sections[9]({})
@@ -1215,7 +1215,7 @@ def test_the_comparison_reads_each_schedule_against_two_and_twenty_and_scores_th
 def test_section_15_walks_every_cell_at_every_schedule_and_needs_the_yearly_curve(capsys):
     prices, opens, volumes = _tape()
     sections = _sections(prices, opens, volumes, quick=True)
-    assert list(sections) == list(range(1, 16))
+    assert list(sections) == list(range(1, 17))
     with pytest.raises(SystemExit, match="section 11"):
         sections[15]({"bars": 2520})
     stale = {"capacity_surface": [{"aum": 1e9, "participation": 0.1, "final": 1.1e9,
@@ -1231,3 +1231,137 @@ def test_section_15_walks_every_cell_at_every_schedule_and_needs_the_yearly_curv
     assert len(added["fee_schedule_sweep"]) == len(FEE_SCHEDULES) * len(col)
     assert len(added["fee_schedule_comparison"]) == (len(FEE_SCHEDULES) - 1) * len(col)
     assert "15. THE SAME WALK AT OTHER FEE SCHEDULES" in out and "0-and-30" in out
+
+
+# ---------- 16. a hurdle in the clause ----------
+
+from fill_realism import (HURDLES, HURDLE_FORMS, hurdle_comparison, hurdle_incentive,
+                          hurdle_sweep, hurdle_verdicts)
+
+
+def test_the_three_hurdle_forms_split_one_year_three_ways_and_no_hurdle_is_the_plain_fifth():
+    # $100 above a $1,000 mark with a 5% hurdle: $50 stands above the hurdle
+    assert hurdle_incentive(1100.0, 1000.0, 0.2, 0.05, "hard") == pytest.approx(0.2 * 50)
+    assert hurdle_incentive(1100.0, 1000.0, 0.2, 0.05, "soft") == pytest.approx(0.2 * 100)
+    # catch-up: the manager has the whole $50 over the hurdle, which is more
+    # than a fifth of the $100 excess, so the catch-up completes at $20
+    assert hurdle_incentive(1100.0, 1000.0, 0.2, 0.05, "catch_up") == pytest.approx(20.0)
+    # $60 above the mark clears the hurdle by $10, under the $12 a fifth of
+    # $60 would be: the catch-up does not complete, and the manager has the
+    # whole $10 - more than the hard hurdle's $2, less than the plain $12
+    assert hurdle_incentive(1060.0, 1000.0, 0.2, 0.05, "catch_up") == pytest.approx(10.0)
+    assert hurdle_incentive(1060.0, 1000.0, 0.2, 0.05, "hard") == pytest.approx(2.0)
+    # under the hurdle nothing is charged in any form, and under the mark neither
+    for form in HURDLE_FORMS:
+        assert hurdle_incentive(1030.0, 1000.0, 0.2, 0.05, form) == 0.0
+        assert hurdle_incentive(900.0, 1000.0, 0.2, 0.0, form) == 0.0
+        assert hurdle_incentive(1100.0, 1000.0, 0.2, 0.0, form) == pytest.approx(20.0)
+    with pytest.raises(ValueError, match="no hurdle form"):
+        hurdle_incentive(1100.0, 1000.0, 0.2, 0.05, "waterfall")
+
+
+def test_a_hurdle_is_an_exemption_not_a_delay():
+    # section 15's identity: with no management fee a fund that ends on its
+    # mark has paid exactly perf of its gross. A hurdle lets dollars through
+    # and the mark rises by them anyway, so they are never charged later -
+    # the share is (1 - perf) plus the exempt dollars over the gross
+    gains = [-300e6, 50e6, 400e6, -100e6, 200e6, 300e6, -50e6, 100e6, 100e6, 500e6]
+    col = _column(gains)
+    for form in HURDLE_FORMS:
+        for c in hurdle_sweep(col, [], hurdles=(0.05,), forms=(form,), schedules=((0.0, 0.3),)):
+            assert c["ends_at_the_mark"]
+            assert c["investor_share"] == pytest.approx(0.7 + c["exempt"] / c["gross_pl"])
+            assert c["exempt"] > 0 and c["investor_share"] > 0.7
+    # and in the hard form the exemption is perf x hurdle x the mark going
+    # into every charged year, plus the whole fifth in a year that cleared
+    # the mark and not the hurdle, to the dollar
+    hard = fund_walk(col, 5e9, None, mgmt=0.0, perf=0.3, hurdle=0.05, form="hard")
+    marks = [5e9] + [y["high_water_mark"] for y in hard["schedule"]]
+    charged = [(y, m) for y, m in zip(hard["schedule"], marks) if y["incentive"] > 0]
+    missed = [y for y in hard["schedule"] if y["incentive"] == 0 and y["excess_over_mark"] > 0]
+    assert charged and missed and hard["years_charged"] == len(charged)
+    assert hard["years_up"] == len(charged) + len(missed)
+    assert hard["exempt"] == pytest.approx(sum(0.3 * 0.05 * m for _, m in charged)
+                                           + sum(0.3 * y["excess_over_mark"] for y in missed))
+    # a hurdle no year clears is a fund that pays nothing and keeps everything
+    free = fund_walk(col, 5e9, None, mgmt=0.0, perf=0.3, hurdle=0.5, form="hard")
+    assert free["incentive"] == 0.0 and free["investor_net"] == pytest.approx(sum(gains))
+
+
+def test_soft_exempts_whole_years_and_catch_up_is_the_plain_fee_only_in_a_big_year():
+    # 3% on a $5bn book past the knee clears the mark but not a 5% hurdle;
+    # 20% clears both by a distance
+    small, big = 150e6, 1e9
+    col = _column([small, big] * 5)
+    soft = fund_walk(col, 5e9, None, mgmt=0.0, perf=0.3, hurdle=0.05, form="soft")
+    # the soft hurdle charges nothing in the small years and the plain fifth
+    # in the big ones, so the exempt sum is perf of the small years' excess
+    small_years = [y for y in soft["schedule"] if y["gross_gain"] == pytest.approx(small)]
+    assert all(y["incentive"] == 0.0 for y in small_years)
+    assert soft["exempt"] == pytest.approx(sum(0.3 * y["excess_over_mark"] for y in small_years))
+    # catch-up completes when the excess is hurdle / (1 - perf) of the mark,
+    # 7.1% at 5% and 30%: the big years finish it and are the plain fee; a
+    # year that clears the hurdle and not that hands the manager everything
+    # above the hurdle, which is less than the plain fifth of the excess
+    # and more than the hard hurdle's fifth of what is above the hurdle
+    cu = fund_walk(col, 5e9, None, mgmt=0.0, perf=0.3, hurdle=0.05, form="catch_up")
+    plain = fund_walk(col, 5e9, None, mgmt=0.0, perf=0.3)
+    assert cu["years_caught_up"] == 5
+    for y, p in zip(cu["schedule"], plain["schedule"]):
+        if y["gross_gain"] == pytest.approx(big):
+            assert y["caught_up"] and y["incentive"] == pytest.approx(p["incentive"])
+        else:
+            assert not y["caught_up"] and y["incentive"] == 0.0
+    # 6% on a $5bn mark clears a 5% hurdle by $50m and the catch-up needs $71m
+    mid = fund_walk(_column([300e6] + [1e9] * 9), 5e9, None, mgmt=0.0, perf=0.3,
+                    hurdle=0.05, form="catch_up")["schedule"][0]
+    assert not mid["caught_up"]
+    assert mid["incentive"] == pytest.approx(300e6 - 0.05 * 5e9)
+    assert 0.3 * (300e6 - 0.05 * 5e9) < mid["incentive"] < 0.3 * 300e6
+
+
+def test_an_eight_percent_hurdle_cancels_the_pull_at_two_and_twenty():
+    # past the knee the gross is flat, and in a charged year the NAV moves by
+    # (1 - perf) G - ((1 - perf) mgmt - perf x hurdle) NAV. At two-and-twenty
+    # and an 8% hurdle the bracket is 0.016 - 0.016: the NAV moves by 0.8 G
+    # whatever the NAV, so two funds of different sizes grow by the same dollars
+    col = _column([400e6] * 10, aums=(1e9, 2e9, 3e9, 5e9), knee=2e9)
+    walks = {aum: fund_walk(col, aum, 2e9, mgmt=0.02, perf=0.2, hurdle=0.08, form="hard")
+             for aum in (2e9, 3e9)}
+    for w in walks.values():
+        first = w["schedule"][0]
+        assert first["incentive"] > 0
+        assert first["nav"] - first["sized_on"] == pytest.approx(0.8 * 400e6)
+    # the plain fee pulls at 1.6% of the distance, so the two differ
+    plain = {aum: fund_walk(col, aum, 2e9, mgmt=0.02, perf=0.2) for aum in (2e9, 3e9)}
+    moves = [w["schedule"][0]["nav"] - w["schedule"][0]["sized_on"] for w in plain.values()]
+    assert moves[0] != pytest.approx(moves[1])
+
+
+def test_the_indifference_return_falls_by_twice_a_hard_hurdle():
+    assert indifference_return((0.0, 0.3), (0.02, 0.2, 0.05)) == pytest.approx(0.06)
+    assert indifference_return((0.0, 0.3), (0.02, 0.2, 0.08)) == pytest.approx(0.0, abs=1e-12)
+    assert indifference_return((0.02, 0.2, 0.05), (0.0, 0.3)) == pytest.approx(0.06)
+    # a pair is a triple with no hurdle
+    assert indifference_return((0.0, 0.3), (0.02, 0.2, 0.0)) == indifference_return((0.0, 0.3), (0.02, 0.2))
+
+
+def test_section_16_walks_every_cell_at_every_hurdle_and_form_and_scores_the_predictions(capsys):
+    prices, opens, volumes = _tape()
+    sections = _sections(prices, opens, volumes, quick=True)
+    with pytest.raises(SystemExit, match="section 11"):
+        sections[16]({"bars": 2520})
+    col = _column([-100e6, 150e6, 150e6, 150e6, 150e6, 150e6, 150e6, 150e6, 150e6, 150e6])
+    added = sections[16]({"capacity_surface": col, "surface_knees": [], "bars": 2520})
+    out = capsys.readouterr().out
+    assert set(added) == {"hurdles", "hurdle_forms", "hurdle_sweep", "hurdle_verdicts",
+                          "hurdle_comparison"}
+    assert len(added["hurdle_sweep"]) == 2 * len(HURDLE_FORMS) * len(HURDLES) * len(col)
+    assert len(added["hurdle_comparison"]) == (len(HURDLES) - 1) * len(col)
+    v = added["hurdle_verdicts"]
+    assert v["share_is_plain_plus_exempt"] == v["on_the_mark"] == v["cells_read"]
+    assert v["hard_share_above_plain"] == v["hard_charged"]
+    assert v["catch_up_restores_plain"] == v["catch_up_every_year"]
+    assert "16. A HURDLE IN THE CLAUSE" in out and "exemption" not in out
+    # the comparison is scored on the net and on the bill separately
+    assert all({"agrees", "agrees_on_the_bill", "gross_over_base"} <= set(c) for c in added["hurdle_comparison"])
