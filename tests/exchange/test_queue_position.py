@@ -166,3 +166,77 @@ def test_buckets_keep_every_outcome_exactly_once():
     rows = bucket(outcomes)
     assert sum(r["n"] for r in rows) == len(outcomes)
     assert all(r["fill_rate"] == 1.0 for r in rows)
+
+
+# ---------- section 9: the queue is allowed to melt ----------
+
+def test_a_melting_pad_is_many_orders_and_still_adds_up():
+    outcome = rest_one_order(warm_book(4), improve_ticks=1, pad=1_050,
+                             horizon=1, seed=4, melt=True, pad_lot=100)
+    if outcome is None:
+        pytest.skip("that book's spread was one tick wide; nothing to improve")
+    # eleven lots - ten of 100 and one of 50 - and the same 1,050 in front
+    assert outcome.ahead == 1_050
+    assert outcome.natural_ahead == 0
+
+
+def test_with_nothing_padded_held_and_melting_are_the_same_experiment():
+    held = rest_one_order(warm_book(2), pad=0, horizon=300, seed=2, melt=False)
+    melted = rest_one_order(warm_book(2), pad=0, horizon=300, seed=2, melt=True)
+    assert held is not None and melted is not None
+    assert held == melted
+
+
+def test_a_held_queue_never_loses_shares_to_a_cancel():
+    for seed in range(3):
+        o = rest_one_order(warm_book(seed), improve_ticks=1, pad=4_000,
+                           horizon=2_000, seed=seed, melt=False)
+        if o is None:
+            continue
+        assert o.cancelled_ahead == 0
+        assert o.traded_ahead + o.ahead_at_exit == o.ahead
+
+
+def test_a_melting_queue_does_lose_shares_to_cancels():
+    cancelled = 0
+    for seed in range(6):
+        o = rest_one_order(warm_book(seed), improve_ticks=1, pad=30_000,
+                           horizon=2_000, seed=seed, melt=True)
+        if o is None:
+            continue
+        assert o.traded_ahead + o.cancelled_ahead + o.ahead_at_exit == o.ahead
+        cancelled += o.cancelled_ahead
+    assert cancelled > 0
+
+
+def test_the_queue_in_front_is_counted_up_to_the_fill_and_no_further():
+    # once we have filled, nobody is ahead of us, whatever trades afterwards
+    o = rest_one_order(warm_book(1), pad=0, horizon=2_000, seed=1, melt=True)
+    assert o is not None and o.filled
+    assert o.ahead_at_exit == 0
+    assert o.traded_ahead + o.cancelled_ahead == o.ahead
+
+
+def test_crossing_interpolates_between_the_two_rows_that_straddle():
+    from exchange.queue_position import crossing
+    rows = [{"median_ahead": 1_000, "v": 2.0},
+            {"median_ahead": 3_000, "v": 1.0},
+            {"median_ahead": 5_000, "v": 0.0}]
+    assert crossing(rows, "v", 1.5) == pytest.approx(2_000)
+    assert crossing(rows, "v", 0.0) == pytest.approx(5_000)
+    assert crossing(rows, "v", 3.0) is None
+
+
+def test_melt_buckets_pair_every_outcome_exactly_once():
+    from exchange.queue_position import melt_buckets
+    pairs = []
+    for ahead in (50, 600, 3_000, 9_000, 40_000):
+        held = MakerOutcome(100.0, ahead, ahead, 100, 100, 5, 100.0, 100.01,
+                            100.01, 0, ahead, 0)
+        melted = MakerOutcome(100.0, ahead, ahead, 100, 100, 4, 100.0, 100.01,
+                              100.02, 0, ahead - 10, 10)
+        pairs.append((held, melted))
+    rows = melt_buckets(pairs)
+    assert sum(r["n"] for r in rows) == len(pairs)
+    assert all(r["held_cancelled_share"] == 0 for r in rows)
+    assert all(r["cancelled_share"] > 0 for r in rows)

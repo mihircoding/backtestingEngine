@@ -62,6 +62,7 @@ WARMUP_EVENTS = 20_000
 HORIZON_EVENTS = 4_000
 MARKOUT_EVENTS = 250
 ORDER_SIZE = 100
+PAD_LOT = 100              # about the flow's mean order (10-200), so padding melts like flow
 
 
 @dataclass(frozen=True)
@@ -77,6 +78,9 @@ class MakerOutcome:
     mid_at_entry: float
     mid_at_fill: float | None
     mid_after: float | None    # MARKOUT_EVENTS later, or at the end of the run
+    ahead_at_exit: int = -1    # live shares still in front when we filled or gave up
+    traded_ahead: int = 0      # shares ahead of us that left the queue by trading
+    cancelled_ahead: int = 0   # shares ahead of us that left by being cancelled
 
     @property
     def fill_ratio(self) -> float:
@@ -139,7 +143,8 @@ def rest_one_order(book: LimitOrderBook, improve_ticks: int = 0,
                    pad: int = 0, size: int = ORDER_SIZE,
                    horizon: int = HORIZON_EVENTS,
                    markout: int = MARKOUT_EVENTS,
-                   seed: int = 0) -> MakerOutcome | None:
+                   seed: int = 0, melt: bool = False,
+                   pad_lot: int = PAD_LOT) -> MakerOutcome | None:
     """Rest one buy order and follow it until it fills or the horizon ends.
 
     improve_ticks=0 joins the best bid, behind whatever is already there.
@@ -150,6 +155,14 @@ def rest_one_order(book: LimitOrderBook, improve_ticks: int = 0,
 
     pad rests extra shares at our price first, so a long queue can be studied
     without waiting for the flow to happen to build one.
+
+    melt=False (the original experiment) rests the padding as one order and
+    protects it from the random cancel stream, so the queue ahead only ever
+    shrinks by trading. melt=True rests it as pad_lot-share orders, about the size
+    the flow itself sends, and leaves them exposed: the cancel stream can pick
+    them off like anyone else's, which is how real queues shrink. The order
+    under study is protected either way - its owner is us, and we are not
+    cancelling it.
     """
     best_bid, best_ask = book.best_bid(), book.best_ask()
     if best_bid is None or best_ask is None:
@@ -161,10 +174,15 @@ def rest_one_order(book: LimitOrderBook, improve_ticks: int = 0,
 
     natural = sum(q for p, q in book.depth(Side.BUY, levels=50) if p == price)
 
-    pad_id = None
+    pad_ids: list[int] = []
     if pad > 0:
-        pad_id, _ = book.add_limit_order(Side.BUY, price, pad,
-                                         participant_id="ahead")
+        lots = [pad_lot] * (pad // pad_lot) + ([pad % pad_lot] if pad % pad_lot else [])
+        if not melt:
+            lots = [pad]
+        for lot in lots:
+            pad_id, _ = book.add_limit_order(Side.BUY, price, lot,
+                                             participant_id="ahead")
+            pad_ids.append(pad_id)
 
     order_id, immediate = book.add_limit_order(Side.BUY, price, size,
                                                participant_id="maker")
@@ -175,24 +193,43 @@ def rest_one_order(book: LimitOrderBook, improve_ticks: int = 0,
     if ahead is None:
         return None
 
+    # Everyone in front of us, by id, so that at the end each share that left
+    # the queue can be attributed to a trade or to a cancel.
+    ahead_ids: set[int] = set()
+    for resting in book.bids[price]:
+        if resting.order_id == order_id:
+            break
+        if resting.active:
+            ahead_ids.add(resting.order_id)
+
     mid_at_entry = book.mid_price()
     mids: list[float] = []
     filled = 0
+    traded_ahead = 0
     fill_event: int | None = None
+    ahead_at_exit: int | None = None
 
     def watch(i: int, live_book: LimitOrderBook, trades) -> None:
-        nonlocal filled, fill_event
+        nonlocal filled, fill_event, traded_ahead, ahead_at_exit
         for trade in trades:
             if trade.maker_id == order_id:
                 filled += trade.quantity
                 if fill_event is None:
                     fill_event = i
+                    ahead_at_exit = 0
+            elif trade.maker_id in ahead_ids and fill_event is None:
+                traded_ahead += trade.quantity
         mid = live_book.mid_price()
         mids.append(mid if mid is not None else (mids[-1] if mids else mid_at_entry))
 
-    protect = [order_id] if pad_id is None else [order_id, pad_id]
+    protect = [order_id] if melt else [order_id, *pad_ids]
     simulate(book, n_events=horizon, seed=seed + 7919, hook=watch,
              protected_ids=protect)
+
+    if ahead_at_exit is None:
+        still = book.queue_ahead(order_id)
+        ahead_at_exit = still if still is not None else 0
+    cancelled_ahead = max(ahead - ahead_at_exit - traded_ahead, 0)
 
     mid_at_fill = mids[fill_event] if fill_event is not None else None
     mid_after = None
@@ -202,7 +239,9 @@ def rest_one_order(book: LimitOrderBook, improve_ticks: int = 0,
     return MakerOutcome(price=price, ahead=ahead, natural_ahead=natural,
                         size=size, filled=min(filled, size),
                         fill_event=fill_event, mid_at_entry=mid_at_entry,
-                        mid_at_fill=mid_at_fill, mid_after=mid_after)
+                        mid_at_fill=mid_at_fill, mid_after=mid_after,
+                        ahead_at_exit=ahead_at_exit, traded_ahead=traded_ahead,
+                        cancelled_ahead=cancelled_ahead)
 
 
 def sweep_queue(pads=(0, 250, 1_000, 4_000, 16_000), seeds=range(40),
@@ -248,3 +287,163 @@ def bucket(outcomes: list[MakerOutcome], edges=(0, 200, 1_000, 5_000, 20_000,
                        if hit else None,
         })
     return rows
+
+
+# ---------- section 9: let the queue melt ----------
+
+def paired_melt(pads=(0, 500, 2_000, 8_000, 30_000), seeds=range(45),
+                horizon: int = 1_000, improve_ticks: int = 0,
+                **kwargs) -> list[tuple[MakerOutcome, MakerOutcome]]:
+    """The same order in the same book twice: queue held still, queue melting.
+
+    Paired by (pad, seed), so the two runs see the same warm book, the same
+    place in the queue and the same stream of event types - the generator
+    draws the same numbers either way, and only which order a cancel lands on
+    differs. Whatever separates the two outcomes is the melting and nothing
+    else. Pairs where either run was impossible (crossed, or filled on
+    arrival) are dropped from both sides.
+    """
+    pairs = []
+    for pad in pads:
+        for seed in seeds:
+            held = rest_one_order(warm_book(seed), improve_ticks=improve_ticks,
+                                  pad=pad, seed=seed, horizon=horizon,
+                                  melt=False, **kwargs)
+            melted = rest_one_order(warm_book(seed), improve_ticks=improve_ticks,
+                                    pad=pad, seed=seed, horizon=horizon,
+                                    melt=True, **kwargs)
+            if held is not None and melted is not None:
+                pairs.append((held, melted))
+    return pairs
+
+
+def melt_buckets(pairs, edges=(0, 200, 1_000, 5_000, 20_000, 10**9)) -> list[dict]:
+    """Side by side, per range of shares ahead: how each version of the queue
+    treated the same order, and how the melting queue in front of us left."""
+    rows = []
+    for lo, hi in zip(edges, edges[1:]):
+        group = [(h, m) for h, m in pairs if lo <= h.ahead < hi]
+        if not group:
+            continue
+        n = len(group)
+        held = [h for h, _ in group]
+        melt = [m for _, m in group]
+
+        def mean(values):
+            values = [v for v in values if v is not None]
+            return sum(values) / len(values) if values else None
+
+        rows.append({
+            "lo": lo, "hi": hi, "n": n,
+            "median_ahead": sorted(h.ahead for h in held)[n // 2],
+            "held_fill_rate": sum(1 for h in held if h.filled) / n,
+            "melt_fill_rate": sum(1 for m in melt if m.filled) / n,
+            "held_events": mean([h.fill_event for h in held if h.filled]),
+            "melt_events": mean([m.fill_event for m in melt if m.filled]),
+            "held_markout": mean([h.markout_ticks for h in held if h.filled]),
+            "melt_markout": mean([m.markout_ticks for m in melt if m.filled]),
+            "held_adverse": mean([h.adverse_ticks for h in held if h.filled]),
+            "melt_adverse": mean([m.adverse_ticks for m in melt if m.filled]),
+            # of the shares that were in front of us at entry, the share that
+            # left by trading and the share that left by cancelling
+            "traded_share": (sum(m.traded_ahead for m in melt)
+                             / max(sum(m.ahead for m in melt), 1)),
+            "cancelled_share": (sum(m.cancelled_ahead for m in melt)
+                                / max(sum(m.ahead for m in melt), 1)),
+            "held_cancelled_share": (sum(h.cancelled_ahead for h in held)
+                                     / max(sum(h.ahead for h in held), 1)),
+        })
+    return rows
+
+
+def melt_decision(pairs_join, front, fees) -> dict:
+    """Section 8's join-or-improve table, with the joined queue allowed to melt.
+
+    pairs_join are (held, melted) outcomes of joining the touch at each pad;
+    front is the improved quote per seed, which has nobody in front of it and
+    so has nothing to melt. Values are expected ticks per quote, as before.
+    """
+    front_value = sum(o.expected_ticks(fees) for o in front) / len(front)
+    by_pad: dict[int, list] = {}
+    for pad, held, melted in pairs_join:
+        by_pad.setdefault(pad, []).append((held, melted))
+    rows = []
+    for pad, group in sorted(by_pad.items()):
+        n = len(group)
+        rows.append({
+            "pad": pad, "n": n,
+            "median_ahead": sorted(h.ahead for h, _ in group)[n // 2],
+            "held_value": sum(h.expected_ticks(fees) for h, _ in group) / n,
+            "melt_value": sum(m.expected_ticks(fees) for _, m in group) / n,
+            "held_fill_rate": sum(1 for h, _ in group if h.filled) / n,
+            "melt_fill_rate": sum(1 for _, m in group if m.filled) / n,
+        })
+    return {"front_value": front_value, "front_n": len(front), "rows": rows}
+
+
+def crossing(rows: list[dict], key: str, target: float) -> float | None:
+    """Shares ahead at which `key` crosses `target`, by linear interpolation."""
+    for a, b in zip(rows, rows[1:]):
+        if (a[key] - target) * (b[key] - target) <= 0:
+            span = b[key] - a[key]
+            if span == 0:
+                return float(a["median_ahead"])
+            t = (target - a[key]) / span
+            return a["median_ahead"] + t * (b["median_ahead"] - a["median_ahead"])
+    return None
+
+
+def melt_verdicts(short: list[dict], long: list[dict], be_held: float | None,
+                  be_melt: float | None, n_live: int, horizon_short: int,
+                  horizon_long: int) -> list[dict]:
+    """Score what section 9 was written to expect, before it was run.
+
+    The expectation comes from the cancel stream itself: a cancel is 15% of
+    events and lands on a uniformly chosen live order, so over H events a
+    queue of any length loses about 0.15 * H / n_live of itself to cancels.
+    With ~2,300 live orders that is 6-7% at 1,000 events and ~25% at 4,000.
+    """
+    from .simulator import P_CANCEL
+    expect_short = P_CANCEL * horizon_short / n_live
+    expect_long = P_CANCEL * horizon_long / n_live
+
+    def deep(rows):
+        return [r for r in rows if r["lo"] >= 5_000]
+
+    cancelled_short = (sum(r["cancelled_share"] * r["n"] for r in deep(short))
+                       / max(sum(r["n"] for r in deep(short)), 1))
+    cancelled_long = (sum(r["cancelled_share"] * r["n"] for r in deep(long))
+                      / max(sum(r["n"] for r in deep(long)), 1))
+    deepest_short = [r for r in short if r["lo"] >= 20_000]
+    gain_deep = [r["melt_fill_rate"] - r["held_fill_rate"] for r in deep(short)]
+    markout_deep = [r["melt_markout"] for r in short
+                    if 5_000 <= r["lo"] < 20_000 and r["melt_markout"] is not None]
+
+    verdicts = [
+        {"claim": "the queue ahead melts by about 0.15 * H / live orders: "
+                  f"~{expect_short:.0%} at {horizon_short:,} events, "
+                  f"~{expect_long:.0%} at {horizon_long:,}",
+         "measured": f"{cancelled_short:.1%} and {cancelled_long:.1%} of the "
+                     "deep queues left by cancel",
+         "held": (abs(cancelled_short - expect_short) < 0.5 * expect_short
+                  and abs(cancelled_long - expect_long) < 0.5 * expect_long)},
+        {"claim": "fill rates rise in the deep buckets, but by less than ten "
+                  "points at 1,000 events, and 20,000+ still never fills",
+         "measured": f"deep-bucket gains {[round(g, 3) for g in gain_deep]}; "
+                     f"20,000+ fills {deepest_short[0]['melt_fill_rate']:.0%}"
+                     if deepest_short else "no 20,000+ bucket",
+         "held": (all(0 <= g < 0.10 for g in gain_deep)
+                  and (not deepest_short
+                       or deepest_short[0]["melt_fill_rate"] == 0.0))},
+        {"claim": "the break-even queue moves up, by roughly the melt share "
+                  "(17,600 -> about 19,000 at 1,000 events)",
+         "measured": f"held {be_held}, melting {be_melt}",
+         "held": (be_held is not None and be_melt is not None
+                  and be_melt > be_held
+                  and be_melt < be_held * 1.25)},
+        {"claim": "the markout from the back of the queue stays positive: "
+                  "melting changes when you fill, not what the mid does after",
+         "measured": f"5,000-20,000 melt markout {markout_deep}",
+         "held": bool(markout_deep) and all(m > 0 for m in markout_deep)},
+    ]
+    return verdicts

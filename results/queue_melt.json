@@ -1,0 +1,259 @@
+{
+  "n_seeds": 45,
+  "n_live_orders": 2255,
+  "short": {
+    "horizon": 1000,
+    "buckets": [
+      {
+        "lo": 0,
+        "hi": 200,
+        "n": 18,
+        "median_ahead": 95,
+        "held_fill_rate": 1.0,
+        "melt_fill_rate": 1.0,
+        "held_events": 9.777777777777779,
+        "melt_events": 9.777777777777779,
+        "held_markout": 0.4444444444445139,
+        "melt_markout": 0.4444444444445139,
+        "held_adverse": -0.11111111111108901,
+        "melt_adverse": -0.11111111111108901,
+        "traded_share": 1.0,
+        "cancelled_share": 0.0,
+        "held_cancelled_share": 0.0
+      },
+      {
+        "lo": 200,
+        "hi": 1000,
+        "n": 52,
+        "median_ahead": 603,
+        "held_fill_rate": 0.9423076923076923,
+        "melt_fill_rate": 0.9423076923076923,
+        "held_events": 52.265306122448976,
+        "melt_events": 52.265306122448976,
+        "held_markout": 0.7551020408162779,
+        "melt_markout": 0.7551020408162779,
+        "held_adverse": -0.25510204081638455,
+        "melt_adverse": -0.25510204081638455,
+        "traded_share": 0.9673576681196553,
+        "cancelled_share": 0.005157554986191063,
+        "held_cancelled_share": 0.005157554986191063
+      },
+      {
+        "lo": 1000,
+        "hi": 5000,
+        "n": 51,
+        "median_ahead": 2216,
+        "held_fill_rate": 0.9215686274509803,
+        "melt_fill_rate": 0.9215686274509803,
+        "held_events": 204.17021276595744,
+        "melt_events": 204.6595744680851,
+        "held_markout": 1.031914893617141,
+        "melt_markout": 1.053191489361742,
+        "held_adverse": -0.09574468085079534,
+        "melt_adverse": -0.053191489361532805,
+        "traded_share": 0.9378472754251982,
+        "cancelled_share": 0.013257957597116152,
+        "held_cancelled_share": 0.011467649454439883
+      },
+      {
+        "lo": 5000,
+        "hi": 20000,
+        "n": 57,
+        "median_ahead": 8252,
+        "held_fill_rate": 0.5964912280701754,
+        "melt_fill_rate": 0.6140350877192983,
+        "held_events": 609.5882352941177,
+        "melt_events": 612.3714285714286,
+        "held_markout": 1.7058823529411296,
+        "melt_markout": 1.8714285714286558,
+        "held_adverse": 0.5735294117646859,
+        "melt_adverse": 0.8000000000000844,
+        "traded_share": 0.771510256030005,
+        "cancelled_share": 0.03170386945266758,
+        "held_cancelled_share": 0.014394296344547043
+      },
+      {
+        "lo": 20000,
+        "hi": 1000000000,
+        "n": 47,
+        "median_ahead": 30247,
+        "held_fill_rate": 0.0,
+        "melt_fill_rate": 0.0,
+        "held_events": null,
+        "melt_events": null,
+        "held_markout": null,
+        "melt_markout": null,
+        "held_adverse": null,
+        "melt_adverse": null,
+        "traded_share": 0.3342965038006032,
+        "cancelled_share": 0.04870324116206767,
+        "held_cancelled_share": 0.0030255768937547307
+      }
+    ]
+  },
+  "long": {
+    "horizon": 4000,
+    "buckets": [
+      {
+        "lo": 0,
+        "hi": 200,
+        "n": 18,
+        "median_ahead": 95,
+        "held_fill_rate": 1.0,
+        "melt_fill_rate": 1.0,
+        "held_events": 9.777777777777779,
+        "melt_events": 9.777777777777779,
+        "held_markout": 0.4444444444445139,
+        "melt_markout": 0.4444444444445139,
+        "held_adverse": -0.11111111111108901,
+        "melt_adverse": -0.11111111111108901,
+        "traded_share": 1.0,
+        "cancelled_share": 0.0,
+        "held_cancelled_share": 0.0
+      },
+      {
+        "lo": 200,
+        "hi": 1000,
+        "n": 52,
+        "median_ahead": 603,
+        "held_fill_rate": 1.0,
+        "melt_fill_rate": 1.0,
+        "held_events": 111.65384615384616,
+        "melt_events": 111.65384615384616,
+        "held_markout": 0.7980769230768805,
+        "melt_markout": 0.7980769230768805,
+        "held_adverse": -0.2211538461539183,
+        "melt_adverse": -0.2211538461539183,
+        "traded_share": 0.9948424450138089,
+        "cancelled_share": 0.005157554986191063,
+        "held_cancelled_share": 0.005157554986191063
+      },
+      {
+        "lo": 1000,
+        "hi": 5000,
+        "n": 51,
+        "median_ahead": 2216,
+        "held_fill_rate": 0.9803921568627451,
+        "melt_fill_rate": 0.9803921568627451,
+        "held_events": 283.52,
+        "melt_events": 283.64,
+        "held_markout": 1.1500000000001194,
+        "melt_markout": 1.160000000000025,
+        "held_adverse": 0.020000000000266027,
+        "melt_adverse": 0.07000000000016371,
+        "traded_share": 0.9819356295513746,
+        "cancelled_share": 0.014838590011370875,
+        "held_cancelled_share": 0.011467649454439883
+      },
+      {
+        "lo": 5000,
+        "hi": 20000,
+        "n": 57,
+        "median_ahead": 8252,
+        "held_fill_rate": 0.9122807017543859,
+        "melt_fill_rate": 0.9122807017543859,
+        "held_events": 937.2884615384615,
+        "melt_events": 925.2692307692307,
+        "held_markout": 1.903846153846226,
+        "melt_markout": 2.0192307692309277,
+        "held_adverse": 0.7884615384616139,
+        "melt_adverse": 0.9903846153847531,
+        "traded_share": 0.9192338810349326,
+        "cancelled_share": 0.042920082371116795,
+        "held_cancelled_share": 0.020589024818334894
+      },
+      {
+        "lo": 20000,
+        "hi": 1000000000,
+        "n": 47,
+        "median_ahead": 30247,
+        "held_fill_rate": 0.574468085106383,
+        "melt_fill_rate": 0.6808510638297872,
+        "held_events": 2972.925925925926,
+        "melt_events": 2881.1875,
+        "held_markout": 1.7222222222222348,
+        "melt_markout": 1.9062499999999982,
+        "held_adverse": 0.5555555555556292,
+        "melt_adverse": 0.718749999999968,
+        "traded_share": 0.8059863346486331,
+        "cancelled_share": 0.08966032172993256,
+        "held_cancelled_share": 0.004529818513248608
+      }
+    ]
+  },
+  "decision": {
+    "front_value": 0.6655172413793277,
+    "front_n": 29,
+    "rows": [
+      {
+        "pad": 0,
+        "n": 29,
+        "median_ahead": 303,
+        "held_value": 1.1379310344828604,
+        "melt_value": 1.1379310344828604,
+        "held_fill_rate": 0.8620689655172413,
+        "melt_fill_rate": 0.8620689655172413
+      },
+      {
+        "pad": 500,
+        "n": 29,
+        "median_ahead": 803,
+        "held_value": 1.224137931034506,
+        "melt_value": 1.2931034482758723,
+        "held_fill_rate": 0.8620689655172413,
+        "melt_fill_rate": 0.8620689655172413
+      },
+      {
+        "pad": 2000,
+        "n": 29,
+        "median_ahead": 2303,
+        "held_value": 1.2344827586207467,
+        "melt_value": 1.268965517241405,
+        "held_fill_rate": 0.8275862068965517,
+        "melt_fill_rate": 0.8275862068965517
+      },
+      {
+        "pad": 8000,
+        "n": 29,
+        "median_ahead": 8303,
+        "held_value": 1.1517241379310734,
+        "melt_value": 1.2620689655173825,
+        "held_fill_rate": 0.5862068965517241,
+        "melt_fill_rate": 0.6206896551724138
+      },
+      {
+        "pad": 30000,
+        "n": 29,
+        "median_ahead": 30303,
+        "held_value": 0.0,
+        "melt_value": 0.0,
+        "held_fill_rate": 0.0,
+        "melt_fill_rate": 0.0
+      }
+    ]
+  },
+  "breakeven_held": 17590.4251497007,
+  "breakeven_melt": 18701.90710382613,
+  "verdicts": [
+    {
+      "claim": "the queue ahead melts by about 0.15 * H / live orders: ~7% at 1,000 events, ~27% at 4,000",
+      "measured": "3.9% and 6.4% of the deep queues left by cancel",
+      "held": false
+    },
+    {
+      "claim": "fill rates rise in the deep buckets, but by less than ten points at 1,000 events, and 20,000+ still never fills",
+      "measured": "deep-bucket gains [0.018, 0.0]; 20,000+ fills 0%",
+      "held": true
+    },
+    {
+      "claim": "the break-even queue moves up, by roughly the melt share (17,600 -> about 19,000 at 1,000 events)",
+      "measured": "held 17590.4251497007, melting 18701.90710382613",
+      "held": true
+    },
+    {
+      "claim": "the markout from the back of the queue stays positive: melting changes when you fill, not what the mid does after",
+      "measured": "5,000-20,000 melt markout [1.8714285714286558]",
+      "held": true
+    }
+  ]
+}

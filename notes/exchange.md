@@ -534,16 +534,120 @@ selected, it is just being late.
 
 ### What this does not model
 
-- **The queue is held still.** The shares in front are protected from the random cancel stream
-  (`protected_ids` in `simulate()`), so they never melt. Real queues shrink because the people
-  ahead of you cancel, which is a large part of why front-of-queue is worth having, so every fill
-  probability here is a lower bound.
+- ~~**The queue is held still.**~~ Section 9 lets it melt. The shares in front were protected
+  from the random cancel stream (`protected_ids` in `simulate()`), and the claim was that this
+  made every fill probability a lower bound. It did, and the bound was tight: letting the queue
+  melt moves the break-even by about 1,100 shares and the deep fill rate by two points at 1,000
+  events, because in this flow a share in front of you is twenty-four times more likely to be
+  traded than cancelled.
 - **The padding is liquidity that was not there.** Building a long queue means adding depth at the
   touch, which feeds back into the flow. The natural queue length is reported alongside the padding
   so the two are never confused.
 - **One order, no inventory, no requoting.** A real maker facing a 610-event wait would cancel and
   re-post. This measures what happens to an order left alone, which is the cleaner experiment and
   not the strategy.
+
+## 9. Let the queue melt
+
+Section 8 held the queue still. The padding in front of the order under study was one protected
+order the cancel stream could not touch, and the write-up called every fill probability a lower
+bound for that reason, adding that the people in front of you cancelling is "a large part of why
+front-of-queue is worth having". That was a claim about real markets, made from a book that had not
+been asked. `melt_study.py` asks it: the same 225 orders in the same 45 books, with the padding
+rested as 100-share orders the cancel stream can pick off like anyone else's.
+
+The design is paired. Every (pad, seed) runs twice on the same warm book, and the event generator
+draws the same random numbers either way — same arrivals, same market orders, same cancels-as-
+events — so the only thing that differs is which resting order a cancel lands on. Whatever
+separates the two outcomes is the melting and nothing else. The held side of every table below
+reproduces section 8 to the digit, which is the check that the pairing works.
+
+Four predictions were written before the run and `melt_verdicts()` scores them. One failed, and
+it is the one that says what the queue is actually made of.
+
+| shares ahead  |  n | held: fills | events | markout | melting: fills | events | markout | left by trade | by cancel |
+|---------------|----|-------------|--------|---------|----------------|--------|---------|---------------|-----------|
+| 0-200         | 18 |        100% |     10 |   +0.44 |           100% |     10 |   +0.44 |          100% |      0.0% |
+| 200-1,000     | 52 |         94% |     52 |   +0.76 |            94% |     52 |   +0.76 |         96.7% |      0.5% |
+| 1,000-5,000   | 51 |         92% |    204 |   +1.03 |            92% |    205 |   +1.05 |         93.8% |      1.3% |
+| 5,000-20,000  | 57 |         60% |    610 |   +1.71 |            61% |    612 |   +1.87 |         77.2% |      3.2% |
+| 20,000+       | 47 |          0% |  never |       - |             0% |  never |       - |         33.4% |      4.9% |
+
+1,000 events to fill, as in section 8. The last two columns are new: of the shares that were in
+front of us when we joined, the share that left the queue by trading and the share that left by
+being cancelled, counted up to our own fill. They do not sum to 100% because the rest was still
+there when the clock ran out.
+
+### The queue does not melt. It gets eaten.
+
+The prediction was arithmetic on the cancel stream: 15% of events are cancels, each lands on one
+of ~2,300 live orders, so a queue of any length should lose about 0.15 × H / 2,300 of itself in H
+events — 6-7% at 1,000 events and a quarter at 4,000. Measured: 3.9% at 1,000 and 6.4% at 4,000,
+in the buckets deep enough for melting to matter. Two things the arithmetic left out, both
+visible in the table.
+
+The first is the race. From 5,000 shares back, 77% of the queue in front of us was *traded*
+inside the 1,000 events and 3% was cancelled: twenty-four shares eaten for every one that melted.
+The clock stops at our fill, and the fill comes at 610 events on average, so the cancel stream
+only had 610 events to work on a queue that trading was clearing at ten shares an event.
+
+The second is that the cancel stream here does not know where the touch is. It picks an order
+uniformly from everything live — twenty levels a side, plus the tail of resting orders the flow
+has accumulated, and the pool grows by about one order every two events as new limit orders
+rest. A hundred orders at the best bid are 4% of that pool and get 4% of the cancels. In a real
+book the opposite holds: most cancels *are* at the touch, because, as the project page puts it,
+most cancels in real markets are not changes of mind but repositioning. That is
+the mechanism section 8's sentence was about, and this flow does not have it. The zero-
+intelligence cancel is the one kind of cancel that is not a decision about the queue.
+
+### What the caveat was worth
+
+| shares ahead | held: fills | value | melting: fills | value |
+|--------------|-------------|-------|----------------|-------|
+|          303 |        86% | +1.14 |           86% | +1.14 |
+|          803 |        86% | +1.22 |           86% | +1.29 |
+|        2,303 |        83% | +1.23 |           83% | +1.27 |
+|        8,303 |        59% | +1.15 |           62% | +1.26 |
+|       30,303 |         0% | +0.00 |            0% | +0.00 |
+| 0 (improved) |       100% | +0.67 |          100% | +0.67 |
+
+Section 8's decision table, same 29 books where the spread left room to improve, with the joined
+queue allowed to melt. The improved quote has nobody in front of it and so nothing to melt.
+
+**Break-even queue: 17,600 shares held, 18,700 melting.** Joining the back of a queue that shrinks
+on its own is worth a little more, so the tick is worth paying a little later — by about 1,100
+shares, which is 6% of the number and inside the grid's resolution. At 4,000 events, where an
+order from 20,000 shares back does eventually trade, melting takes that bucket's fill rate from
+57% to 68% and its wait from 2,970 events to 2,880: eleven points, where the order had to wait
+longest and the cancel stream had the longest run at the queue. Everywhere else the two columns
+are within two points of each other.
+
+The markout column moved in the direction section 8 would predict and for section 8's reason. The
+melting fills from the deep queue mark out at +1.87 against +1.71 held, with the adverse-selection
+column at +0.80 against +0.57 — still positive, still the wrong sign for the textbook, and a shade
+more so. Melting changes *when* the order fills, not what the mid does afterwards; the fills that
+came a few events earlier caught a little more of the mid coming back. The mean-reverting mid is
+the mechanism, and the cancel stream never touched it.
+
+So the sentence in section 8 was right about real markets and wrong about this one. Fill
+probabilities here were a lower bound, and the bound was tight to within two points, because the
+thing that makes real queues melt — cancels concentrated at the touch — is precisely what a
+uniform cancel stream cannot produce. The number to carry is the ratio, not the melt: in this
+flow a share ahead of you is twenty-four times more likely to be traded than pulled. A real book
+at a busy touch would show that ratio inverted, and that inversion is where "a large part of why
+front-of-queue is worth having" actually lives.
+
+### What this does not model
+
+- **Cancels are uniform over the book.** The finding above is that this is the whole story. A
+  cancel rate that rises toward the touch — or a flow whose cancels are re-postings a tick away —
+  is the next experiment, and it needs a cancel model, not a protected-ids flag.
+- **The melting padding is still padding.** It is liquidity that was not there, now in 100-share
+  lots instead of one, and `natural_ahead` is reported beside it for the same reason as before.
+- **Fills are still counted to the fill.** The traded/cancelled split stops at our own fill, which
+  is the right window for the question asked (what happened in front of us while we waited) and
+  the wrong one for "how fast does a queue melt in general". The 20,000+ row at 1,000 events, which
+  never fills, is the clean reading of the raw rate: 4.9% by cancel against 33% by trade.
 
 ## What isn't modeled
 
@@ -566,7 +670,9 @@ selected, it is just being late.
 - ~~No queue position study~~ — `src/queue_position.py` rests one order at a chosen place in the
   queue and follows it, and section 8 prices time priority at about a tick per 17,600 shares
   ahead. It also finds the adverse-selection sign REVERSED against the textbook account, for a
-  reason that is a property of this null model rather than of queueing.
+  reason that is a property of this null model rather than of queueing. Section 9 lets the queue
+  in front melt and finds it barely does — 18,700 shares — because a uniform cancel stream eats
+  the touch twenty-four times slower than trading does.
 - Agents have no memory, no inventory, and no information — which is exactly what makes it a
   valid null model, exactly what makes the depth magnitudes wrong, and, per section 8, exactly
   why adverse selection comes out with the wrong sign here.
