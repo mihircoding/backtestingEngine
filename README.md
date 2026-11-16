@@ -148,14 +148,21 @@ exempts the small years, by construction; the catch-up is the plain fee
 where the year is big enough to finish it and takes more than the hard
 hurdle where it is not. And a hurdle on two-and-twenty moves the
 investor's bill and not the answer, because the 2% still comes out of
-the book.
+the book. The fourteenth lets the hurdle compound until it is cleared,
+the private-equity form, and finds a clause that stops paying: one
+losing year puts the line out of reach of the next good one, the mark
+absorbs that year anyway, and at 5% the surface's 141 charged years
+become 73, at 8% 21 — a $5bn fund ends 2024 $1.2bn over its mark and
+pays nothing, for being $1.5m under a line three years of compounding
+drew. A catch-up at 80% or 50% instead of the full waterfall barely
+moves, because the years that get charged here finish it at any rate.
 [RESULTS.md](RESULTS.md) has all of it, and the corrections.
 
-410 tests.
+422 tests.
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                 # 404 passed
+python -m pytest -q                 # 422 passed
 
 # the two halves together
 python fill_realism.py              # fill models compared, the headline result

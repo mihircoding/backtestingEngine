@@ -1838,14 +1838,132 @@ enough and takes more than the hard hurdle where it is not. And against
 the schedule the investor should have signed, a hurdle on two-and-twenty
 moves the bill and not the answer, because the 2% is still on the book.
 
-What this does not do: the hurdle resets every year, so a year that misses
+What this does not do: ~~the hurdle resets every year, so a year that misses
 it is not owed it later; a cumulative hurdle would compound against the
 mark and charge less, by the compounding, in the cells that lose first. The
 catch-up is 100%, the usual form; a partial catch-up sits between the
-hard hurdle and this one. And the comparison is still the investor's
+hard hurdle and this one.~~ Section 17 runs both. And the comparison is still the investor's
 decade on net dollars, not a fund raising money: a two-and-twenty manager
 with an 8% hurdle made nothing in six years of ten on this tape, and the
 equilibrium-size literature is about why that manager would not sign it.
+
+### 17. Let the hurdle compound, and find the clause stops paying — one losing year puts the line out of reach, and a fund $1.2bn over its mark pays nothing for being $1.5m under it
+
+Reproduce with: `python fill_realism.py --section 17` (arithmetic on section
+11; nothing is re-run)
+
+Section 16 left two clauses on the list. Its hurdle restarted every
+January: a year that missed it was not owed it later. The usual clause in
+a private-equity document is the other kind — the hurdle *compounds* from
+the capital until it is cleared, so a year that misses it leaves next
+year's higher. And its catch-up gave the manager every dollar above the
+hurdle until caught up, which is the full waterfall; many documents give
+80%, some 50%. `fund_walk()` now takes `cumulative=True` and a `catch`
+rate, and this section runs both on every cell at zero-and-thirty, the
+schedule the split is a constant on, at 2%, 5% and 8%.
+
+The cumulative line is kept apart from the mark on purpose. The mark still
+rises on every up year, as in every section since 13; what compounds is
+the hurdle line, from the NAV the last fee was charged on, and it resets
+to the NAV whenever a fee is charged. The line is never under the mark,
+because a NAV over it would have been charged and reset it, so
+`hurdle_incentive()` is unchanged and takes the line as this year's rate
+on the mark.
+
+The predictions, written first. Cumulative charges no more than yearly in
+every cell and strictly less wherever the yearly clause charged anything,
+because the line only ever stands above the yearly hurdle — it compounds
+through the down years and through the up years that missed. The identity
+of section 16 survives, because the mark's mechanics are untouched. The
+gap should open with the hurdle and with the AUM, and at 8% the cumulative
+clause should pay the manager nothing in most cells. A partial catch-up
+sits between the hard hurdle and the full waterfall in every cell, and the
+cells it puts back on 70.0% should fall as the rate falls, because it
+needs more dollars over the hurdle to finish — perf × H / (catch − perf),
+which is 0.6 H at 80% and 1.5 H at 50% against 0.43 H at the full rate.
+
+All of it held — 126 of 126, 112 of 112, 630 of 630, 252 of 252, and the
+restored cells fall 16, 13, 8 — and the numbers are larger than the
+predictions were written for.
+
+**The investor's share at 20% participation, and the years charged of the
+years up:**
+
+```
+                 5% hurdle                                   8% hurdle
+   AUM        yearly    cumulative     catch 100%    80%    50%  |  yearly    cumulative
+   $0.1bn   76.9% 5/6   83.7% 4/6      71.5%  71.5%  71.6%     |  80.1% 4/6   93.0% 2/6
+   $1bn     76.7% 4/5   86.6% 2/5      70.4%  70.4%  70.4%     |  80.6% 4/5   98.5% 1/5
+   $2bn     76.7% 4/4   87.7% 2/4      70.0%  70.0%  70.2%     |  80.7% 4/4  100.0% 0/4
+   $5bn     78.0% 4/4   91.8% 1/4      70.0%  70.0%  71.3%     |  82.9% 4/4  100.0% 0/4
+   $10bn    78.2% 4/5   89.8% 1/5      70.0%  70.0%  70.6%     |  83.3% 4/5  100.0% 0/5
+   $20bn    81.7% 4/4   95.9% 1/5      70.6%  71.2%  74.1%     |  87.8% 2/5  100.0% 0/5
+   $100bn   99.6% 1/5  100.0% 0/5      98.7%  99.0%  99.4%     | 100.0% 0/5  100.0% 0/5
+```
+
+**The compounding hurdle is not a smaller fee. It is a clause that stops
+paying.** Across the 42 cells the manager's incentive at a 5% hurdle goes
+from $31.8bn yearly to $10.6bn cumulative, and at 8% from $22.9bn to
+$0.8bn. The yearly clause at 8% charged nothing in 8 cells; the cumulative
+one in 27. Read in years rather than dollars: the yearly 5% hurdle charged
+141 of the surface's 223 up years, the cumulative one 73, and at 8% it is
+115 against 21. Twenty-one charged years in 42 funds over a decade.
+
+The mechanism is in the first two years of the tape. 2015 and 2016 are
+down or flat in every cell — the rule made −4% and +1% at $2bn — and
+under a yearly clause that costs the manager nothing, because the hurdle
+restarts from the mark each year and 2017's +15% clears 5% of it by a
+distance. Under the cumulative clause the two years compound the line to
+15.7% over the mark before 2017 arrives, and +15% misses it. The mark
+rises by the full 15% anyway, so by section 16 those dollars are exempt
+for good, and the line keeps compounding from the 2015 base: 10.7% over
+the new mark in 2018, 16.2% in 2019, 22.0% in 2020. The first charge at
+$5bn comes in 2021, when +37% finally clears a 16.8% line. One charge in
+four up years, and the line's high-water point across the surface is 48%
+over the mark, at $100bn, where nothing ever cleared it.
+
+**And then it misses by $1.5m.** The $5bn fund at 20% is the cleanest
+case. After the 2021 charge the line resets to the NAV, 2022 loses 39%,
+2023 makes 25% and does not get back to the mark, and 2024 makes 52% and
+ends $1.2bn above it — 15.66% over, against a line that three years of
+compounding have put at 15.68%. The fund paid nothing on the biggest year
+of the decade for being 0.02% short of a line that, under the yearly
+clause, would have been 5%. That is not an edge case of the tape; it is
+what the clause does. A compounding hurdle on a fund that loses first is a
+line that grows at the hurdle rate while the fund grows at its gross less
+its losses, and on a tape with three down years in ten the line wins
+most races. The investor's share at 5% is 84–96% across the column where
+the yearly clause had 77–82%, and every point of it is exempt dollars the
+mark absorbed.
+
+So the Nov 12 note was right that it "charges less, by the compounding,
+in the cells that lose first", and short by an order of magnitude on what
+*less* means. The compounding is not a few percent off the fee. It is the
+difference between a clause that pays the manager in four years of ten
+and one that pays in one.
+
+**The partial catch-up does what the arithmetic says, and the arithmetic
+says it hardly matters.** Between the hard hurdle and the full waterfall
+in all 252 cells. The cells back on exactly 70.0% fall from 16 to 13 to 8
+as the rate falls from 100% to 80% to 50%, and the surface's incentive at
+5% goes $47.2bn, $46.3bn, $43.6bn: a fifth of the catch-up dollars handed
+back costs the manager 2% of the fee, half of them 8%. The reason is the
+same one section 16 found for the full waterfall: in a year big enough to
+finish the catch-up the manager has perf of the excess whatever the rate,
+and on this tape the charged years are 2021 and 2024, which finish it at
+any rate the surface can hold. The rate only bites in the years that do
+not finish, and those are the small ones. At $20bn and 5% the 50% rate
+moves the share from 70.6% to 74.1%, which is the whole effect at its
+largest; at $2bn it is 70.0% to 70.2%.
+
+What this does not do: the cumulative line compounds at the hurdle rate
+only — no interest on the shortfall, no clawback of earlier fees when a
+later year loses, which is the other half of the private-equity waterfall
+and the one that would move the 2021 charge. The catch-up and the hurdle
+are run as alternatives to the yearly clause and not stacked; a compounding
+hurdle with a catch-up is the common document and would be the next
+cell. And zero-and-thirty is still the schedule, because it is the one on
+which every point of the share is the clause and not the management fee.
 
 ### What this still does not model
 
@@ -1906,9 +2024,13 @@ equilibrium-size literature is about why that manager would not sign it.
   the P&L column rather than sitting beside it. Sections 14 and 15 do
   that, and section 16 puts a hurdle in the clause and finds the mark's
   identity does not survive it: what a hurdle lets through, the mark rises
-  by, so it is an exemption and not a delay. Still not modeled: a
-  cumulative hurdle, a clawback, and any crystallization period other than
-  the calendar year.
+  by, so it is an exemption and not a delay. Section 17 lets the hurdle
+  compound and finds it is a clause that stops paying — one charged year
+  in four up years at 5%, and a $5bn fund $1.2bn over its mark paying
+  nothing for being $1.5m under the line — and runs the catch-up at 80%
+  and 50%, which hardly moves. Still not modeled: a clawback, a
+  compounding hurdle with a catch-up on top, and any crystallization
+  period other than the calendar year.
 - Every order is a taker. Passive execution is deliberately absent, and the
   reason is a measurement: pooling a day's volume puts ~153,000 shares at the
   touch, and section 8 of notes/exchange.md already showed that an order

@@ -763,7 +763,7 @@ def test_a_section_run_refuses_a_different_tape_but_not_a_rerounded_one():
 def test_a_section_that_prints_beside_an_earlier_one_says_so_when_it_is_missing(capsys):
     prices, opens, volumes = _tape()
     sections = _sections(prices, opens, volumes, quick=True)
-    assert list(sections) == list(range(1, 17))
+    assert list(sections) == list(range(1, 18))
     # section 9 prints against section 8's rows; with nothing on disk it has to stop
     with pytest.raises(SystemExit, match="section 8"):
         sections[9]({})
@@ -1215,7 +1215,7 @@ def test_the_comparison_reads_each_schedule_against_two_and_twenty_and_scores_th
 def test_section_15_walks_every_cell_at_every_schedule_and_needs_the_yearly_curve(capsys):
     prices, opens, volumes = _tape()
     sections = _sections(prices, opens, volumes, quick=True)
-    assert list(sections) == list(range(1, 17))
+    assert list(sections) == list(range(1, 18))
     with pytest.raises(SystemExit, match="section 11"):
         sections[15]({"bars": 2520})
     stale = {"capacity_surface": [{"aum": 1e9, "participation": 0.1, "final": 1.1e9,
@@ -1364,3 +1364,94 @@ def test_section_16_walks_every_cell_at_every_hurdle_and_form_and_scores_the_pre
     assert "16. A HURDLE IN THE CLAUSE" in out and "exemption" not in out
     # the comparison is scored on the net and on the bill separately
     assert all({"agrees", "agrees_on_the_bill", "gross_over_base"} <= set(c) for c in added["hurdle_comparison"])
+
+
+# ---------- 17. the hurdle that compounds, and the catch-up that does not finish ----------
+
+from fill_realism import CATCH_RATES, HURDLE_VARIANTS, hurdle_variant_sweep, hurdle_variant_verdicts
+
+
+def test_the_variant_sweep_pairs_every_clause_on_every_cell_and_the_verdicts_read_them_all():
+    col = _column([-100e6, 150e6, 150e6, 150e6, 150e6, 150e6, 150e6, 150e6, 150e6, 150e6])
+    cells = hurdle_variant_sweep(col, [], hurdles=(0.05,))
+    assert len(cells) == len(HURDLE_VARIANTS) * len(col)
+    v = hurdle_variant_verdicts(cells)
+    assert v["cells_paired"] == len(col) and v["cells_read"] == len(cells)
+
+
+def test_a_partial_catch_up_sits_between_the_hard_hurdle_and_the_full_waterfall():
+    # $100 above a $1,000 mark, 5% hurdle: $50 over the hurdle, $50 of hurdle
+    # dollars. The full waterfall finishes at 0.2 x 50 / 0.8 = $12.5 over
+    # and takes the plain $20; at 80% it needs 0.2 x 50 / 0.6 = $16.7 and
+    # still finishes; at 25%, which is above perf by a hair, it needs $200
+    # and does not, so it takes a quarter of the $50
+    assert hurdle_incentive(1100.0, 1000.0, 0.2, 0.05, "catch_up", catch=1.0) == pytest.approx(20.0)
+    assert hurdle_incentive(1100.0, 1000.0, 0.2, 0.05, "catch_up", catch=0.8) == pytest.approx(20.0)
+    assert hurdle_incentive(1100.0, 1000.0, 0.2, 0.05, "catch_up", catch=0.25) == pytest.approx(12.5)
+    # $10 over the hurdle finishes nothing: the take is catch x over, which
+    # at 100% is the full waterfall's $10 and at perf is the hard hurdle's $2
+    for catch, take in ((1.0, 10.0), (0.8, 8.0), (0.5, 5.0), (0.2, 2.0)):
+        assert hurdle_incentive(1060.0, 1000.0, 0.2, 0.05, "catch_up", catch=catch) == pytest.approx(take)
+    assert hurdle_incentive(1060.0, 1000.0, 0.2, 0.05, "hard") == pytest.approx(2.0)
+    # and a rate under perf never catches up, so it is the hard hurdle at that rate
+    assert hurdle_incentive(1100.0, 1000.0, 0.2, 0.05, "catch_up", catch=0.1) == pytest.approx(5.0)
+
+
+def test_the_cumulative_hurdle_compounds_until_charged_and_then_resets():
+    # 5% a year on a $5bn fund that goes -6%, +1%, +20%, -10%, +40%: the
+    # yearly clause charges 2017 and 2019; the line is 15.8% over the mark
+    # by 2017 and +20% does not clear it
+    gains = [-300e6, 50e6, 1000e6, -500e6, 2000e6]
+    col = _column(gains)
+    yearly = fund_walk(col, 5e9, None, mgmt=0.0, perf=0.3, hurdle=0.05, form="hard")
+    cum = fund_walk(col, 5e9, None, mgmt=0.0, perf=0.3, hurdle=0.05, form="hard", cumulative=True)
+    assert [y["incentive"] > 0 for y in yearly["schedule"]] == [False, False, True, False, True]
+    assert [y["incentive"] > 0 for y in cum["schedule"]] == [False, False, False, False, True]
+    lines = [y["hurdle_rate_charged"] for y in cum["schedule"]]
+    assert lines[0] == pytest.approx(0.05)
+    assert lines[1] == pytest.approx(1.05 ** 2 - 1)
+    assert lines[2] == pytest.approx(1.05 ** 3 - 1)        # the mark was still the start
+    # 2017 lifted the mark to 5.75bn; the line is 5bn x 1.05^4 over that
+    assert lines[3] == pytest.approx(5e9 * 1.05 ** 4 / 5.75e9 - 1)
+    # the one charge is 30% of what stood above the line, and less than the
+    # yearly clause's two charges put together
+    last = cum["schedule"][-1]
+    line = 5e9 * 1.05 ** 5
+    pre = last["nav"] + last["incentive"]
+    assert last["incentive"] == pytest.approx(0.3 * (pre - line))
+    assert cum["incentive"] < yearly["incentive"]
+    # and the identity: every dollar the line let past the mark is exempt
+    assert cum["investor_net"] / cum["gross_pl"] == pytest.approx(0.7 + cum["exempt"] / cum["gross_pl"])
+    # with no hurdle, cumulative is a flag that does nothing
+    plain = fund_walk(col, 5e9, None, mgmt=0.0, perf=0.3)
+    flagged = fund_walk(col, 5e9, None, mgmt=0.0, perf=0.3, cumulative=True)
+    assert flagged["incentive"] == pytest.approx(plain["incentive"])
+
+
+def test_the_cumulative_line_is_never_under_the_yearly_hurdle():
+    gains = [-300e6, 50e6, 400e6, -100e6, 200e6, 300e6, -50e6, 100e6, 100e6, 500e6]
+    col = _column(gains)
+    for h in (0.02, 0.05, 0.08):
+        cum = fund_walk(col, 5e9, None, mgmt=0.0, perf=0.3, hurdle=h, form="hard", cumulative=True)
+        yearly = fund_walk(col, 5e9, None, mgmt=0.0, perf=0.3, hurdle=h, form="hard")
+        assert all(y["hurdle_rate_charged"] >= h - 1e-12 for y in cum["schedule"])
+        assert cum["incentive"] <= yearly["incentive"]
+
+
+def test_section_17_walks_every_variant_and_scores_the_predictions(capsys):
+    prices, opens, volumes = _tape()
+    sections = _sections(prices, opens, volumes, quick=True)
+    with pytest.raises(SystemExit, match="section 11"):
+        sections[17]({"bars": 2520})
+    col = _column([-100e6, 150e6, 150e6, 150e6, 150e6, 150e6, 150e6, 150e6, 150e6, 150e6])
+    added = sections[17]({"capacity_surface": col, "surface_knees": [], "bars": 2520})
+    out = capsys.readouterr().out
+    assert set(added) == {"hurdle_variants", "hurdle_variant_sweep", "hurdle_variant_verdicts"}
+    assert len(added["hurdle_variant_sweep"]) == 3 * len(HURDLE_VARIANTS) * len(col)
+    v = added["hurdle_variant_verdicts"]
+    assert v["cumulative_no_more_than_yearly"] == v["cells_paired"] == 3 * len(col)
+    assert v["share_is_plain_plus_exempt"] == v["on_the_mark"]
+    assert v["partial_between_hard_and_full"] == v["partial_cells"]
+    assert v["restores_fall_with_the_rate"]
+    assert "17. THE HURDLE THAT COMPOUNDS" in out
+    assert len(CATCH_RATES) == sum(1 for name in HURDLE_VARIANTS if name.startswith("catch_up"))
