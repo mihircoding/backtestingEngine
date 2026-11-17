@@ -1957,13 +1957,205 @@ moves the share from 70.6% to 74.1%, which is the whole effect at its
 largest; at $2bn it is 70.0% to 70.2%.
 
 What this does not do: the cumulative line compounds at the hurdle rate
-only — no interest on the shortfall, no clawback of earlier fees when a
+only — no interest on the shortfall, ~~no clawback of earlier fees when a
 later year loses, which is the other half of the private-equity waterfall
 and the one that would move the 2021 charge. The catch-up and the hurdle
 are run as alternatives to the yearly clause and not stacked; a compounding
 hurdle with a catch-up is the common document and would be the next
-cell. And zero-and-thirty is still the schedule, because it is the one on
-which every point of the share is the clause and not the management fee.
+cell.~~ Section 18 stacks them and adds the clawback. And zero-and-thirty
+is still the schedule, because it is the one on which every point of the
+share is the clause and not the management fee.
+
+### 18. Stack the clauses and add the clawback, and find the clawback is the clause — a yearly hurdle with a clawback is the compounding one collected late, and the $1.5m miss clears its own line by charging more three years earlier
+
+Reproduce with: `python fill_realism.py --section 18` (arithmetic on section
+11; nothing is re-run)
+
+Section 17 ran the compounding hurdle and the partial catch-up as
+alternatives to each other. The private-equity document has both at once:
+the preferred return compounds until it is cleared, and when it is, the
+manager takes the catch-up. `fund_walk()` could already do that —
+`cumulative=True` with `form="catch_up"` — and nobody had run it. And the
+other half of that document is the **clawback**: when the fund winds up,
+the manager's carry over its whole life may not exceed what the clause
+would have charged on the whole life as one year, and the excess comes
+back. `fund_walk(clawback=True)` runs the terminal form of it — the final
+NAV with the paid incentive put back, against the capital that came in,
+at the hurdle compounded through every year, charged or not — with the
+paid dollars treated as escrowed and earning nothing, the usual
+assumption. The returned dollars go back into the final NAV and are
+reported as `clawback`; `incentive` is what the manager keeps and
+`incentive_paid` what was charged along the way. Every clause of sections
+16 and 17 runs with and without it, at zero-and-thirty, at 2%, 5% and 8%,
+on every cell: 1,512 walks.
+
+The predictions, written first. Stacking: the catch-up changes the size of
+a charge and never whether there is one, because it only acts above the
+line and the line is the compounding hurdle's whatever the form — so the
+stacked clause charges exactly the years the cumulative hurdle charges, in
+every cell at every rate, and takes more wherever the cumulative hurdle
+charged anything. The years it does charge are 2021 and 2024, which clear
+the catch-up at any rate section 17 could hold, so in those years it takes
+the plain fee on the whole excess over the mark; what it cannot touch are
+the years the line was not cleared, whose dollars section 17 found are the
+bulk, so across the surface it should land under half-way from the
+cumulative hurdle toward the yearly catch-up — under $20bn at 5%, against
+$10.6bn and $47.2bn — and put fewer cells back on exactly 70.0% than the
+yearly catch-up's 10, 5 and 1. The identity survives the clawback with the
+returned dollars as exempt dollars by another name: share = (1 − perf) +
+(exempt + returned) / gross in every cell on its mark. The clawback bites
+the yearly hurdle in most cells, because a yearly hurdle exempts perf × h
+× mark in a charged year and nothing in any other, while the lifetime test
+compounds the hurdle through all ten: more than half the charged cells at
+5%, every charged cell at 8%, and at 8% it returns everything in the cells
+whose decade's gross is under the lifetime line, 1.08 to the tenth less
+one, 116% of the capital. It bites a cumulative clause nowhere, hard or
+stacked, because the compounding line exempts every missed year whole,
+which is more than the lifetime test exempts. And on the yearly catch-up
+it bites only at the top of the surface, where the decade's profit does
+not finish the lifetime catch-up: every cell it bites in the bottom half
+by gross on the NAV.
+
+Eight predictions; three failed. Two of the three for the same reason —
+the fee comes out of the fund the clause is read on — which is the
+finding, and the third because at 8% the whole surface is the top of it.
+
+**The investor's share at 20% participation and the years charged of the
+years up, with the yearly hard hurdle after its clawback in the last
+column:**
+
+```
+                                   5% hurdle                                 |  8% hurdle
+   AUM       cumulative     stacked 100%    stacked 50%   yearly, clawed back |  cumulative   stacked 100%  yearly, clawed back
+   $0.1bn   83.7% 4/6      72.8% 4/6      77.1% 4/6     82.7%    $9m back    |   93.0% 2/6    83.0% 2/6     93.0%    $19m back
+   $1bn     86.6% 2/5      78.2% 2/5      81.7% 2/5     86.2%  $110m back    |   98.5% 1/5    95.0% 2/5     99.4%   $222m back
+   $2bn     87.7% 2/4      77.0% 2/4      80.4% 2/4     87.5%  $232m back    |  100.0% 0/4   100.0% 0/4    100.0%   $421m back
+   $5bn     91.8% 1/4      83.5% 2/4      85.8% 2/4     91.2%  $585m back    |  100.0% 0/4   100.0% 0/4    100.0%   $767m back
+   $10bn    89.8% 1/5      85.0% 1/5      85.0% 1/5     91.3% $1,156m back   |  100.0% 0/5   100.0% 0/5    100.0% $1,480m back
+   $20bn    95.9% 1/5      86.4% 1/5      93.1% 1/5    100.0% $2,182m back   |  100.0% 0/5   100.0% 0/5    100.0% $1,448m back
+   $100bn  100.0% 0/5     100.0% 0/5     100.0% 0/5    100.0%   $47m back    |  100.0% 0/5   100.0% 0/5    100.0%     $0m back
+```
+
+**The manager's incentive across the 42 cells, $bn, and what the clawback
+returns under each clause:**
+
+```
+                           2% hurdle            5% hurdle            8% hurdle
+                        kept   returned      kept   returned      kept   returned
+   yearly hard          45.5     15.8        31.8     22.4        22.9     22.8
+   cumulative           30.9      1.9        10.6      1.4         0.8      0.5
+   yearly catch-up      56.1     11.6        47.2     20.0        39.7     39.3
+   stacked, 100%        40.6      0.5        21.3      2.0         2.2      1.4
+   stacked, 80%         40.3      0.4        20.1      1.8         1.9      1.3
+   stacked, 50%         38.7      1.6        16.2      1.7         1.3      0.9
+```
+
+**The stacked clause is the compounding hurdle with the catch-up's
+dollars, and it is also the compounding hurdle with a different line.**
+The dollars went as predicted: more than the cumulative hurdle in all 80
+cells it charged, and 39%, 29% and 4% of the way from the cumulative
+hurdle to the yearly catch-up at 2%, 5% and 8% — $21.3bn at 5%, over the
+$20bn the prediction named and well under half-way. The cells back on
+exactly 70.0% fall to 4, 0 and 0 from the yearly catch-up's 10, 5 and 1,
+and the 50% rate takes the surface from $21.3bn to $16.2bn where section
+17 found the same cut worth $3.6bn on the yearly clause, because over a
+compounded line the catch-up has further to go. But the stacked clause
+charged the *same years* in 369 cells of 378, not all of them, and the
+nine it did not are the finding. In all nine it charged one year more.
+The $5bn fund at 20% is one of them — the fund section 17 found $1.5m
+short of its line in 2024. Under the cumulative hurdle its 2021 charge was
+$366m, 30% of what stood over a line 16.8% above the mark; under the
+stacked clause the catch-up finishes and the charge is $669m, 30% of the
+whole $2,230m excess. The fund ends 2021 $303m lower, at $7,585m instead of
+$7,888m, and that is the mark the next line is read against. 2024's
+excess is then $1,266m on a $7,585m mark — 16.7% over, against a line at
+15.68% — where it had been $1,235m on $7,888m, 15.66%. The clause cleared
+its own line by charging more three years earlier. The catch-up does act
+only above the line; but the fee comes out of the fund, the mark is the
+fund, and the line is read on the mark, so a bigger charge in one year is
+a lower line in the next. Section 14 found the fee decides the book; here
+it decides the hurdle. The other eight are the same mechanism at $1bn and
+20% at 8% and $20bn and 50% at 5%, at all three rates.
+
+**The clawback on the yearly hurdle bites in every cell it charged, at
+every hurdle, and what is left is the compounding hurdle.** The
+prediction said more than half at 5% and all at 8%; it is 40 of 40, 38 of
+38 and 34 of 34. The mechanism is the one written down — four charged
+years of a 5% hurdle exempt less than a decade of it compounded — and it
+has no exceptions on this tape, because no cell charges more than six
+years of ten, most charge four or five, and 1.05 to the tenth is 63%
+against four or five 5%s of marks that mostly do not grow. At 8% the clawback returns everything in 22 cells,
+and they are exactly the 22 whose decade's gross is under 116% of the
+capital, as predicted, to the cell. The $5bn fund at 20% paid $977m under
+the yearly clause, had $356m exempted along the way, and gives $585m
+back: the lifetime line at 5% is $943m of fee on a $5bn start, and the
+yearly clause only ever kept $356m of it off the bill. What the clause
+keeps after the clawback is $29.8bn, $9.4bn and $0.2bn at 2%, 5% and 8%
+— and the compounding hurdle, with its own clawback, keeps $29.1bn, $9.2bn
+and $0.3bn. The two clauses that section 17 found an order of magnitude
+apart are within 3% of each other at 2% and 5% once the document has a
+clawback in it, and both under $0.3bn at 8%.
+A yearly hurdle with a terminal clawback is a compounding hurdle whose
+exemption is collected at the end instead of along the way — the same
+dollars, charged first and returned later rather than never charged.
+
+**And it bites the cumulative clause too — in 18 cells of 126, and 56 of
+504 across the four compounding clauses — which the prediction said could
+not happen.** The $20bn fund at 20% and 5% is the case. The cumulative
+line is cleared once, in 2021, when the NAV at $29.3bn after the fee
+stands over a line that has compounded from $20bn for seven years to
+$28.1bn; the charge is $493m. Then 2022 loses 39% and the fund ends the
+decade at $31.9bn — over its mark, but under a lifetime line of $32.6bn.
+The decade did not earn 5% a year, so the whole $493m comes back. The
+prediction was that the compounding line exempts more than the lifetime
+test, and it does, in the years before a charge: every missed year's
+dollars, whole. What it does not do is look at the years after one. The
+line resets to the NAV when a fee is charged and compounds from there,
+so a charge in 2021 is final whatever 2022 does; the lifetime test is on
+the NAV the fund winds up with. The cumulative hurdle looks back, the
+clawback looks forward, and a fund that charged on the way up and gave it
+back is the case the second half of the document was written for. All
+18 cells are of this shape — one to three charged years, a gross on the
+decade between 20% and 150% of the capital — and in 5 of them, three at
+8% and the $20bn funds at 2% and 5%, everything comes back.
+
+**The catch-up's clawback at 8% bites the whole surface, not the top of
+it.** 8 of 10 bitten cells in the bottom half by gross at 2%, 17 of 19 at
+5%, as predicted — and 13 of 34 at 8%, because at 8% it bites in 34 cells
+of 42 and the bottom half holds 21. The lifetime catch-up at 8% finishes
+at an excess of h / (1 − perf) over the capital, which is 1.159 / 0.7 =
+166% of it, and no cell on the surface grosses that in a decade; so the
+lifetime cap is the catch-up's unfinished form, everything above the
+lifetime line, which is zero in the 22 cells under it and small in the
+rest. The yearly catch-up at 8% charged $39.7bn across the surface and
+keeps $0.4bn of it. Every clause at 8% keeps under $0.8bn once it has a
+clawback, the yearly hard hurdle $0.2bn: at a hurdle the decade did not earn, the form of
+the yearly clause is the order the dollars move in, and the clawback is
+the amount.
+
+So: with a clawback in the document the clause is the lifetime test, and
+the yearly form is timing — the identity section 15 found for the mark,
+and section 16 found a hurdle breaks, comes back for the hurdle once the
+decade is charged as one year. Section 16 found a yearly hurdle is an
+exemption because the mark absorbs what it lets through; the clawback is
+the exemption done properly, at the end, on the whole life, and it
+makes a yearly hurdle and a compounding one the same clause to within 3%
+of the dollars.
+And a catch-up stacked on a compounding hurdle is not only more dollars
+in the charged years: it moves the line, because the line is read on a
+mark the fee came out of, and on this tape that is the difference between
+a fund that paid once in a decade and one that paid twice.
+
+What this does not do: the clawback is terminal and the escrow earns
+nothing — an interim clawback tested every year, or escrowed dollars that
+earn the fund's return, would both bite earlier and return less, and are
+the next cells. The lifetime test is on the whole decade, so a fund that
+wound up in 2022 would have been clawed harder than one that ran to 2024;
+the wind-up date is the tape's end and not a choice. And the nine cells
+where the stacked clause charged one year more say the line should be
+run at two-and-twenty too, where the management fee moves the mark every
+year by the same mechanism, which is the one schedule this section does
+not run.
 
 ### What this still does not model
 

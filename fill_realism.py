@@ -1814,7 +1814,7 @@ def fund_walk(column: list[dict], start: float, knee: float | None,
               mgmt: float = MGMT_FEE, perf: float = PERF_FEE,
               bars_per_year: int = TRADING_DAYS, hurdle: float = 0.0,
               form: str = "hard", cumulative: bool = False,
-              catch: float = 1.0) -> dict:
+              catch: float = 1.0, clawback: bool = False) -> dict:
     """Run the fund on its own NAV: gains stay in, fees come out, and the
     position each year is whatever the NAV can hold.
 
@@ -1844,6 +1844,19 @@ def fund_walk(column: list[dict], start: float, knee: float | None,
     The high-water mark still moves on every up year, as before; what
     compounds is the hurdle line, not the mark. `catch` is passed through
     to hurdle_incentive() for the catch-up form.
+
+    `clawback` is the other half of the private-equity waterfall, in its
+    usual terminal form: when the fund winds up, the manager's incentive
+    over its whole life may not exceed what the clause would have charged
+    on the whole life as one year - the final NAV with the paid incentive
+    put back, against the starting capital, at the hurdle compounded over
+    every year - and any excess is returned to the investor. The paid
+    dollars are treated as escrowed, earning nothing, which is the usual
+    assumption and the one that keeps the test arithmetic on the walk
+    rather than another walk. The returned dollars go back into the final
+    NAV and the investor's net, and are reported as `clawback`;
+    `incentive` is what the manager keeps, `incentive_paid` what was
+    charged along the way.
     """
     nav = mark = start
     hurdle_line = start          # the cumulative hurdle's level, compounding until charged
@@ -1897,8 +1910,21 @@ def fund_walk(column: list[dict], start: float, knee: float | None,
                          "excess_over_mark": excess, "caught_up": caught_up, "nav": nav,
                          "high_water_mark": mark, "hurdle_rate_charged": effective,
                          "under_the_knee": (knee is not None and sized_on < knee)})
+    charged = paid["incentive"]
+    returned = 0.0
+    if clawback and charged > 0.0:
+        # the whole life as one year: the hurdle compounded through every
+        # year, charged or not, on the capital that came in
+        life = 1.0
+        for _, _, bars in column[0]["year_ends"]:
+            life *= 1.0 + hurdle * bars / bars_per_year
+        cap = hurdle_incentive(nav + charged, start, perf, life - 1.0, form, catch)
+        returned = max(charged - cap, 0.0)
+        nav += returned
+        paid["incentive"] = charged - returned
     take = paid["management"] + paid["incentive"]
-    return {**paid, "manager_take": take, "gross_pl": gross, "investor_net": gross - take,
+    return {**paid, "incentive_paid": charged, "clawback": returned,
+            "manager_take": take, "gross_pl": gross, "investor_net": gross - take,
             "investor_net_return": (gross - take) / start, "start": start, "final_nav": nav,
             "nav_change": nav / start - 1.0, "high_water_mark": mark,
             "crossed_knee_down": crossed_down, "crossed_knee_up": crossed_up,
@@ -2497,6 +2523,9 @@ def _variant(name: str) -> dict:
         return {"form": "hard", "cumulative": True}
     if name.startswith("catch_up "):
         return {"form": "catch_up", "catch": float(name.split()[1].rstrip("%")) / 100.0}
+    if name.startswith("cumulative catch_up "):
+        # section 18: the two clauses of section 17 in one document
+        return {**_variant(name[len("cumulative "):]), "cumulative": True}
     raise ValueError(f"no hurdle variant {name!r}")
 
 
@@ -2647,6 +2676,244 @@ def print_hurdle_variants(cells: list[dict], verdicts: dict) -> None:
           f"{v['partial_between_hard_and_full']} of {v['partial_cells']} cells. Cells back on the "
           f"plain share, by rate and hurdle: {v['restores_plain']}"
           f"{' - falling with the rate' if v['restores_fall_with_the_rate'] else ' - NOT falling with the rate'}.")
+
+
+# ---------- 18. the clauses stacked, and the clawback ----------
+
+STACKED_VARIANTS = ("hard", "cumulative", "catch_up 100%", "cumulative catch_up 100%",
+                    "cumulative catch_up 80%", "cumulative catch_up 50%")
+
+
+def stacked_sweep(rows: list[dict], knees: list[dict], hurdles=(0.02, 0.05, 0.08),
+                  variants=STACKED_VARIANTS, schedule=(0.0, 0.30)) -> list[dict]:
+    """Section 17's two clauses in one document, and the clawback under all
+    of them, at zero-and-thirty on every cell.
+
+    Section 17 ran the compounding hurdle and the partial catch-up as
+    alternatives. The private-equity document has both: the preferred
+    return compounds until it is cleared, and when it is the manager takes
+    the catch-up. fund_walk() could already do that - cumulative=True with
+    form="catch_up" - and nobody had run it. And the other half of that
+    document is the clawback: at wind-up the manager's carry over the
+    fund's life may not exceed what the clause would charge on the life as
+    one year, and the excess comes back. Every variant here runs with and
+    without it.
+
+    Predictions, written first.
+
+    STACKING. The catch-up changes the size of a charge and never whether
+    there is one, because it only acts above the line and the line is the
+    cumulative hurdle's whatever the form. So the stacked clause charges
+    exactly the years the cumulative hurdle charges, in every cell at every
+    rate, and takes more in every cell the cumulative hurdle charged
+    anything, because a catch-up above the line is at least perf of what
+    stands over it. The years it does charge on this tape are 2021 and
+    2024, which clear the catch-up at any rate section 17 could hold, so
+    in those years it takes the plain fee on the whole excess over the
+    mark; what it cannot touch are the years the line was not cleared,
+    whose dollars section 17 found are the bulk. So across the surface the
+    stacked clause should land under half-way from the cumulative hurdle
+    toward the yearly catch-up - under $20bn at 5%, against $10.6bn and
+    $47.2bn - and the cells back on exactly 70.0% should be fewer than
+    section 17's 10, 5 and 1 at every rate, because the line is higher.
+
+    THE IDENTITY. Share = (1 - perf) + exempt / gross in every cell on its
+    mark, as in sections 16 and 17, and with the clawback the returned
+    dollars are exempt dollars by another name: share = (1 - perf) +
+    (exempt + clawback) / gross.
+
+    THE CLAWBACK ON THE YEARLY HURDLE bites in most cells, and that is the
+    finding to expect. A yearly hard hurdle exempts perf x h x mark in a
+    charged year and nothing in any other, while the lifetime test
+    compounds the hurdle through all ten years; four charged years of ten
+    exempt less than a decade of preferred return, so the paid carry stands
+    over the cap. It should bite in more than half the cells the yearly
+    clause charged at 5%, in every charged cell at 8%, and at 8% return
+    everything in the cells whose decade's gross is under the lifetime
+    hurdle - 1.08 to the tenth less one, 116% of the capital - which is
+    the top of the surface, where the gross on the NAV is lowest. A yearly
+    hurdle with a terminal clawback is a lifetime hurdle collected late.
+
+    THE CLAWBACK ON THE CUMULATIVE HURDLE bites nowhere, hard or stacked:
+    the compounding line exempts every missed year's dollars whole, which
+    is more than the lifetime test exempts, so the paid carry is under the
+    cap in all 126 cells of each. On the yearly catch-up it bites only
+    where the decade's profit does not finish the lifetime catch-up, which
+    is the same top-of-surface cells and none near the knee: every cell it
+    bites should sit in the bottom half of the surface by gross on the NAV.
+    """
+    knee_at = {k["participation"]: k for k in knees}
+    mgmt, perf = schedule
+    out = []
+    for rate in sorted({r["participation"] for r in rows}):
+        col = sorted((r for r in rows if r["participation"] == rate), key=lambda r: r["aum"])
+        knee = knee_at.get(rate, {}).get("knee_aum")
+        for h in hurdles:
+            for name in variants:
+                for claw in (False, True):
+                    for r in col:
+                        w = fund_walk(col, r["aum"], knee, mgmt, perf, hurdle=h, clawback=claw,
+                                      **_variant(name))
+                        gross = w["gross_pl"]
+                        share = w["investor_net"] / gross if gross > 0 else None
+                        out.append({"variant": name, "clawback_clause": claw, "hurdle": h,
+                                    "aum": r["aum"], "participation": rate, "mgmt": mgmt, "perf": perf,
+                                    **{key: w[key] for key in ("incentive", "incentive_paid", "clawback",
+                                                               "exempt", "manager_take", "gross_pl",
+                                                               "investor_net", "final_nav", "years_up",
+                                                               "years_charged", "years_caught_up")},
+                                    "ends_at_the_mark": w["final_nav"] >= w["high_water_mark"] * (1 - 1e-12),
+                                    "investor_share": share,
+                                    "gross_on_nav_per_year": gross / r["aum"] / len(w["schedule"]),
+                                    "exempt_share": (w["exempt"] / gross) if gross > 0 else None,
+                                    "returned_share": (w["clawback"] / gross) if gross > 0 else None})
+    return out
+
+
+def stacked_verdicts(cells: list[dict]) -> dict:
+    """The predictions in stacked_sweep's docstring, scored."""
+    key = lambda c: (c["hurdle"], c["aum"], c["participation"])
+    by = {}
+    for c in cells:
+        by.setdefault((c["variant"], c["clawback_clause"]), {})[key(c)] = c
+    plain = lambda name: by.get((name, False), {})
+    clawed = lambda name: by.get((name, True), {})
+    tol = lambda c: 1e-6 * max(c["gross_pl"], 1.0)
+    hurdles = sorted({c["hurdle"] for c in cells})
+    top = max(hurdles)
+    cum = plain("cumulative")
+    stacked = {name: plain(name) for name in STACKED_VARIANTS if name.startswith("cumulative catch_up")}
+    full = stacked.get("cumulative catch_up 100%", {})
+
+    # stacking: the same years, more dollars, and under half-way
+    same_years = sum(c["years_charged"] == cum[k]["years_charged"]
+                     for cells_of in stacked.values() for k, c in cells_of.items() if k in cum)
+    same_years_of = sum(1 for cells_of in stacked.values() for k in cells_of if k in cum)
+    cum_charged = [k for k, c in cum.items() if c["incentive"] > 0]
+    more = sum(full[k]["incentive"] > cum[k]["incentive"] + tol(cum[k]) for k in cum_charged if k in full)
+    yearly_catch = plain("catch_up 100%")
+    take = lambda cells_of, h: sum(c["incentive"] for k, c in cells_of.items() if k[0] == h)
+    toward = {}
+    for h in hurdles:
+        lo, hi, mid = take(cum, h), take(yearly_catch, h), take(full, h)
+        toward[f"{h:.0%}"] = (mid - lo) / (hi - lo) if hi > lo else None
+    restores = {name: {f"{h:.0%}": sum(1 for c in cells_of.values() if c["hurdle"] == h and c["years_up"] > 0
+                                       and c["years_caught_up"] == c["years_up"]) for h in hurdles}
+                for name, cells_of in stacked.items()}
+    yearly_restores = {f"{h:.0%}": sum(1 for c in yearly_catch.values() if c["hurdle"] == h
+                                       and c["years_up"] > 0 and c["years_caught_up"] == c["years_up"])
+                       for h in hurdles}
+    fewer = all(restores[n][h] <= yearly_restores[h] for n in restores for h in yearly_restores)
+
+    # the identity, clawback included
+    on_mark = [c for c in cells if c["gross_pl"] > 0 and c["ends_at_the_mark"]]
+    identity = sum(abs(c["investor_share"] - (1.0 - c["perf"]) - c["exempt_share"] - c["returned_share"]) < 1e-9
+                   for c in on_mark)
+
+    # the clawback on the yearly hurdle
+    hard = clawed("hard")
+    hard_charged = {h: [c for c in hard.values() if c["hurdle"] == h and c["incentive_paid"] > 0] for h in hurdles}
+    bites = {f"{h:.0%}": sum(c["clawback"] > 0 for c in cs) for h, cs in hard_charged.items()}
+    charged = {f"{h:.0%}": len(cs) for h, cs in hard_charged.items()}
+    everything = [c for c in hard_charged[top] if c["incentive"] == 0.0]
+    gross_of = lambda c: c["gross_pl"] / c["aum"]
+    lifetime = (1.0 + top) ** 10 - 1.0
+    under_line = [c for c in hard_charged[top] if gross_of(c) < lifetime]
+
+    # never on a cumulative clause; on the yearly catch-up only at the top of the surface
+    cum_bites = sum(c["clawback"] > 0 for name in ("cumulative", "cumulative catch_up 100%",
+                                                     "cumulative catch_up 80%", "cumulative catch_up 50%")
+                    for c in clawed(name).values())
+    cum_cells = sum(len(clawed(name)) for name in ("cumulative", "cumulative catch_up 100%",
+                                                    "cumulative catch_up 80%", "cumulative catch_up 50%"))
+    catch_bites = {}
+    catch_bottom = {}
+    for h in hurdles:
+        cs = [c for c in clawed("catch_up 100%").values() if c["hurdle"] == h]
+        median = float(np.median([c["gross_on_nav_per_year"] for c in cs]))
+        bitten = [c for c in cs if c["clawback"] > 0]
+        catch_bites[f"{h:.0%}"] = len(bitten)
+        catch_bottom[f"{h:.0%}"] = sum(c["gross_on_nav_per_year"] <= median for c in bitten)
+    return {
+        "stacked_cells": same_years_of,
+        "stacked_charges_the_same_years": same_years,
+        "cumulative_charged": len(cum_charged),
+        "stacked_takes_more_where_charged": more,
+        "stacked_fraction_of_the_way_to_the_yearly_catch_up": toward,
+        "stacked_take_bn": {f"{h:.0%}": take(full, h) / 1e9 for h in hurdles},
+        "cumulative_take_bn": {f"{h:.0%}": take(cum, h) / 1e9 for h in hurdles},
+        "yearly_catch_up_take_bn": {f"{h:.0%}": take(yearly_catch, h) / 1e9 for h in hurdles},
+        "restores_plain": restores,
+        "yearly_catch_up_restores_plain": yearly_restores,
+        "stacked_restores_fewer": fewer,
+        "on_the_mark": len(on_mark),
+        "share_is_plain_plus_exempt_plus_returned": identity,
+        "yearly_hard_charged": charged,
+        "yearly_hard_clawed": bites,
+        "top_hurdle": top,
+        "yearly_hard_returns_everything_at_top": len(everything),
+        "yearly_hard_under_the_lifetime_line_at_top": len(under_line),
+        "returns_everything_exactly_under_the_line": sorted(key(c) for c in everything) == sorted(key(c) for c in under_line),
+        "cumulative_cells_clawed": cum_bites,
+        "cumulative_cells": cum_cells,
+        "yearly_catch_up_clawed": catch_bites,
+        "yearly_catch_up_clawed_in_the_bottom_half_by_gross": catch_bottom,
+    }
+
+
+def print_stacked(cells: list[dict], verdicts: dict) -> None:
+    aums = sorted({c["aum"] for c in cells})
+    rates = sorted({c["participation"] for c in cells})
+    hurdles = sorted({c["hurdle"] for c in cells})
+    mid = rates[len(rates) // 2]
+    cell = {(c["variant"], c["clawback_clause"], c["hurdle"], c["aum"], c["participation"]): c for c in cells}
+    mgmt, perf = cells[0]["mgmt"], cells[0]["perf"]
+    shown = ("cumulative", "cumulative catch_up 100%", "cumulative catch_up 50%", "hard")
+    print(f"\n18. THE CLAUSES STACKED, AND THE CLAWBACK   "
+          f"{mgmt * 100:g}-and-{perf * 100:g}, at {mid:.0%} participation")
+    for h in hurdles:
+        print(f"\n   {h:.0%} hurdle - the investor's share of the gross and the years charged of years "
+              f"up; the last column is the yearly hurdle after the clawback, with what came back:")
+        print(f"\n{'AUM':>9} " + " ".join(f"{v:>24}" for v in shown[:3]) + f"{'hard, clawed back':>28}")
+        for aum in aums:
+            row = []
+            for v in shown[:3]:
+                c = cell.get((v, False, h, aum, mid))
+                if c is None or c["investor_share"] is None:
+                    row.append(f"{'-':>24}")
+                else:
+                    row.append(f"{c['investor_share']:>17.1%} {c['years_charged']:>2}/{c['years_up']:<2} ")
+            c = cell.get(("hard", True, h, aum, mid))
+            if c is None or c["investor_share"] is None:
+                row.append(f"{'-':>28}")
+            else:
+                row.append(f"{c['investor_share']:>14.1%}  ${c['clawback'] / 1e6:>7,.0f}m back")
+            print(f"{aum / 1e9:>7.1f}bn " + " ".join(row))
+        take = {v: sum(c["incentive"] for c in cells if c["variant"] == v and c["hurdle"] == h
+                       and not c["clawback_clause"]) / 1e9 for v in STACKED_VARIANTS}
+        back = {v: sum(c["clawback"] for c in cells if c["variant"] == v and c["hurdle"] == h
+                       and c["clawback_clause"]) / 1e9 for v in STACKED_VARIANTS}
+        print(f"\n   manager's incentive across all {len(aums) * len(rates)} cells, $bn: "
+              + ", ".join(f"{v} {t:,.1f}" for v, t in take.items()))
+        print("   returned by the clawback, $bn: "
+              + ", ".join(f"{v} {t:,.1f}" for v, t in back.items()))
+    v = verdicts
+    print(f"\n   Stacked against cumulative: the same years charged in {v['stacked_charges_the_same_years']} "
+          f"of {v['stacked_cells']} cells, more dollars in {v['stacked_takes_more_where_charged']} of the "
+          f"{v['cumulative_charged']} the cumulative clause charged; the way from cumulative to the "
+          f"yearly catch-up: {v['stacked_fraction_of_the_way_to_the_yearly_catch_up']}. Cells back on "
+          f"the plain share {v['restores_plain']} against the yearly catch-up's "
+          f"{v['yearly_catch_up_restores_plain']}{' - fewer' if v['stacked_restores_fewer'] else ' - NOT fewer'}.")
+    print(f"   The identity: share = (1 - perf) + (exempt + returned) / gross in "
+          f"{v['share_is_plain_plus_exempt_plus_returned']} of the {v['on_the_mark']} cells on their mark.")
+    print(f"   The clawback on the yearly hurdle: bites in {v['yearly_hard_clawed']} of the "
+          f"{v['yearly_hard_charged']} cells it charged; at {v['top_hurdle']:.0%} it returns everything in "
+          f"{v['yearly_hard_returns_everything_at_top']} cells, "
+          f"{v['yearly_hard_under_the_lifetime_line_at_top']} of which gross less than the lifetime line"
+          f"{' - the same cells' if v['returns_everything_exactly_under_the_line'] else ' - NOT the same cells'}.")
+    print(f"   On a cumulative clause it bites in {v['cumulative_cells_clawed']} of {v['cumulative_cells']} "
+          f"cells; on the yearly catch-up in {v['yearly_catch_up_clawed']}, of which "
+          f"{v['yearly_catch_up_clawed_in_the_bottom_half_by_gross']} sit in the bottom half by gross on the NAV.")
 
 
 # ---------- reporting ----------
@@ -3053,8 +3320,19 @@ def _sections(prices, opens, volumes, quick: bool) -> dict:
         return {"hurdle_variants": list(HURDLE_VARIANTS), "hurdle_variant_sweep": cells,
                 "hurdle_variant_verdicts": verdicts}
 
+    def s18(have):
+        surface = need(have, "capacity_surface", 11)
+        if not all("year_ends" in r for r in surface):
+            raise SystemExit("section 11 in the results file predates the yearly curve: "
+                             "run `python fill_realism.py --section 11 --section 18`")
+        cells = stacked_sweep(surface, need(have, "surface_knees", 11))
+        verdicts = stacked_verdicts(cells)
+        print_stacked(cells, verdicts)
+        return {"stacked_variants": list(STACKED_VARIANTS), "stacked_sweep": cells,
+                "stacked_verdicts": verdicts}
+
     return {1: s1, 2: s2, 3: s3, 4: s4, 5: s5, 6: s6, 7: s7, 8: s8, 9: s9, 10: s10, 11: s11,
-            12: s12, 13: s13, 14: s14, 15: s15, 16: s16, 17: s17}
+            12: s12, 13: s13, 14: s14, 15: s15, 16: s16, 17: s17, 18: s18}
 
 
 def main() -> None:

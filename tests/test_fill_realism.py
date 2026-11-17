@@ -763,7 +763,7 @@ def test_a_section_run_refuses_a_different_tape_but_not_a_rerounded_one():
 def test_a_section_that_prints_beside_an_earlier_one_says_so_when_it_is_missing(capsys):
     prices, opens, volumes = _tape()
     sections = _sections(prices, opens, volumes, quick=True)
-    assert list(sections) == list(range(1, 18))
+    assert list(sections) == list(range(1, 19))
     # section 9 prints against section 8's rows; with nothing on disk it has to stop
     with pytest.raises(SystemExit, match="section 8"):
         sections[9]({})
@@ -1215,7 +1215,7 @@ def test_the_comparison_reads_each_schedule_against_two_and_twenty_and_scores_th
 def test_section_15_walks_every_cell_at_every_schedule_and_needs_the_yearly_curve(capsys):
     prices, opens, volumes = _tape()
     sections = _sections(prices, opens, volumes, quick=True)
-    assert list(sections) == list(range(1, 18))
+    assert list(sections) == list(range(1, 19))
     with pytest.raises(SystemExit, match="section 11"):
         sections[15]({"bars": 2520})
     stale = {"capacity_surface": [{"aum": 1e9, "participation": 0.1, "final": 1.1e9,
@@ -1455,3 +1455,111 @@ def test_section_17_walks_every_variant_and_scores_the_predictions(capsys):
     assert v["restores_fall_with_the_rate"]
     assert "17. THE HURDLE THAT COMPOUNDS" in out
     assert len(CATCH_RATES) == sum(1 for name in HURDLE_VARIANTS if name.startswith("catch_up"))
+
+
+# ---------- 18. the clauses stacked, and the clawback ----------
+
+from fill_realism import STACKED_VARIANTS, _variant, stacked_sweep, stacked_verdicts
+
+
+def test_the_clawback_returns_what_the_decade_did_not_earn_and_nothing_when_it_did():
+    # no hurdle, +$400m then -$300m on $1bn at zero-and-thirty: the first
+    # year charges $120m on the $400m excess and the fund ends under its
+    # mark, having made $100m. The lifetime test is 30% of that profit
+    # with the paid fee put back, $30m, and the other $90m comes back
+    col = _column([400e6, -300e6], knee=1e9)
+    plain = fund_walk(col, 1e9, None, mgmt=0.0, perf=0.3)
+    clawed = fund_walk(col, 1e9, None, mgmt=0.0, perf=0.3, clawback=True)
+    assert plain["clawback"] == 0.0 and plain["incentive_paid"] == plain["incentive"]
+    assert clawed["incentive_paid"] == pytest.approx(plain["incentive"])
+    profit = clawed["final_nav"] - clawed["clawback"] + clawed["incentive_paid"] - 1e9
+    assert clawed["clawback"] == pytest.approx(clawed["incentive_paid"] - 0.3 * profit)
+    assert clawed["clawback"] > 0
+    assert clawed["final_nav"] == pytest.approx(plain["final_nav"] + clawed["clawback"])
+    assert clawed["investor_net"] == pytest.approx(plain["investor_net"] + clawed["clawback"])
+    assert clawed["clawback"] == pytest.approx(90e6)
+    # which puts the investor back on 70% of the gross, the share section
+    # 15 found only for a fund that ends on its mark: the clawback is the
+    # refund of section 13's fee on dollars later given back
+    assert clawed["investor_net"] / clawed["gross_pl"] == pytest.approx(0.7)
+    # a fund that only ever goes up has paid 30% of its profit and no more
+    up = fund_walk(_column([100e6, 200e6, 300e6], knee=1e9), 1e9, None, mgmt=0.0, perf=0.3, clawback=True)
+    assert up["clawback"] == 0.0
+
+
+def test_the_lifetime_test_compounds_the_hurdle_through_every_year_charged_or_not():
+    # a 5% yearly hurdle on $1bn, +30% then +30%: both years charged, and
+    # the yearly clause exempts 5% of the mark in each. The lifetime line
+    # is 1.05 squared, which is more than two 5%s of the marks only when
+    # the marks did not grow - here they did, so nothing comes back
+    col = _column([300e6, 390e6], knee=1e9)
+    w = fund_walk(col, 1e9, None, mgmt=0.0, perf=0.3, hurdle=0.05, form="hard", clawback=True)
+    assert w["years_charged"] == 2 and w["clawback"] == 0.0
+    # +30% then -25%: one charge on the way up, and the fund ends 2.5%
+    # under its capital, under a lifetime line of 10.25% over it. The
+    # decade did not earn its hurdle, so the whole charge comes back
+    col = _column([300e6, -325e6], knee=1e9)
+    w = fund_walk(col, 1e9, None, mgmt=0.0, perf=0.3, hurdle=0.05, form="hard", clawback=True)
+    assert w["incentive_paid"] > 0 and w["incentive"] == 0.0
+    assert w["clawback"] == pytest.approx(w["incentive_paid"])
+    # the compounding line charges that same year and is clawed the same
+    # way: it looks back at the years before a charge and never at the
+    # ones after, which is the half of the document the clawback is for
+    cum = fund_walk(col, 1e9, None, mgmt=0.0, perf=0.3, hurdle=0.05, form="hard", cumulative=True,
+                    clawback=True)
+    assert cum["incentive_paid"] > 0 and cum["incentive"] == 0.0
+
+
+def test_the_stacked_clause_is_section_17s_two_clauses_in_one_document():
+    assert _variant("cumulative catch_up 80%") == {"form": "catch_up", "catch": 0.8, "cumulative": True}
+    with pytest.raises(ValueError):
+        _variant("cumulative soft")
+    # the section 17 example: -6%, +1%, +20%, -10%, +40% on $5bn at a 5%
+    # hurdle. The compounding line is cleared once, in the last year, and
+    # +40% is enough to finish the catch-up over it, so the stacked clause
+    # takes the plain 30% of that year's excess over the mark where the
+    # cumulative hurdle took 30% of what stood over the line
+    col = _column([-300e6, 50e6, 1000e6, -500e6, 2000e6])
+    cum = fund_walk(col, 5e9, None, mgmt=0.0, perf=0.3, hurdle=0.05, **_variant("cumulative"))
+    stacked = fund_walk(col, 5e9, None, mgmt=0.0, perf=0.3, hurdle=0.05,
+                        **_variant("cumulative catch_up 100%"))
+    assert [y["incentive"] > 0 for y in stacked["schedule"]] == [y["incentive"] > 0 for y in cum["schedule"]]
+    last = stacked["schedule"][-1]
+    assert last["caught_up"]
+    assert last["incentive"] == pytest.approx(0.3 * last["excess_over_mark"])
+    assert stacked["incentive"] > cum["incentive"]
+    # at 50% the catch-up needs 1.5 line-dollars over the line to finish,
+    # and +40% over an 11% line is 1.4 of them: it does not, so the take
+    # is half of what stands over the line, between the other two
+    half = fund_walk(col, 5e9, None, mgmt=0.0, perf=0.3, hurdle=0.05,
+                     **_variant("cumulative catch_up 50%"))
+    year = half["schedule"][-1]
+    line = year["hurdle_rate_charged"] * (year["high_water_mark"] - year["excess_over_mark"] + year["incentive"])
+    assert not year["caught_up"]
+    assert year["incentive"] == pytest.approx(0.5 * (year["excess_over_mark"] - line))
+    assert cum["incentive"] < half["incentive"] < stacked["incentive"]
+
+
+def test_the_stacked_sweep_runs_every_clause_with_and_without_the_clawback():
+    col = _column([-100e6, 150e6, 150e6, 150e6, 150e6, 150e6, 150e6, 150e6, 150e6, 150e6])
+    cells = stacked_sweep(col, [], hurdles=(0.05,))
+    assert len(cells) == 2 * len(STACKED_VARIANTS) * len(col)
+    assert all(c["clawback"] == 0.0 for c in cells if not c["clawback_clause"])
+    v = stacked_verdicts(cells)
+    assert v["stacked_cells"] == 3 * len(col)
+    assert v["share_is_plain_plus_exempt_plus_returned"] == v["on_the_mark"] == len(cells)
+    assert set(v["yearly_hard_clawed"]) == {"5%"}
+
+
+def test_section_18_runs_the_stacked_sweep_and_scores_the_predictions(capsys):
+    prices, opens, volumes = _tape()
+    sections = _sections(prices, opens, volumes, quick=True)
+    with pytest.raises(SystemExit, match="section 11"):
+        sections[18]({"bars": 2520})
+    col = _column([-100e6, 150e6, 150e6, 150e6, 150e6, 150e6, 150e6, 150e6, 150e6, 150e6])
+    added = sections[18]({"capacity_surface": col, "surface_knees": [], "bars": 2520})
+    out = capsys.readouterr().out
+    assert set(added) == {"stacked_variants", "stacked_sweep", "stacked_verdicts"}
+    assert len(added["stacked_sweep"]) == 3 * 2 * len(STACKED_VARIANTS) * len(col)
+    assert "18. THE CLAUSES STACKED" in out
+    assert "returned by the clawback" in out

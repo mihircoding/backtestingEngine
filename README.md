@@ -156,13 +156,27 @@ become 73, at 8% 21 — a $5bn fund ends 2024 $1.2bn over its mark and
 pays nothing, for being $1.5m under a line three years of compounding
 drew. A catch-up at 80% or 50% instead of the full waterfall barely
 moves, because the years that get charged here finish it at any rate.
-[RESULTS.md](RESULTS.md) has all of it, and the corrections.
+The fifteenth stacks the two — the private-equity document, a
+compounding hurdle with a catch-up — and adds the clawback, the other
+half of that document, under every clause: at wind-up the manager keeps
+no more than the clause would charge on the whole decade as one year.
+The clawback bites the yearly hurdle in every cell it charged and leaves
+it within 3% of the compounding one, because a yearly hurdle only ever
+exempts the hurdle in the years it charges and the lifetime test
+compounds it through all ten; it bites the compounding hurdle too, in 18
+cells, where a fund charged on the way up and gave it back, because the
+line looks back and the clawback looks forward; and at 8% every clause
+keeps under $0.8bn of a surface the yearly catch-up charged $39.7bn on.
+And the stacked clause charges one year more than the compounding hurdle
+in nine cells — the $5bn fund that missed its line by $1.5m clears it,
+because the bigger 2021 charge left a lower mark for the line to be read
+on. [RESULTS.md](RESULTS.md) has all of it, and the corrections.
 
-428 tests.
+433 tests.
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                 # 428 passed
+python -m pytest -q                 # 433 passed
 
 # the two halves together
 python fill_realism.py              # fill models compared, the headline result
