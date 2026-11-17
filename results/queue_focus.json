@@ -1,0 +1,515 @@
+{
+  "strengths": [
+    0.5,
+    0.3
+  ],
+  "uniform_from": "results/queue_melt.json",
+  "focused": {
+    "0.5": {
+      "focus": 0.5,
+      "n_seeds": 45,
+      "short": {
+        "horizon": 1000,
+        "buckets": [
+          {
+            "lo": 0,
+            "hi": 200,
+            "n": 19,
+            "median_ahead": 95,
+            "held_fill_rate": 1.0,
+            "melt_fill_rate": 1.0,
+            "held_events": 10.578947368421053,
+            "melt_events": 10.578947368421053,
+            "held_markout": 0.6578947368420305,
+            "melt_markout": 0.6578947368420305,
+            "held_adverse": 0.05263157894761973,
+            "melt_adverse": 0.05263157894761973,
+            "traded_share": 1.0,
+            "cancelled_share": 0.0,
+            "held_cancelled_share": 0.0
+          },
+          {
+            "lo": 200,
+            "hi": 1000,
+            "n": 48,
+            "median_ahead": 603,
+            "held_fill_rate": 1.0,
+            "melt_fill_rate": 1.0,
+            "held_events": 50.083333333333336,
+            "melt_events": 49.375,
+            "held_markout": 0.9270833333332007,
+            "melt_markout": 0.843749999999884,
+            "held_adverse": -0.0416666666667472,
+            "melt_adverse": -0.09375000000003315,
+            "traded_share": 0.9919197043264004,
+            "cancelled_share": 0.008080295673599537,
+            "held_cancelled_share": 0.0
+          },
+          {
+            "lo": 1000,
+            "hi": 5000,
+            "n": 50,
+            "median_ahead": 2149,
+            "held_fill_rate": 0.92,
+            "melt_fill_rate": 0.92,
+            "held_events": 195.3695652173913,
+            "melt_events": 188.84782608695653,
+            "held_markout": 1.1630434782608312,
+            "melt_markout": 1.0543478260868318,
+            "held_adverse": 0.13043478260888594,
+            "melt_adverse": 0.03260869565217515,
+            "traded_share": 0.9053999965194995,
+            "cancelled_share": 0.04779597306092616,
+            "held_cancelled_share": 0.020160799122913874
+          },
+          {
+            "lo": 5000,
+            "hi": 20000,
+            "n": 59,
+            "median_ahead": 8254,
+            "held_fill_rate": 0.5932203389830508,
+            "melt_fill_rate": 0.6610169491525424,
+            "held_events": 588.8,
+            "melt_events": 587.5897435897435,
+            "held_markout": 1.5285714285712564,
+            "melt_markout": 1.5256410256409134,
+            "held_adverse": 0.42857142857140423,
+            "melt_adverse": 0.5384615384617046,
+            "traded_share": 0.6949163110474552,
+            "cancelled_share": 0.12180607489918265,
+            "held_cancelled_share": 0.030011388372856426
+          },
+          {
+            "lo": 20000,
+            "hi": 1000000000,
+            "n": 49,
+            "median_ahead": 30243,
+            "held_fill_rate": 0.0,
+            "melt_fill_rate": 0.0,
+            "held_events": null,
+            "melt_events": null,
+            "held_markout": null,
+            "melt_markout": null,
+            "held_adverse": null,
+            "melt_adverse": null,
+            "traded_share": 0.33528627443234005,
+            "cancelled_share": 0.1511823985092857,
+            "held_cancelled_share": 0.011067105189516275
+          }
+        ]
+      },
+      "long": {
+        "horizon": 4000,
+        "buckets": [
+          {
+            "lo": 0,
+            "hi": 200,
+            "n": 19,
+            "median_ahead": 95,
+            "held_fill_rate": 1.0,
+            "melt_fill_rate": 1.0,
+            "held_events": 10.578947368421053,
+            "melt_events": 10.578947368421053,
+            "held_markout": 0.6578947368420305,
+            "melt_markout": 0.6578947368420305,
+            "held_adverse": 0.05263157894761973,
+            "melt_adverse": 0.05263157894761973,
+            "traded_share": 1.0,
+            "cancelled_share": 0.0,
+            "held_cancelled_share": 0.0
+          },
+          {
+            "lo": 200,
+            "hi": 1000,
+            "n": 48,
+            "median_ahead": 603,
+            "held_fill_rate": 1.0,
+            "melt_fill_rate": 1.0,
+            "held_events": 50.083333333333336,
+            "melt_events": 49.375,
+            "held_markout": 0.9270833333332007,
+            "melt_markout": 0.843749999999884,
+            "held_adverse": -0.0416666666667472,
+            "melt_adverse": -0.09375000000003315,
+            "traded_share": 0.9919197043264004,
+            "cancelled_share": 0.008080295673599537,
+            "held_cancelled_share": 0.0
+          },
+          {
+            "lo": 1000,
+            "hi": 5000,
+            "n": 50,
+            "median_ahead": 2149,
+            "held_fill_rate": 0.94,
+            "melt_fill_rate": 0.94,
+            "held_events": 223.25531914893617,
+            "melt_events": 227.5531914893617,
+            "held_markout": 1.1808510638297414,
+            "melt_markout": 1.0425531914892299,
+            "held_adverse": 0.1489361702129631,
+            "melt_adverse": 0.021276595744691738,
+            "traded_share": 0.9157283817412945,
+            "cancelled_share": 0.05503541409254651,
+            "held_cancelled_share": 0.02206637314445817
+          },
+          {
+            "lo": 5000,
+            "hi": 20000,
+            "n": 59,
+            "median_ahead": 8254,
+            "held_fill_rate": 0.9322033898305084,
+            "melt_fill_rate": 0.9491525423728814,
+            "held_events": 1011.7454545454545,
+            "melt_events": 925.4642857142857,
+            "held_markout": 1.7545454545453831,
+            "melt_markout": 1.6785714285713484,
+            "held_adverse": 0.7000000000000351,
+            "melt_adverse": 0.6875000000000598,
+            "traded_share": 0.831829860276952,
+            "cancelled_share": 0.150176143834599,
+            "held_cancelled_share": 0.04965770695754393
+          },
+          {
+            "lo": 20000,
+            "hi": 1000000000,
+            "n": 49,
+            "median_ahead": 30243,
+            "held_fill_rate": 0.5714285714285714,
+            "melt_fill_rate": 0.7755102040816326,
+            "held_events": 2899.1785714285716,
+            "melt_events": 2438.684210526316,
+            "held_markout": 1.9285714285711972,
+            "melt_markout": 2.0526315789472966,
+            "held_adverse": 0.9107142857142188,
+            "melt_adverse": 0.7631578947369707,
+            "traded_share": 0.7009096386137147,
+            "cancelled_share": 0.23652447596190251,
+            "held_cancelled_share": 0.01913829601609234
+          }
+        ]
+      },
+      "decision": {
+        "front_value": 0.7714285714284578,
+        "front_n": 28,
+        "rows": [
+          {
+            "pad": 0,
+            "n": 28,
+            "median_ahead": 340,
+            "held_value": 1.0749999999999331,
+            "melt_value": 1.0749999999999331,
+            "held_fill_rate": 0.8214285714285714,
+            "melt_fill_rate": 0.8214285714285714
+          },
+          {
+            "pad": 500,
+            "n": 28,
+            "median_ahead": 840,
+            "held_value": 1.43214285714277,
+            "melt_value": 1.1285714285713129,
+            "held_fill_rate": 0.8214285714285714,
+            "melt_fill_rate": 0.8214285714285714
+          },
+          {
+            "pad": 2000,
+            "n": 28,
+            "median_ahead": 2340,
+            "held_value": 1.2821428571426967,
+            "melt_value": 1.2464285714282912,
+            "held_fill_rate": 0.7857142857142857,
+            "melt_fill_rate": 0.7857142857142857
+          },
+          {
+            "pad": 8000,
+            "n": 28,
+            "median_ahead": 8340,
+            "held_value": 1.1321428571426928,
+            "melt_value": 1.2178571428571165,
+            "held_fill_rate": 0.5714285714285714,
+            "melt_fill_rate": 0.6428571428571429
+          },
+          {
+            "pad": 30000,
+            "n": 28,
+            "median_ahead": 30340,
+            "held_value": 0.0,
+            "melt_value": 0.0,
+            "held_fill_rate": 0.0,
+            "melt_fill_rate": 0.0
+          }
+        ]
+      },
+      "breakeven_held": 15349.463722397508,
+      "breakeven_melt": 16404.51612903401
+    },
+    "0.3": {
+      "focus": 0.3,
+      "n_seeds": 45,
+      "short": {
+        "horizon": 1000,
+        "buckets": [
+          {
+            "lo": 0,
+            "hi": 200,
+            "n": 20,
+            "median_ahead": 87,
+            "held_fill_rate": 1.0,
+            "melt_fill_rate": 1.0,
+            "held_events": 10.05,
+            "melt_events": 10.05,
+            "held_markout": 0.899999999999963,
+            "melt_markout": 0.899999999999963,
+            "held_adverse": 0.24999999999991473,
+            "melt_adverse": 0.24999999999991473,
+            "traded_share": 1.0,
+            "cancelled_share": 0.0,
+            "held_cancelled_share": 0.0
+          },
+          {
+            "lo": 200,
+            "hi": 1000,
+            "n": 47,
+            "median_ahead": 601,
+            "held_fill_rate": 1.0,
+            "melt_fill_rate": 1.0,
+            "held_events": 48.5531914893617,
+            "melt_events": 47.170212765957444,
+            "held_markout": 0.7872340425531105,
+            "melt_markout": 0.7765957446806587,
+            "held_adverse": -0.13829787234054164,
+            "melt_adverse": -0.13829787234066257,
+            "traded_share": 0.9584663364520272,
+            "cancelled_share": 0.041533663547972846,
+            "held_cancelled_share": 0.017427994863327828
+          },
+          {
+            "lo": 1000,
+            "hi": 5000,
+            "n": 49,
+            "median_ahead": 2124,
+            "held_fill_rate": 0.9387755102040817,
+            "melt_fill_rate": 0.9387755102040817,
+            "held_events": 190.84782608695653,
+            "melt_events": 166.2608695652174,
+            "held_markout": 1.0869565217390686,
+            "melt_markout": 0.9891304347825741,
+            "held_adverse": 0.07608695652157725,
+            "melt_adverse": -0.054347826087123345,
+            "traded_share": 0.8299467006705992,
+            "cancelled_share": 0.09705798710174576,
+            "held_cancelled_share": 0.017962149219774876
+          },
+          {
+            "lo": 5000,
+            "hi": 20000,
+            "n": 55,
+            "median_ahead": 8254,
+            "held_fill_rate": 0.5454545454545454,
+            "melt_fill_rate": 0.6545454545454545,
+            "held_events": 641.8666666666667,
+            "melt_events": 593.8888888888889,
+            "held_markout": 1.8166666666666724,
+            "melt_markout": 1.5972222222222696,
+            "held_adverse": 0.6666666666665814,
+            "melt_adverse": 0.666666666666613,
+            "traded_share": 0.6488554657843588,
+            "cancelled_share": 0.20362398619063984,
+            "held_cancelled_share": 0.06445662536673831
+          },
+          {
+            "lo": 20000,
+            "hi": 1000000000,
+            "n": 54,
+            "median_ahead": 30264,
+            "held_fill_rate": 0.0,
+            "melt_fill_rate": 0.0,
+            "held_events": null,
+            "melt_events": null,
+            "held_markout": null,
+            "melt_markout": null,
+            "held_adverse": null,
+            "melt_adverse": null,
+            "traded_share": 0.31960777485418007,
+            "cancelled_share": 0.1971824231708786,
+            "held_cancelled_share": 0.042474882210856414
+          }
+        ]
+      },
+      "long": {
+        "horizon": 4000,
+        "buckets": [
+          {
+            "lo": 0,
+            "hi": 200,
+            "n": 20,
+            "median_ahead": 87,
+            "held_fill_rate": 1.0,
+            "melt_fill_rate": 1.0,
+            "held_events": 10.05,
+            "melt_events": 10.05,
+            "held_markout": 0.899999999999963,
+            "melt_markout": 0.899999999999963,
+            "held_adverse": 0.24999999999991473,
+            "melt_adverse": 0.24999999999991473,
+            "traded_share": 1.0,
+            "cancelled_share": 0.0,
+            "held_cancelled_share": 0.0
+          },
+          {
+            "lo": 200,
+            "hi": 1000,
+            "n": 47,
+            "median_ahead": 601,
+            "held_fill_rate": 1.0,
+            "melt_fill_rate": 1.0,
+            "held_events": 48.5531914893617,
+            "melt_events": 47.170212765957444,
+            "held_markout": 0.7872340425531105,
+            "melt_markout": 0.7765957446806587,
+            "held_adverse": -0.13829787234054164,
+            "melt_adverse": -0.13829787234066257,
+            "traded_share": 0.9584663364520272,
+            "cancelled_share": 0.041533663547972846,
+            "held_cancelled_share": 0.017427994863327828
+          },
+          {
+            "lo": 1000,
+            "hi": 5000,
+            "n": 49,
+            "median_ahead": 2124,
+            "held_fill_rate": 1.0,
+            "melt_fill_rate": 1.0,
+            "held_events": 290.7551020408163,
+            "melt_events": 267.38775510204084,
+            "held_markout": 1.1734693877550209,
+            "melt_markout": 1.0918367346938125,
+            "held_adverse": 0.13265306122434015,
+            "melt_adverse": 0.01020408163246977,
+            "traded_share": 0.8916675075912556,
+            "cancelled_share": 0.10833249240874439,
+            "held_cancelled_share": 0.025172695331492474
+          },
+          {
+            "lo": 5000,
+            "hi": 20000,
+            "n": 55,
+            "median_ahead": 8254,
+            "held_fill_rate": 0.9090909090909091,
+            "melt_fill_rate": 0.9272727272727272,
+            "held_events": 980.16,
+            "melt_events": 871.3137254901961,
+            "held_markout": 1.8199999999999363,
+            "melt_markout": 1.6960784313723998,
+            "held_adverse": 0.6599999999999682,
+            "melt_adverse": 0.725490196078301,
+            "traded_share": 0.7143237161003703,
+            "cancelled_share": 0.22651855390058115,
+            "held_cancelled_share": 0.07427579497993254
+          },
+          {
+            "lo": 20000,
+            "hi": 1000000000,
+            "n": 54,
+            "median_ahead": 30264,
+            "held_fill_rate": 0.42592592592592593,
+            "melt_fill_rate": 0.7777777777777778,
+            "held_events": 2858.3478260869565,
+            "melt_events": 2272.0714285714284,
+            "held_markout": 2.1956521739131474,
+            "melt_markout": 2.4642857142858414,
+            "held_adverse": 1.0652173913044294,
+            "melt_adverse": 1.2261904761905114,
+            "traded_share": 0.6367595754167363,
+            "cancelled_share": 0.301944398614561,
+            "held_cancelled_share": 0.05665696341785759
+          }
+        ]
+      },
+      "decision": {
+        "front_value": 0.6999999999999373,
+        "front_n": 29,
+        "rows": [
+          {
+            "pad": 0,
+            "n": 29,
+            "median_ahead": 303,
+            "held_value": 1.165517241379234,
+            "melt_value": 1.165517241379234,
+            "held_fill_rate": 0.8275862068965517,
+            "melt_fill_rate": 0.8275862068965517
+          },
+          {
+            "pad": 500,
+            "n": 29,
+            "median_ahead": 803,
+            "held_value": 1.0034482758619867,
+            "melt_value": 1.0448275862067828,
+            "held_fill_rate": 0.7931034482758621,
+            "melt_fill_rate": 0.8275862068965517
+          },
+          {
+            "pad": 2000,
+            "n": 29,
+            "median_ahead": 2303,
+            "held_value": 1.255172413793178,
+            "melt_value": 1.1241379310345356,
+            "held_fill_rate": 0.7586206896551724,
+            "melt_fill_rate": 0.7931034482758621
+          },
+          {
+            "pad": 8000,
+            "n": 29,
+            "median_ahead": 8303,
+            "held_value": 1.0843448275863188,
+            "melt_value": 1.0620689655173257,
+            "held_fill_rate": 0.5517241379310345,
+            "melt_fill_rate": 0.6551724137931034
+          },
+          {
+            "pad": 30000,
+            "n": 29,
+            "median_ahead": 30303,
+            "held_value": 0.0,
+            "melt_value": 0.0,
+            "held_fill_rate": 0.0,
+            "melt_fill_rate": 0.0
+          }
+        ]
+      },
+      "breakeven_held": 16100.875723465182,
+      "breakeven_melt": 15803.000000002448
+    }
+  },
+  "verdicts": [
+    {
+      "claim": "the queue ahead melts by the touch's share of the cancel weight: the 20,000+ row at 1,000 events goes from 4.9% to about 20% at 0.5 and about 30% at 0.3",
+      "measured": "uniform 4.9%, focused {0.5: '15.1%', 0.3: '19.7%'}",
+      "held": false
+    },
+    {
+      "claim": "the traded-to-cancelled ratio from 5,000 shares back falls from 24 to single digits, and does not invert at either strength, because only a third of the cancel events reach a live order and the touch trades ten shares an event",
+      "measured": "{0.5: 5.7, 0.3: 3.2}",
+      "held": true
+    },
+    {
+      "claim": "the 5,000-20,000 fill rate gains under twenty points at 1,000 events, and 20,000+ still never fills",
+      "measured": "gains {0.5: '6.8%', 0.3: '10.9%'}, 20,000+ fills {0.5: '0.0%', 0.3: '0.0%'}",
+      "held": true
+    },
+    {
+      "claim": "the break-even queue rises with the focus, past 20,000 shares at 0.3",
+      "measured": "uniform 18701.90710382613, focused {0.5: 16404.51612903401, 0.3: 15803.000000002448}",
+      "held": false
+    },
+    {
+      "claim": "the markout from 5,000-20,000 back stays positive: where the cancels land changes when you fill, not what the mid does afterwards",
+      "measured": "{0.5: 1.53, 0.3: 1.6}",
+      "held": true
+    },
+    {
+      "claim": "the held side under the focused flow stays within five points of section 8's fill rates in every bucket, because the spread, the trade count and the live cancel count are the same flow",
+      "measured": "largest bucket gap {0.5: '5.8%', 0.3: '5.8%'}",
+      "held": false
+    }
+  ]
+}

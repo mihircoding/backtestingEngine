@@ -158,11 +158,11 @@ drew. A catch-up at 80% or 50% instead of the full waterfall barely
 moves, because the years that get charged here finish it at any rate.
 [RESULTS.md](RESULTS.md) has all of it, and the corrections.
 
-422 tests.
+428 tests.
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                 # 422 passed
+python -m pytest -q                 # 428 passed
 
 # the two halves together
 python fill_realism.py              # fill models compared, the headline result
@@ -181,6 +181,7 @@ python run_simulation.py            # 50k events, writes simulation.png
 python benchmark.py                 # throughput and latency
 python queue_study.py               # what a place in the queue is worth
 python melt_study.py                # and what holding the queue still was hiding
+python focus_study.py               # and whether it melts once the cancels know where the touch is
 python latency_study.py             # what a 15us disadvantage costs a market maker
 python auction_study.py             # the opening auction, where the rules differ
 ```
@@ -242,7 +243,10 @@ Two orders at the same price are not the same order. The one that arrived first
 fills first, which is **price-time priority**, and section 8 of
 notes/exchange.md prices what that priority is worth to the trader holding it.
 Section 9 lets the queue in front of that trader melt, and finds that in a
-book whose cancels do not know where the touch is, it hardly does.
+book whose cancels do not know where the touch is, it hardly does. Section 10
+points the cancels at the touch, and the queue melts four times as fast - and
+only half as fast as the arithmetic said, because a long queue is the touch
+only half the time, and the cancels follow the touch.
 
 ### The event-driven backtester
 

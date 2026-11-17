@@ -240,3 +240,95 @@ def test_melt_buckets_pair_every_outcome_exactly_once():
     assert sum(r["n"] for r in rows) == len(pairs)
     assert all(r["held_cancelled_share"] == 0 for r in rows)
     assert all(r["cancelled_share"] > 0 for r in rows)
+
+
+# ---------- section 10: cancels that know where the touch is ----------
+
+def _where_cancels_land(focus, n_events=6_000, seed=0):
+    """Ticks from the touch of every live order the flow cancelled, and how
+    many cancel events found an id that had already traded."""
+    from exchange.simulator import ticks_from_touch
+    book = LimitOrderBook()
+    seed_book(book, mid=100.0, levels=20, qty=200)
+    distances, stale = [], []
+    original = book.cancel
+
+    def recording_cancel(order_id):
+        order = book._by_id.get(order_id)
+        if order is None:
+            stale.append(order_id)
+        else:
+            distances.append(ticks_from_touch(book, order))
+        return original(order_id)
+
+    book.cancel = recording_cancel
+    result = simulate(book, n_events=n_events, seed=seed, cancel_focus=focus)
+    return distances, stale, result
+
+
+def test_a_focus_of_one_is_the_old_flow_to_the_event():
+    book = LimitOrderBook()
+    seed_book(book)
+    plain = simulate(book, n_events=1_500, seed=3)
+    book = LimitOrderBook()
+    seed_book(book)
+    focused = simulate(book, n_events=1_500, seed=3, cancel_focus=1.0)
+    assert plain["mids"] == focused["mids"]
+    assert plain["n_trades"] == focused["n_trades"]
+
+
+def test_ticks_from_touch_is_measured_on_the_orders_own_side():
+    book = LimitOrderBook()
+    at_touch, _ = book.add_limit_order(Side.BUY, 99.98, 100)
+    back, _ = book.add_limit_order(Side.BUY, 99.95, 100)
+    ask, _ = book.add_limit_order(Side.SELL, 100.04, 100)
+    from exchange.simulator import ticks_from_touch
+    assert ticks_from_touch(book, book._by_id[at_touch]) == 0
+    assert ticks_from_touch(book, book._by_id[back]) == 3
+    assert ticks_from_touch(book, book._by_id[ask]) == 0
+
+
+def test_focused_cancels_land_closer_to_the_touch():
+    uniform, _, _ = _where_cancels_land(1.0)
+    focused, _, _ = _where_cancels_land(0.3)
+    at_touch = lambda d: sum(1 for x in d if x == 0) / len(d)
+    assert at_touch(focused) > 3 * at_touch(uniform)
+    assert sum(focused) / len(focused) < sum(uniform) / len(uniform)
+
+
+def test_the_focus_moves_the_live_cancels_and_does_not_add_any():
+    # the main stream is consumed identically whatever the focus, so the two
+    # flows send the same number of cancel events; and the first draw still
+    # decides whether one races a fill, so the number that reach a live
+    # order is the uniform stream's too
+    live_u, stale_u, r_u = _where_cancels_land(1.0)
+    live_f, stale_f, r_f = _where_cancels_land(0.3)
+    assert len(live_u) + len(stale_u) == len(live_f) + len(stale_f)
+    assert abs(len(live_f) - len(live_u)) < 0.15 * len(live_u)
+    assert abs(r_f["n_trades"] - r_u["n_trades"]) < 0.05 * r_u["n_trades"]
+
+
+def test_a_focused_pad_melts_faster_than_a_uniform_one():
+    melted = {}
+    for focus in (1.0, 0.3):
+        total = 0
+        for seed in range(4):
+            o = rest_one_order(warm_book(seed, cancel_focus=focus),
+                               improve_ticks=1, pad=20_000, horizon=1_500,
+                               seed=seed, melt=True, cancel_focus=focus)
+            if o is not None:
+                assert o.traded_ahead + o.cancelled_ahead + o.ahead_at_exit == o.ahead
+                total += o.cancelled_ahead
+        melted[focus] = total
+    assert melted[0.3] > 2 * melted[1.0]
+
+
+def test_deep_ratio_reads_the_one_bucket_section_9_quoted():
+    from exchange.queue_position import deep_ratio
+    rows = [{"lo": 0, "n": 10, "traded_share": 0.9, "cancelled_share": 0.0},
+            {"lo": 5_000, "n": 2, "traded_share": 0.8, "cancelled_share": 0.1},
+            {"lo": 20_000, "n": 2, "traded_share": 0.4, "cancelled_share": 0.1}]
+    assert deep_ratio(rows) == pytest.approx(8.0)
+    assert deep_ratio(rows, lo=20_000) == pytest.approx(4.0)
+    assert deep_ratio(rows, lo=0) is None
+    assert deep_ratio(rows, lo=1) is None

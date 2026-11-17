@@ -639,15 +639,171 @@ front-of-queue is worth having" actually lives.
 
 ### What this does not model
 
-- **Cancels are uniform over the book.** The finding above is that this is the whole story. A
-  cancel rate that rises toward the touch — or a flow whose cancels are re-postings a tick away —
-  is the next experiment, and it needs a cancel model, not a protected-ids flag.
+- ~~**Cancels are uniform over the book.**~~ Section 10 gives the cancel stream a `cancel_focus`
+  and points it at the touch. The melt goes from 5% to 20% of the queue and the ratio from
+  twenty-four to three, and it stops there for a reason section 9 did not see: the queue is only
+  the touch half the time, and the cancels follow the touch.
 - **The melting padding is still padding.** It is liquidity that was not there, now in 100-share
   lots instead of one, and `natural_ahead` is reported beside it for the same reason as before.
 - **Fills are still counted to the fill.** The traded/cancelled split stops at our own fill, which
   is the right window for the question asked (what happened in front of us while we waited) and
   the wrong one for "how fast does a queue melt in general". The 20,000+ row at 1,000 events, which
   never fills, is the clean reading of the raw rate: 4.9% by cancel against 33% by trade.
+
+## 10. Cancels that know where the touch is
+
+Section 9 ended on a ratio. A share in front of you was twenty-four times more likely to be traded
+than cancelled, because the cancel stream picks uniformly from everything live and so gives a
+hundred orders at the touch a hundred orders' share of the cancels, and the write-up said the
+missing mechanism — cancels concentrated at the touch, which is where real cancels go because most
+of them are quotes being repositioned — needed a cancel model rather than a flag. `simulate()` has
+one now. `cancel_focus` below 1.0 makes the odds of an order being the one pulled fall by that
+factor with every tick it sits behind its own side's best: at 0.5 an order one tick back is half as
+likely to be cancelled as one at the touch, two ticks back a quarter. `focus_study.py` runs
+section 9's paired design under it at two strengths, 0.5 and 0.3, warm-up included, and reads the
+uniform column from `results/queue_melt.json`.
+
+The draw is by rejection, and the detail matters for the pairing. The uniform candidate is drawn
+from the main random stream exactly as before, kept with probability focus^ticks, and every retry
+comes from a second generator. The main stream is consumed identically whatever the focus, so two
+runs with the same seed see the same arrivals, the same market orders and the same cancels-as-
+events, and differ only in which resting order each cancel lands on. That is what keeps held and
+melting paired under the focused flow, and it also means the uniform and focused books share their
+arrivals seed for seed. The first draw still decides whether a cancel reaches a live order or
+races a fill that already happened; the retries only move the live ones.
+
+Two things were measured while building it, so they are reported rather than predicted. Under a
+normal touch the share of live cancels landing at the best price goes from 3-5% uniform to 21% at
+0.5 and 36% at 0.3, with the spread (1.9 ticks), the trade count and the number of live cancels
+unchanged — the same book with its cancels moved. And in the 20,000-event warm-up, two thirds of
+the cancel events land on an id that has already traded. The flow's `live_ids` list is cleaned
+only when a stale id is drawn, so over a long run it fills with the ids of filled orders and the
+nominal 15% cancel share is about 5% of events reaching a live order. Sections 1-5 were run on
+that flow. The 1,000-event horizon these tables are measured over starts from a fresh list, and
+there 148 of every 150 cancel events reach a live order, which is why the arithmetic in section 9
+("each lands on one of ~2,300 live orders") was right for the horizon and would have been wrong
+for the warm-up.
+
+Six predictions were written before the run and `focus_verdicts()` scores them. Three failed, and
+the first failure is the finding.
+
+| shares ahead  |  n | held: fills | events | markout | melting: fills | events | markout | left by trade | by cancel |
+|---------------|----|-------------|--------|---------|----------------|--------|---------|---------------|-----------|
+| *cancel_focus = 0.5* | | | | | | | | | |
+| 0-200         | 19 |        100% |     11 |   +0.66 |           100% |     11 |   +0.66 |          100% |      0.0% |
+| 200-1,000     | 48 |        100% |     50 |   +0.93 |           100% |     49 |   +0.84 |         99.2% |      0.8% |
+| 1,000-5,000   | 50 |         92% |    195 |   +1.16 |            92% |    189 |   +1.05 |         90.5% |      4.8% |
+| 5,000-20,000  | 59 |         59% |    589 |   +1.53 |            66% |    588 |   +1.53 |         69.5% |     12.2% |
+| 20,000+       | 49 |          0% |  never |       - |             0% |  never |       - |         33.5% |     15.1% |
+| *cancel_focus = 0.3* | | | | | | | | | |
+| 0-200         | 20 |        100% |     10 |   +0.90 |           100% |     10 |   +0.90 |          100% |      0.0% |
+| 200-1,000     | 47 |        100% |     49 |   +0.79 |           100% |     47 |   +0.78 |         95.8% |      4.2% |
+| 1,000-5,000   | 49 |         94% |    191 |   +1.09 |            94% |    166 |   +0.99 |         83.0% |      9.7% |
+| 5,000-20,000  | 55 |         55% |    642 |   +1.82 |            65% |    594 |   +1.60 |         64.9% |     20.4% |
+| 20,000+       | 54 |          0% |  never |       - |             0% |  never |       - |         32.0% |     19.7% |
+
+1,000 events to fill, section 9's layout. The held side is no longer section 8 — the book was
+warmed under the focused flow too — and it comes out within six points of section 8's fill rates
+in every bucket, which is what a flow with the same spread, the same trades and the same number of
+live cancels should do. Prediction 6 asked for five points and failed by the letter, on the
+200-1,000 bucket at 100% against 94%, with fifty orders in a bucket.
+
+### The queue melts now, and it is only the touch half the time
+
+The melt in the 20,000+ row, which never fills and so sees the whole horizon, goes from 4.9% to
+15.1% at 0.5 and 19.7% at 0.3; at 4,000 events from 9.0% to 23.7% and 30.2%. The ratio from 5,000
+shares back goes from twenty-four shares traded per share cancelled to 5.7 and 3.2. So the
+mechanism section 9 named is the mechanism: point the cancels at the touch and the queue in front
+of you melts, four times as fast at a focus of 0.3. The prediction was 20% and 30% at 1,000
+events, from the touch's share of the cancel weight — 300 padded orders against a rest-of-book
+weight the warm books put at 293 order-equivalents at 0.5 and 124 at 0.3, so 51% and 71% of about
+148 live cancels, which is 7,500 and 10,500 shares. Measured: 4,600 and 6,000. The queue got
+about 40% of the cancels at 0.3, not 71%.
+
+The reason is in a column no table here has: **where the touch was**. A 30,000-share bid at the
+best price is the best price only until a passive buy lands inside the spread, and with a spread
+of 1.9 ticks and offsets drawn from |N(0, 3)| ticks, one lands there often. Over the 1,000 events
+after joining, our level is the best bid 47-54% of the time at every focus; the
+rest of the time somebody is a tick or so in front, and a cancel stream that knows where the touch
+is follows the touch, not us. The order that stepped in front is the one at the touch now, so at a
+focus of 0.3 it is the one most likely to be pulled — and then the queue is the touch again. The
+improvers melt fastest, which is exactly what makes the long queue durable. Averaged over the
+horizon the queue's weight is a little over half of what a queue that was always the touch would
+carry, and that is the 40%.
+
+The ratio did not invert, as predicted, and not for the reason predicted. The docstring arithmetic
+said only a third of the cancel events reach a live order; in the horizon nearly all of them do.
+What keeps the ratio above one is the flow's cancel budget — 15% of events against 25% market
+orders, which trade ten shares an event at the touch — and the half of the time the queue is not
+the touch. If every one of the 148 live cancels in 1,000 events landed on a 30,000-share queue it
+would melt 14,800 shares, against the 10,000 that trade: a ratio of 0.7, inverted. A real busy
+touch inverts it with an order of magnitude more cancels per trade than this flow sends, and
+section 9's "a real book at a busy touch would show that ratio inverted" is still the right
+sentence; what this run adds is that the cancel *placement* on its own gets the ratio from
+twenty-four to three, and the cancel *rate* has to do the rest.
+
+### What melting is worth, and why the break-even went the other way
+
+At 1,000 events the 5,000-20,000 bucket's fill rate gains 6.8 points at 0.5 and 10.9 at 0.3,
+against section 9's two. At 4,000 events the 20,000+ bucket, the one order that waits long enough
+for the cancel stream to matter, goes from 57% to 78% filled at 0.5 and from 43% to 78% at 0.3,
+and its wait from 2,900 events to 2,440 and 2,270. That is the number section 8's sentence was
+about: with the cancels where real cancels go, the people in front of you leaving is worth twenty
+to thirty-five points of fill rate from the back of a long queue, against section 9's eleven.
+
+| shares ahead | held: fills | value | melting: fills | value |
+|--------------|-------------|-------|----------------|-------|
+| *cancel_focus = 0.5, 28 books* | | | | |
+|          340 |        82% | +1.07 |           82% | +1.07 |
+|          840 |        82% | +1.43 |           82% | +1.13 |
+|        2,340 |        79% | +1.28 |           79% | +1.25 |
+|        8,340 |        57% | +1.13 |           64% | +1.22 |
+|       30,340 |         0% | +0.00 |            0% | +0.00 |
+| 0 (improved) |       100% | +0.77 |          100% | +0.77 |
+| *cancel_focus = 0.3, 29 books* | | | | |
+|          303 |        83% | +1.17 |           83% | +1.17 |
+|          803 |        79% | +1.00 |           83% | +1.04 |
+|        2,303 |        76% | +1.26 |           79% | +1.12 |
+|        8,303 |        55% | +1.08 |           66% | +1.06 |
+|       30,303 |         0% | +0.00 |            0% | +0.00 |
+| 0 (improved) |       100% | +0.70 |          100% | +0.70 |
+
+**Break-even queue: 15,300 held and 16,400 melting at 0.5; 16,100 and 15,800 at 0.3.** The
+prediction was that it would rise with the focus and pass 20,000 at 0.3, because joining a queue
+that melts is worth more. It fell. Two things, and the second is the finding. The first is that
+these numbers sit on an interpolation between the 8,300 and 30,300 rows of a 28-book table and
+move by a thousand shares when a value moves by a few hundredths: the *held* break-even, which
+has nothing melting in it, went from 17,600 to 15,300 to 16,100 across the three flows, and that
+spread is the resolution of the grid. The second is in the 8,303 row at 0.3: eleven more points
+of fill, 55% to 66%, and the value went *down*, 1.08 to 1.06. The fills that melting adds are
+worth less each. The markout from that bucket is +1.60 melting against +1.82 held, with the
+adverse-selection column identical at +0.67, so the whole gap is in the edge at the moment of
+the fill: 1.15 ticks held, 0.93 melting. Section 8 found the deep-queue fill was selected for a
+large trade — something big had to come through to reach you — and the mid's recovery from that
+trade was the positive markout. Melting takes you to the front without the large trade. You fill
+sooner, on something ordinary, with the mid closer to your price, and the bounce you were being
+paid for is smaller. Melting changes when you fill, as section 9 said; it also changes *what*
+fills you, and the section 8 bonus lived in the what. The markout stayed positive at every focus
+(prediction 5 held: +1.53, +1.60), so the sign of the finding is untouched; its size is what the
+queue-jumper's cancels take away.
+
+### What this does not model
+
+- **The focus is a shape, not a rate.** Real cancel flow is both: most cancels are at the touch
+  *and* there are ten or more of them per trade. This run changed the shape with the rate held at
+  the flow's 15% of events, and the ratio stopped at three. A cancel rate that rises with the
+  focus, or a `P_CANCEL` sweep under it, is the direct test of the inversion the arithmetic above
+  says is available at 0.7.
+- **Cancels still vanish.** A real repositioning cancel is followed by a re-post a tick away, so
+  the liquidity moves rather than leaving. Here the cancelled order is gone and the flow's next
+  passive limit order is its only replacement.
+- **The queue was built once and melted once.** Nothing re-joins, nothing re-pads. The improver
+  that steps in front of the queue and is then pulled is the flow's own order, not a strategy, and
+  the half-the-time number is a property of this spread and this offset distribution.
+- **The warm-up list is two thirds stale.** Sections 1-5 and every warm book here ran on a cancel
+  stream whose live share decays over the run. The stylized facts in those sections were measured
+  on a 5% live cancel rate, not 15%, and nothing has yet asked whether they move when the list is
+  kept clean.
 
 ## What isn't modeled
 

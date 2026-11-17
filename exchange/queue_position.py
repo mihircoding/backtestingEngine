@@ -131,11 +131,17 @@ class MakerOutcome:
         return self.fill_ratio * per_share
 
 
-def warm_book(seed: int, n_events: int = WARMUP_EVENTS) -> LimitOrderBook:
-    """A book shaped by the flow the rest of the project characterized."""
+def warm_book(seed: int, n_events: int = WARMUP_EVENTS,
+              cancel_focus: float = 1.0) -> LimitOrderBook:
+    """A book shaped by the flow the rest of the project characterized.
+
+    cancel_focus below 1.0 warms it under the touch-focused cancel stream of
+    section 10 instead, so the queue under study is measured in a book that
+    was built by the same flow that will be melting it.
+    """
     book = LimitOrderBook()
     seed_book(book, mid=100.0, levels=20, qty=200)
-    simulate(book, n_events=n_events, seed=seed)
+    simulate(book, n_events=n_events, seed=seed, cancel_focus=cancel_focus)
     return book
 
 
@@ -144,7 +150,8 @@ def rest_one_order(book: LimitOrderBook, improve_ticks: int = 0,
                    horizon: int = HORIZON_EVENTS,
                    markout: int = MARKOUT_EVENTS,
                    seed: int = 0, melt: bool = False,
-                   pad_lot: int = PAD_LOT) -> MakerOutcome | None:
+                   pad_lot: int = PAD_LOT,
+                   cancel_focus: float = 1.0) -> MakerOutcome | None:
     """Rest one buy order and follow it until it fills or the horizon ends.
 
     improve_ticks=0 joins the best bid, behind whatever is already there.
@@ -163,6 +170,9 @@ def rest_one_order(book: LimitOrderBook, improve_ticks: int = 0,
     them off like anyone else's, which is how real queues shrink. The order
     under study is protected either way - its owner is us, and we are not
     cancelling it.
+
+    cancel_focus is passed straight to simulate(): below 1.0 the cancels that
+    do the melting cluster at the touch instead of landing anywhere.
     """
     best_bid, best_ask = book.best_bid(), book.best_ask()
     if best_bid is None or best_ask is None:
@@ -224,7 +234,7 @@ def rest_one_order(book: LimitOrderBook, improve_ticks: int = 0,
 
     protect = [order_id] if melt else [order_id, *pad_ids]
     simulate(book, n_events=horizon, seed=seed + 7919, hook=watch,
-             protected_ids=protect)
+             protected_ids=protect, cancel_focus=cancel_focus)
 
     if ahead_at_exit is None:
         still = book.queue_ahead(order_id)
@@ -293,6 +303,7 @@ def bucket(outcomes: list[MakerOutcome], edges=(0, 200, 1_000, 5_000, 20_000,
 
 def paired_melt(pads=(0, 500, 2_000, 8_000, 30_000), seeds=range(45),
                 horizon: int = 1_000, improve_ticks: int = 0,
+                cancel_focus: float = 1.0,
                 **kwargs) -> list[tuple[MakerOutcome, MakerOutcome]]:
     """The same order in the same book twice: queue held still, queue melting.
 
@@ -302,16 +313,22 @@ def paired_melt(pads=(0, 500, 2_000, 8_000, 30_000), seeds=range(45),
     differs. Whatever separates the two outcomes is the melting and nothing
     else. Pairs where either run was impossible (crossed, or filled on
     arrival) are dropped from both sides.
+
+    cancel_focus below 1.0 runs both sides under section 10's touch-focused
+    cancels, warm-up included. The pairing survives it: the focused draw
+    consumes the main random stream exactly as the uniform one does.
     """
     pairs = []
     for pad in pads:
         for seed in seeds:
-            held = rest_one_order(warm_book(seed), improve_ticks=improve_ticks,
-                                  pad=pad, seed=seed, horizon=horizon,
-                                  melt=False, **kwargs)
-            melted = rest_one_order(warm_book(seed), improve_ticks=improve_ticks,
-                                    pad=pad, seed=seed, horizon=horizon,
-                                    melt=True, **kwargs)
+            held = rest_one_order(warm_book(seed, cancel_focus=cancel_focus),
+                                  improve_ticks=improve_ticks, pad=pad,
+                                  seed=seed, horizon=horizon, melt=False,
+                                  cancel_focus=cancel_focus, **kwargs)
+            melted = rest_one_order(warm_book(seed, cancel_focus=cancel_focus),
+                                    improve_ticks=improve_ticks, pad=pad,
+                                    seed=seed, horizon=horizon, melt=True,
+                                    cancel_focus=cancel_focus, **kwargs)
             if held is not None and melted is not None:
                 pairs.append((held, melted))
     return pairs
@@ -445,5 +462,103 @@ def melt_verdicts(short: list[dict], long: list[dict], be_held: float | None,
                   "melting changes when you fill, not what the mid does after",
          "measured": f"5,000-20,000 melt markout {markout_deep}",
          "held": bool(markout_deep) and all(m > 0 for m in markout_deep)},
+    ]
+    return verdicts
+
+
+# ---------- section 10: cancels that know where the touch is ----------
+
+def deep_ratio(rows: list[dict], lo: int = 5_000) -> float | None:
+    """Shares traded for every share cancelled, in the bucket starting at `lo`.
+
+    Section 9's twenty-four to one is the 5,000-20,000 bucket: deep enough
+    for the queue to be a queue, shallow enough that most orders in it fill
+    inside the window, so the split is measured over a wait that ended.
+    """
+    for r in rows:
+        if r["lo"] == lo:
+            if r["cancelled_share"] == 0:
+                return None
+            return r["traded_share"] / r["cancelled_share"]
+    return None
+
+
+def focus_verdicts(uniform: dict, focused: dict[float, dict]) -> list[dict]:
+    """Score what section 10 was written to expect, before it was run.
+
+    uniform is section 9's saved result (results/queue_melt.json); focused
+    maps each cancel_focus to the same shape, measured under the focused
+    stream. The arithmetic behind the numbers is in focus_study.py.
+    """
+    strengths = sorted(focused, reverse=True)       # 0.5 before 0.3
+    weakest, strongest = strengths[0], strengths[-1]
+
+    def row(result, horizon, lo):
+        for r in result[horizon]["buckets"]:
+            if r["lo"] == lo:
+                return r
+        return None
+
+    def bucket_gain(result, horizon, lo):
+        r = row(result, horizon, lo)
+        return r["melt_fill_rate"] - r["held_fill_rate"] if r else None
+
+    melt_never = {f: row(focused[f], "short", 20_000)["cancelled_share"]
+                  for f in strengths}
+    melt_uniform = row(uniform, "short", 20_000)["cancelled_share"]
+    ratios = {f: deep_ratio(focused[f]["short"]["buckets"]) for f in strengths}
+    gains = {f: bucket_gain(focused[f], "short", 5_000) for f in strengths}
+    never_fills = {f: row(focused[f], "short", 20_000)["melt_fill_rate"]
+                   for f in strengths}
+    be = {f: focused[f]["breakeven_melt"] for f in strengths}
+    markouts = {f: row(focused[f], "short", 5_000)["melt_markout"]
+                for f in strengths}
+    held_gap = {}
+    for f in strengths:
+        gaps = []
+        for r in uniform["short"]["buckets"]:
+            mine = row(focused[f], "short", r["lo"])
+            if mine is not None:
+                gaps.append(abs(mine["held_fill_rate"] - r["held_fill_rate"]))
+        held_gap[f] = max(gaps) if gaps else None
+
+    pct = lambda d: {f: f"{v:.1%}" for f, v in d.items()}
+    verdicts = [
+        {"claim": "the queue ahead melts by the touch's share of the cancel "
+                  "weight: the 20,000+ row at 1,000 events goes from 4.9% to "
+                  f"about 20% at {weakest} and about 30% at {strongest}",
+         "measured": f"uniform {melt_uniform:.1%}, focused {pct(melt_never)}",
+         "held": (0.12 <= melt_never[weakest] <= 0.28
+                  and 0.20 <= melt_never[strongest] <= 0.40
+                  and melt_never[strongest] > melt_never[weakest])},
+        {"claim": "the traded-to-cancelled ratio from 5,000 shares back falls "
+                  "from 24 to single digits, and does not invert at either "
+                  "strength, because only a third of the cancel events reach "
+                  "a live order and the touch trades ten shares an event",
+         "measured": f"{ {f: round(v, 1) for f, v in ratios.items()} }",
+         "held": all(1.0 < v < 10.0 for v in ratios.values())},
+        {"claim": "the 5,000-20,000 fill rate gains under twenty points at "
+                  "1,000 events, and 20,000+ still never fills",
+         "measured": f"gains {pct(gains)}, 20,000+ fills {pct(never_fills)}",
+         "held": (all(0 <= g < 0.20 for g in gains.values())
+                  and all(v == 0.0 for v in never_fills.values()))},
+        {"claim": "the break-even queue rises with the focus, past 20,000 "
+                  f"shares at {strongest}",
+         "measured": f"uniform {uniform['breakeven_melt']}, focused {be}",
+         "held": (all(v is not None for v in be.values())
+                  and be[weakest] > uniform["breakeven_melt"]
+                  and be[strongest] > be[weakest]
+                  and be[strongest] > 20_000)},
+        {"claim": "the markout from 5,000-20,000 back stays positive: where "
+                  "the cancels land changes when you fill, not what the mid "
+                  "does afterwards",
+         "measured": f"{ {f: round(v, 2) for f, v in markouts.items() if v is not None} }",
+         "held": all(v is not None and v > 0 for v in markouts.values())},
+        {"claim": "the held side under the focused flow stays within five "
+                  "points of section 8's fill rates in every bucket, because "
+                  "the spread, the trade count and the live cancel count are "
+                  "the same flow",
+         "measured": f"largest bucket gap {pct(held_gap)}",
+         "held": all(v is not None and v <= 0.05 for v in held_gap.values())},
     ]
     return verdicts

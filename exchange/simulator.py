@@ -39,8 +39,17 @@ def seed_book(book: LimitOrderBook, mid: float = 100.0, levels: int = 5,
         book.add_limit_order(Side.SELL, to_tick(mid + TICK * i), qty)
 
 
+def ticks_from_touch(book: LimitOrderBook, order) -> int:
+    """How many ticks an order sits behind the best price on its own side."""
+    best = book.best_bid() if order.side is Side.BUY else book.best_ask()
+    if best is None:
+        return 0
+    return int(round(abs(order.price - best) / TICK))
+
+
 def simulate(book: LimitOrderBook, n_events: int = 5000, seed: int = 0,
-             hook=None, protected_ids=()) -> dict:
+             hook=None, protected_ids=(), cancel_focus: float = 1.0,
+             max_tries: int = 200) -> dict:
     """Push random events through the book and record what happens.
 
     Returns {'mids', 'spreads', 'n_trades', 'volume', 'impacts'} where `impacts`
@@ -60,8 +69,31 @@ def simulate(book: LimitOrderBook, n_events: int = 5000, seed: int = 0,
     from the order's own owner. Note what this does NOT model: a real queue also
     shrinks because people ahead of you cancel, and holding those in place makes
     every fill probability measured this way a lower bound.
+
+    cancel_focus decides where a cancel lands. At 1.0 (the flow every section
+    before 10 was measured on) the cancelled order is drawn uniformly from
+    everything live, so a hundred orders at the touch get a hundred orders'
+    share of the cancels. Below 1.0 the odds of being the one cancelled fall
+    by that factor with every tick an order sits behind its own side's best:
+    at 0.5 an order one tick back is half as likely to be pulled as one at the
+    touch, two ticks back a quarter. That is the shape of real cancel flow,
+    where most cancels are quotes being repositioned rather than changed
+    minds, and section 9 found its absence was the whole reason the queue in
+    front of an order never melted.
+
+    The focused draw is by rejection: the uniform candidate is drawn from the
+    main stream exactly as before, then kept with probability focus**ticks,
+    and every retry comes from a second generator. So the main stream is
+    consumed identically whatever the focus, and two runs with the same seed
+    see the same arrivals, the same market orders and the same cancels-as-
+    events, differing only in which resting order each cancel lands on. That
+    is what lets section 10 pair a held queue against a melting one under the
+    focused flow the way section 9 did under the uniform one. max_tries caps
+    the retries, so an order twenty ticks back is still cancelled now and then
+    rather than never.
     """
     rng = np.random.default_rng(seed)
+    picker = np.random.default_rng(seed + 104_729) if cancel_focus < 1.0 else None
     protected = set(protected_ids)
 
     mids: list[float] = []
@@ -108,6 +140,22 @@ def simulate(book: LimitOrderBook, n_events: int = 5000, seed: int = 0,
             trades = []
             if live_ids:
                 idx = int(rng.integers(0, len(live_ids)))
+                if picker is not None and live_ids[idx] in book._by_id:
+                    # The first draw decides whether this cancel reaches a
+                    # live order or races a fill that already happened, as it
+                    # does in the uniform stream (over a long run most do:
+                    # the list is only cleaned when a stale id is drawn).
+                    # Only a live cancel is moved, and only to another live
+                    # order. The retries leave the list alone, so stale ids
+                    # keep leaving it at the uniform rate and the focus
+                    # reshapes where the live cancels land, not how many
+                    # there are.
+                    for _try in range(max_tries):
+                        order = book._by_id.get(live_ids[idx])
+                        if (order is not None and picker.random()
+                                < cancel_focus ** ticks_from_touch(book, order)):
+                            break
+                        idx = int(picker.integers(0, len(live_ids)))
                 # Stale ids are left in the list on purpose: cancel() returning
                 # False for an already-filled order is exactly what a real
                 # gateway sees when a cancel races a fill.
