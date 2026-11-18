@@ -170,13 +170,27 @@ keeps under $0.8bn of a surface the yearly catch-up charged $39.7bn on.
 And the stacked clause charges one year more than the compounding hurdle
 in nine cells — the $5bn fund that missed its line by $1.5m clears it,
 because the bigger 2021 charge left a lower mark for the line to be read
-on. [RESULTS.md](RESULTS.md) has all of it, and the corrections.
+on. The sixteenth takes the clawback's two assumptions away and runs the
+stack at two-and-twenty. Tested every year instead of at wind-up, the
+clawback gives a charge back in the December it is made — 2017, in 87
+cells of 112 — because three years of the hurdle compounded is more than
+three years of this tape made, so a yearly hurdle with an interim
+clawback is the compounding hurdle to the dollar until the fund first
+stands over its lifetime line, and after that keeps what the compounding
+one gave up, because its line restarts every year and the compounding
+clause's only on a charge: 27% to 144% more, where the terminal test had
+them within 3%. An escrow that earns the fund's return makes the manager
+a fifth richer on the growth, to the dollar, and lifts two funds over a
+line their decade was under. And at two-and-twenty the nine cells are
+gone — the 2% drags the NAV $270m under a line that compounds without it
+— while the management fee across the surface is ten times the carry.
+[RESULTS.md](RESULTS.md) has all of it, and the corrections.
 
-433 tests.
+447 tests.
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                 # 433 passed
+python -m pytest -q                 # 447 passed
 
 # the two halves together
 python fill_realism.py              # fill models compared, the headline result

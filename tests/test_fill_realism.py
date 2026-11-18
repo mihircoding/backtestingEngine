@@ -763,7 +763,7 @@ def test_a_section_run_refuses_a_different_tape_but_not_a_rerounded_one():
 def test_a_section_that_prints_beside_an_earlier_one_says_so_when_it_is_missing(capsys):
     prices, opens, volumes = _tape()
     sections = _sections(prices, opens, volumes, quick=True)
-    assert list(sections) == list(range(1, 19))
+    assert list(sections) == list(range(1, 20))
     # section 9 prints against section 8's rows; with nothing on disk it has to stop
     with pytest.raises(SystemExit, match="section 8"):
         sections[9]({})
@@ -1215,7 +1215,7 @@ def test_the_comparison_reads_each_schedule_against_two_and_twenty_and_scores_th
 def test_section_15_walks_every_cell_at_every_schedule_and_needs_the_yearly_curve(capsys):
     prices, opens, volumes = _tape()
     sections = _sections(prices, opens, volumes, quick=True)
-    assert list(sections) == list(range(1, 19))
+    assert list(sections) == list(range(1, 20))
     with pytest.raises(SystemExit, match="section 11"):
         sections[15]({"bars": 2520})
     stale = {"capacity_surface": [{"aum": 1e9, "participation": 0.1, "final": 1.1e9,
@@ -1563,3 +1563,145 @@ def test_section_18_runs_the_stacked_sweep_and_scores_the_predictions(capsys):
     assert len(added["stacked_sweep"]) == 3 * 2 * len(STACKED_VARIANTS) * len(col)
     assert "18. THE CLAUSES STACKED" in out
     assert "returned by the clawback" in out
+
+
+# ---------- 19. the clawback tested early, the escrow that earns, and two-and-twenty ----------
+
+from fill_realism import WATERFALL_ARMS, WATERFALL_CLAUSES, waterfall_sweep, waterfall_verdicts
+
+
+def test_the_terminal_clawback_and_a_cash_escrow_are_section_18_to_the_dollar():
+    col = _column([400e6, -300e6, 350e6], knee=1e9)
+    old = fund_walk(col, 1e9, None, mgmt=0.0, perf=0.3, hurdle=0.05, clawback=True)
+    for claw, escrow in ((True, "cash"), ("terminal", "cash")):
+        w = fund_walk(col, 1e9, None, mgmt=0.0, perf=0.3, hurdle=0.05, clawback=claw, escrow=escrow)
+        assert {k: v for k, v in w.items() if k != "schedule"} == {k: v for k, v in old.items() if k != "schedule"}
+    assert old["escrow_value"] == old["incentive_paid"]
+    # the terminal test returns nothing along the way
+    assert all(y["clawback"] == 0.0 for y in old["schedule"])
+    with pytest.raises(ValueError):
+        fund_walk(col, 1e9, None, clawback="yearly")
+    with pytest.raises(ValueError):
+        fund_walk(col, 1e9, None, clawback=True, escrow="treasuries")
+
+
+def test_the_interim_test_returns_a_charge_in_the_year_it_was_made_when_the_life_so_far_is_under_its_line():
+    # a 5% hurdle: -6% then +12% on $1bn. Year two clears its yearly hurdle
+    # and is charged 30% of what stands over 5% of the mark, but the two
+    # years together made 5.3% against a line of 10.25%, so the interim
+    # test gives all of it back the same December, into the NAV, and the
+    # mark rises to meet it
+    col = _column([-60e6, 120e6], knee=1e9)
+    w = fund_walk(col, 1e9, None, mgmt=0.0, perf=0.3, hurdle=0.05, form="hard", clawback="interim")
+    first, second = w["schedule"]
+    assert first["incentive"] == 0.0 and first["clawback"] == 0.0
+    assert second["incentive"] > 0 and second["clawback"] == pytest.approx(second["incentive"])
+    assert second["nav"] == pytest.approx(1e9 - 60e6 + second["gross_gain"])
+    assert second["high_water_mark"] == pytest.approx(second["nav"])
+    assert w["incentive"] == 0.0 and w["clawback"] == pytest.approx(w["incentive_paid"])
+    # which is what the compounding hurdle would have charged: nothing
+    cum = fund_walk(col, 1e9, None, mgmt=0.0, perf=0.3, hurdle=0.05, form="hard", cumulative=True)
+    assert cum["incentive"] == 0.0
+    # a third year of +40% stands well over three years of the line. The
+    # returned dollars are in the mark, so the charge is on this year's
+    # excess over the mark less the year's hurdle on it, and what comes
+    # back is perf of the difference between the lifetime line and the
+    # mark plus one year's hurdle - the hurdle dollars the yearly clause
+    # never exempted - whatever the year made: the same $15.7m at +20%
+    col = _column([-60e6, 120e6, 400e6], knee=1e9)
+    w = fund_walk(col, 1e9, None, mgmt=0.0, perf=0.3, hurdle=0.05, form="hard", clawback="interim")
+    second, third = w["schedule"][1:]
+    assert third["excess_over_mark"] == pytest.approx(third["gross_gain"])
+    rate = third["hurdle_rate_charged"]
+    assert third["incentive"] == pytest.approx(0.3 * (third["excess_over_mark"] - rate * second["nav"]))
+    life = 1.0
+    for y in w["schedule"]:
+        life *= 1.0 + y["hurdle_rate_charged"]
+    assert third["clawback"] == pytest.approx(0.3 * (1e9 * life - second["nav"] * (1.0 + rate)))
+    smaller = fund_walk(_column([-60e6, 120e6, 200e6], knee=1e9), 1e9, None, mgmt=0.0, perf=0.3,
+                        hurdle=0.05, form="hard", clawback="interim")
+    assert smaller["schedule"][-1]["clawback"] == pytest.approx(third["clawback"])
+    assert w["incentive"] == pytest.approx(third["incentive"] - third["clawback"])
+
+
+def test_an_escrow_at_the_funds_return_rises_with_the_book_and_the_manager_keeps_perf_of_its_growth():
+    # no hurdle, +40% then another up year on $1bn: the first year's $120m
+    # sits in escrow through the second year at the fund's net return, and
+    # the lifetime cap is 30% of the profit with the escrow's VALUE put
+    # back - the manager keeps the cap, which is the charges plus 30% of
+    # what the escrow made, and the other 70% comes back
+    col = _column([400e6, 325e6], knee=1e9)
+    cash = fund_walk(col, 1e9, None, mgmt=0.0, perf=0.3, clawback=True, escrow="cash")
+    fund = fund_walk(col, 1e9, None, mgmt=0.0, perf=0.3, clawback=True, escrow="fund")
+    first, second = fund["schedule"]
+    growth = second["nav"] / second["sized_on"] - 1.0
+    assert growth > 0
+    made = first["incentive"] * growth
+    assert cash["clawback"] == 0.0
+    assert fund["incentive_paid"] == pytest.approx(cash["incentive_paid"])
+    assert fund["escrow_value"] == pytest.approx(cash["incentive_paid"] + made)
+    assert fund["incentive"] == pytest.approx(cash["incentive"] + 0.3 * made)
+    assert fund["clawback"] == pytest.approx(0.7 * made)
+    # and falls with it: +40% then a losing year, the escrow is worth less
+    # than was charged, and the manager keeps 30% of the profit with that
+    # smaller escrow put back
+    col = _column([400e6, -350e6], knee=1e9)
+    fund = fund_walk(col, 1e9, None, mgmt=0.0, perf=0.3, clawback=True, escrow="fund")
+    first, second = fund["schedule"]
+    value = first["incentive"] * second["nav"] / second["sized_on"]
+    assert value < first["incentive"]
+    assert fund["escrow_value"] == pytest.approx(value)
+    assert fund["incentive"] == pytest.approx(0.3 * (second["nav"] + value - 1e9))
+    assert fund["clawback"] == pytest.approx(value - fund["incentive"])
+
+
+def test_the_management_fee_lowers_the_nav_the_line_is_read_on_and_the_line_does_not_know():
+    # the section 17 shape at two-and-twenty: -6%, +1%, +20%, -10%, +40%
+    # on $5bn, 5% hurdle. At zero-and-thirty the compounding line is
+    # cleared in the last year; the 2% a year comes out of the NAV in
+    # every year and the line compounds from the capital regardless, so
+    # at two-and-twenty the fund stands further under it on the way and
+    # charges less when it clears
+    col = _column([-300e6, 50e6, 1000e6, -500e6, 2000e6])
+    lean = fund_walk(col, 5e9, None, mgmt=0.0, perf=0.2, hurdle=0.05, **_variant("cumulative catch_up 100%"))
+    fat = fund_walk(col, 5e9, None, mgmt=0.02, perf=0.2, hurdle=0.05, **_variant("cumulative catch_up 100%"))
+    assert lean["years_charged"] >= fat["years_charged"]
+    assert fat["incentive"] < lean["incentive"]
+    assert fat["management"] > 0 and lean["management"] == 0.0
+    # the line, as a rate on the mark, is higher at two-and-twenty in every
+    # year before the charge, because the mark is lower and the line is not
+    for a, b in zip(lean["schedule"], fat["schedule"]):
+        if a["incentive"] == 0.0 and b["incentive"] == 0.0:
+            assert b["hurdle_rate_charged"] >= a["hurdle_rate_charged"] - 1e-12
+
+
+def test_the_waterfall_sweep_runs_every_arm_on_every_clause_and_the_verdicts_read_them():
+    col = _column([-100e6, 150e6, 150e6, -200e6, 150e6, 150e6, 150e6, 150e6, 150e6, 300e6])
+    cells = waterfall_sweep(col, [], hurdles=(0.05,))
+    assert len(cells) == len(WATERFALL_ARMS) * len(WATERFALL_CLAUSES) * len(col)
+    assert all(c["clawback"] == 0.0 for c in cells if c["arm"] == "2-and-20, none")
+    assert all(c["returned_before_the_end"] == 0.0 for c in cells if "terminal" in c["arm"])
+    assert all(c["mgmt"] == 0.02 for c in cells if c["arm"].startswith("2-and-20"))
+    v = waterfall_verdicts(cells)
+    assert set(v["interim_returns_less_than_terminal"]) == {"5%"}
+    assert v["stacked_charged_years_0_and_30"] == {} and v["stacked_one_year_more_0_and_30"] is None
+    assert v["escrow_charged_cells"] == v["escrow_grew_in"] + v["escrow_shrank_in"]
+    # with section 18's sweep handed in, the zero-and-thirty columns fill
+    from fill_realism import stacked_sweep
+    v = waterfall_verdicts(cells, stacked_sweep(col, [], hurdles=(0.05,)))
+    assert set(v["stacked_charged_years_0_and_30"]) == {"5%"}
+    assert isinstance(v["stacked_one_year_more_0_and_30"], list)
+
+
+def test_section_19_runs_the_waterfall_sweep_and_scores_the_predictions(capsys):
+    prices, opens, volumes = _tape()
+    sections = _sections(prices, opens, volumes, quick=True)
+    with pytest.raises(SystemExit, match="section 11"):
+        sections[19]({"bars": 2520})
+    col = _column([-100e6, 150e6, 150e6, 150e6, 150e6, 150e6, 150e6, 150e6, 150e6, 150e6])
+    added = sections[19]({"capacity_surface": col, "surface_knees": [], "bars": 2520})
+    out = capsys.readouterr().out
+    assert set(added) == {"waterfall_arms", "waterfall_sweep", "waterfall_verdicts"}
+    assert len(added["waterfall_sweep"]) == 3 * len(WATERFALL_ARMS) * len(WATERFALL_CLAUSES) * len(col)
+    assert "19. THE CLAWBACK TESTED EARLY" in out
+    assert "Two-and-twenty" in out

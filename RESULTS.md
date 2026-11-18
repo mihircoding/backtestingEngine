@@ -2147,15 +2147,218 @@ mark the fee came out of, and on this tape that is the difference between
 a fund that paid once in a decade and one that paid twice.
 
 What this does not do: the clawback is terminal and the escrow earns
-nothing — an interim clawback tested every year, or escrowed dollars that
+nothing — ~~an interim clawback tested every year, or escrowed dollars that
 earn the fund's return, would both bite earlier and return less, and are
-the next cells. The lifetime test is on the whole decade, so a fund that
+the next cells.~~ (Section 19: the interim test bites in the year of the
+charge and returns *twice* the dollars, because it charges and refunds the
+same dollars inside the year; the escrow that earns returns more too, and
+the manager keeps a fifth of its growth.) The lifetime test is on the whole decade, so a fund that
 wound up in 2022 would have been clawed harder than one that ran to 2024;
 the wind-up date is the tape's end and not a choice. And the nine cells
 where the stacked clause charged one year more say the line should be
 run at two-and-twenty too, where the management fee moves the mark every
 year by the same mechanism, which is the one schedule this section does
 not run.
+
+### 19. Test the clawback every year, let the escrow earn, and run the stack at two-and-twenty — and find a yearly hurdle with an interim clawback is the compounding hurdle until the first year the fund is over its line, and after that keeps what the compounding one gave up
+
+Reproduce with: `python fill_realism.py --section 19` (arithmetic on section
+11; nothing is re-run)
+
+Section 18's clawback was the simplest form of the clause: tested once, at
+wind-up, on an escrow that earned nothing. The document usually does
+neither. The carry is tested at every distribution, and the escrow sits in
+the fund or in treasuries. And section 18 ran everything at zero-and-thirty,
+where the split is a constant, and found nine cells where the stacked
+clause charged one year more than the compounding hurdle because the fee
+comes out of the NAV the line is read on — which is what a management fee
+does every year. So three arms on the same 42 cells at 2%, 5% and 8%,
+under the four clauses that matter (the yearly hard hurdle, the compounding
+one, the yearly catch-up and the stacked clause). `fund_walk(clawback=
+"interim")` runs section 18's test at the end of every year on the life so
+far — the carry paid to date against what the clause would charge on the
+years so far as one, at the hurdle compounded through them — and what
+stands over the cap comes back then, into the NAV the next year is sized
+on, with the mark raised to meet it so a returned dollar is not charged as
+excess twice. `fund_walk(escrow="fund")` lets the paid carry earn the
+fund's own net return in every year after the one it was charged in, and
+tests the escrow's *value*: the manager keeps the cap and the rest of the
+value comes back. And the stacked clause and its neighbours run at
+two-and-twenty, with and without the terminal clawback. 3,024 walks, under
+a second.
+
+The predictions, written first. The interim test bites earlier: in every
+cell the terminal clawback bit on the yearly hurdle, the interim one
+returns something before the last year, and in more than half of them the
+first return is 2022, the year the surface loses. It returns less and the
+manager keeps more: a dollar returned in 2022 goes back into a fund under
+its mark and is part of the excess when the mark is re-cleared, so it is
+charged again — fewer dollars returned across the surface at every hurdle,
+and more kept in every cell where anything came back early. Section 18's
+identity, the yearly hurdle within 3% of the compounding one once both are
+clawed, does not survive it: under the interim test the yearly clause
+keeps more than 3% over the compounding one at 2% and 5%. The escrow that
+earns: the manager keeps a fifth of the escrow's own growth and the
+investor seven tenths, and this tape ends on its high, so the manager
+keeps more than with cash at 2% and 5% and the dollars returned are more
+too; at 8% the 22 cells where everything came back stay exactly 22,
+because under the lifetime line the cap is zero whatever the escrow
+earned. Two-and-twenty: the 2% comes out of the NAV the line is read on
+and the line compounds without it, so the stacked clause charges fewer
+years than at zero-and-thirty at every hurdle; the cells where it charges
+one year more than the compounding hurdle are still there, between 2 and
+6 of the 126 against 3 at zero-and-thirty; and the yearly hurdle after its
+clawback is still within 3% of the compounding one at 2% and 5%, because
+the 2% is in both.
+
+Seven predictions; four failed. The interim test bit *earlier* than
+earlier — in the year of the charge — and returned more, not less; the
+escrow's growth lifted two cells over a line their decade was under; and
+at two-and-twenty the nine cells are gone, not fewer.
+
+**The yearly hard hurdle at 20% participation — what the manager keeps,
+$m, and what came back, under each clawback, with the year the interim
+test first returned anything; then the stacked clause's years charged of
+years up at the two schedules:**
+
+```
+                        terminal, cash        interim, cash          terminal, fund    stacked   stacked
+   5% hurdle           kept    returned      kept   returned  first    kept   returned     0-30      2-20
+   $0.1bn               26         9          25        21    2017      28        14        4/6       2/5
+   $1bn                161       110         171       175    2017     178       150        2/5       2/4
+   $2bn                267       232         307       308    2017     296       298        2/4       2/4
+   $5bn                392       585         424       728    2017     437       690        2/4       1/4
+   $10bn               766     1,156         606     1,615    2017     861     1,379        1/5       1/4
+   $20bn                 0     2,182           0     2,296    2017       0     2,460        1/5       0/4
+   $100bn                0        47           0        47    2021       0        48        0/5       0/0
+
+   2% hurdle
+   $5bn                994       187         685       880    2017   1,052       322        4/4       2/4
+   $10bn             1,983       368       1,124     1,749    2017   2,101       645        4/5       2/4
+   $20bn             2,258       762       1,266     2,282    2017   2,372     1,029        4/4       1/4
+```
+
+**Across the 42 cells, $bn — what the manager keeps and what comes back,
+on the yearly hard hurdle, and the two clawed clauses against each
+other:**
+
+```
+                                 2% hurdle           5% hurdle           8% hurdle
+                              kept  returned      kept  returned      kept  returned
+   terminal, cash (s. 18)     29.8     15.8        9.4     22.4        0.2     22.8
+   interim, cash              19.6     34.3        9.2     26.1        0.3     22.7
+   terminal, fund             31.5     20.0       10.6     25.7        0.3     25.9
+
+   yearly over compounding, both clawed:
+   terminal                  +2.4%               +2.4%              -26%
+   interim                  +27%               +128%              +144%
+   two-and-twenty, terminal  +2.6%               +2.2%              -58%
+```
+
+**The interim test gives a charge back in the year it is made, and until
+the fund first stands over the lifetime line the yearly hurdle is the
+compounding hurdle to the dollar.** The first return was 2017 in 87 of
+the 112 cells, not 2022, and in 76 cells the first charge came back
+whole the same December. 2017 is the first year the yearly hurdle charges
+— the fund clears its mark and 5% — but three years of 5% compounded is
+15.8% and three years of this tape made 9.8% at $5bn, so the life so far
+is under its line and the cap is zero. The yearly clause charges 30% of
+what stands over the mark plus one year's hurdle; the lifetime test allows
+30% of what stands over the capital plus *every* year's hurdle; so the
+charge comes back, and the same in 2020. That is the compounding hurdle's
+arithmetic, done in two steps: in 80 of the 112 cells the yearly clause
+with an interim clawback kept exactly the compounding clause's dollars,
+year for year, up to and including the compounding clause's first charge.
+At $5bn and 20%, 2021 charged $579m and returned $213m, and $366m is the
+compounding clause's 2021 charge to the dollar. The return in a year the
+fund *is* over the line is an identity: perf × (lifetime line − the mark
+going in × (1 + h)), the hurdle dollars the yearly clause never exempted,
+whatever the year made — $213m is 30% of ($5bn × 1.05⁷ − $6,024m × 1.05).
+It held in 116 of the 116 partial returns on the surface, and the test
+`test_the_interim_test_returns_a_charge_in_the_year_it_was_made…` shows
+the same $15.7m coming back from a +20% year and a +40% one. So the
+interim test does not return less: it returns $34.3bn at 2% against the
+terminal's $15.8bn, because it charges and refunds the same dollars inside
+the year, in every up year before the fund has earned its hurdle. The
+mechanism written down — returned dollars charged again when the mark is
+re-cleared — is not on the tape: the mark is raised to meet them, which
+is the one line of the implementation, and after that they are under it.
+
+**After the first year over the line the two clauses part, and the yearly
+one keeps what the compounding one gave up.** 2022 loses, and both
+clauses give 2021's carry back — the yearly clause its $366m, the
+compounding clause its $366m. Then the lines differ. The compounding
+clause's line was reset to the NAV when 2021 was charged and has
+compounded from there; the return in 2022 does not un-reset it, because
+the line resets on a charge and a refund is not one. In 2024 it charges
+30% of what stands over a line 15.7% above the 2021 mark: $171m. The
+yearly clause charges 30% of what stands over the mark plus one 5%:
+$424m, and the lifetime cap at the end is $466m, so it keeps all of it.
+The compounding clause looks back at the years since its last charge; the
+lifetime test looks at the decade; and in 2024 the decade is over its
+line while the three years since 2021 are not. So under the interim test
+the yearly hurdle keeps 27%, 128% and 144% more than the compounding one,
+where the terminal test had them within 3%. Section 18 said a yearly
+hurdle with a clawback is the compounding one collected late; it is that
+until the fund earns its line, and after that it is the clause that gets
+paid for the recovery, because its own line is a year long. Across the
+surface the manager keeps $19.6bn at 2% under the interim test against
+$29.8bn under the terminal — a third less — and about the same at 5% and
+8%: more in 27 cells, 26 of them under the knee, where the returned
+dollars go into a book that grows with its NAV, and less in 49.
+
+**The escrow that earns makes the manager a fifth richer on the growth
+and two cells richer on the line.** It grew in all 112 charged cells —
+median 16.6% — because the tape ends on its high and every charge is
+before the end. The manager keeps $31.5bn at 2% against $29.8bn, $10.6bn
+at 5% against $9.4bn, and in all 75 cells where both escrows keep
+something the difference is 30% of the growth to the dollar; the
+returned dollars are more too, $20.0bn and $25.7bn, the investor's 70%
+of the same growth. That was the prediction. The 22 cells at 8% where
+everything came back are 20: $2bn at 5% and 10% participation grossed
+113% of their capital over the decade, under the 116% line, and the
+escrow's growth is counted in the test — the NAV with the escrow's value
+put back — so with a $484m escrow on $398m of charges the fund is over
+its line and the manager keeps $12m. An escrow that earns the fund's
+return is capital the fund did not have to earn its hurdle on, and the
+lifetime test does not know the difference.
+
+**At two-and-twenty the nine cells are gone, and the management fee is
+ten times the carry.** The stacked clause's charged years fall 135 → 92,
+75 → 40 and 22 → 8 across the surface, as predicted, and the yearly
+hurdle after its clawback sits 2.6% and 2.2% over the compounding one at
+2% and 5%, as predicted. But the cells where the stacked clause charged
+one year more than the compounding hurdle are 0 of 126, not 2 to 6. The
+$5bn fund at 20% and 5% shows why: at zero-and-thirty the stacked
+clause's bigger 2021 charge took the fund from $1.5m under its 2024 line
+to over it. At two-and-twenty the 2% has come out of the NAV for ten
+years and the line has compounded from the capital for seven of them
+before 2021 — the line stands 32% over the mark that year, not 17% — and
+in 2024 the fund's excess over its mark is 12.6% against a line at 15.7%,
+$270m under, under either clause. The catch-up still lowers the mark by
+$68m; it cannot find $270m. The mechanism of section 18 is there and the
+tape has nothing for it to tip. And the schedule that runs it: $159bn of
+management fee across the surface at every hurdle, against $15.8bn, $5.4bn
+and $0.1bn of incentive on the stacked clause — the fee that is not
+hurdled, clawed or marked is the one that is ten times the one that is.
+
+So: a terminal clawback is a statement about the decade; an interim one
+is a statement about every year, and a yearly hurdle under it *is* the
+compounding hurdle until the fund has earned its line, charged and
+refunded in the same breath — and after that it is the better clause for
+the manager, because its line restarts every year and the compounding
+clause's restarts only on a charge. The escrow earning the fund's return
+is capital in the test the fund never earned. And at two-and-twenty the
+only clause that matters is the one that has no clause.
+
+What this does not do: the interim test is run with the escrow in cash;
+the arm with both (`"interim, fund"`) is in the sweep and not in the
+tables, and differs from the cash arm by the escrow's growth in the years
+it waited, which is under a year in most cells. The escrow that earns
+could earn treasuries instead, which is a rate this surface does not
+carry. And the two-and-twenty surface is one schedule; section 15's
+indifference return, run under the clawback, would say which schedule
+the investor should have signed once the document has both halves.
 
 ### What this still does not model
 
