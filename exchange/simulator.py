@@ -47,9 +47,30 @@ def ticks_from_touch(book: LimitOrderBook, order) -> int:
     return int(round(abs(order.price - best) / TICK))
 
 
+def event_mix(p_cancel: float | None = None) -> tuple[float, float, float]:
+    """The (limit, market, cancel) shares of events at a given cancel rate.
+
+    None is the flow every section was measured on: 60/25/15. Any other
+    cancel share takes its events from the limit and market shares in their
+    original 60:25 proportion, so the book is the same market with more (or
+    fewer) of its messages being cancels, rather than a market whose makers
+    and takers have changed their relative weight too. At p_cancel = 0.45
+    the mix is 39/16/45. The numbers are exact at the flow's own rate, so a
+    caller passing P_CANCEL gets the same thresholds as a caller passing
+    nothing.
+    """
+    if p_cancel is None or p_cancel == P_CANCEL:
+        return P_LIMIT, P_MARKET, P_CANCEL
+    if not 0.0 <= p_cancel < 1.0:
+        raise ValueError(f"p_cancel must be in [0, 1), got {p_cancel}")
+    scale = (1.0 - p_cancel) / (P_LIMIT + P_MARKET)
+    return P_LIMIT * scale, P_MARKET * scale, p_cancel
+
+
 def simulate(book: LimitOrderBook, n_events: int = 5000, seed: int = 0,
              hook=None, protected_ids=(), cancel_focus: float = 1.0,
-             max_tries: int = 200) -> dict:
+             max_tries: int = 200, p_cancel: float | None = None,
+             clean_stale: bool = False) -> dict:
     """Push random events through the book and record what happens.
 
     Returns {'mids', 'spreads', 'n_trades', 'volume', 'impacts'} where `impacts`
@@ -91,8 +112,30 @@ def simulate(book: LimitOrderBook, n_events: int = 5000, seed: int = 0,
     focused flow the way section 9 did under the uniform one. max_tries caps
     the retries, so an order twenty ticks back is still cancelled now and then
     rather than never.
+
+    p_cancel changes how many events are cancels (see event_mix()). It is
+    the dial section 10 said was missing: the focus is a shape, and a real
+    busy touch has the shape *and* ten cancels per trade. None keeps the
+    flow every earlier section was measured on.
+
+    clean_stale keeps the pool a cancel draws from to orders that are still
+    live. Left False, an order that trades away stays in the list until a
+    cancel happens to draw it, so over a long run most cancel events land
+    on a filled order and do nothing - about two thirds of them by the end
+    of a 20,000-event warm-up, which puts the live cancel rate near 5% of
+    events against the nominal 15%. That is the flow sections 1-10 were run
+    on, and it is what the default reproduces. With True, a filled order
+    leaves the list the moment it fills, so every cancel event reaches a
+    live order and the nominal rate is the live rate. The two share their
+    random stream event for event; only the pool a cancel draws from
+    differs. Section 11 measures what the stylized facts do under it.
+
+    The result also counts cancel_events and live_cancels, the latter being
+    the cancels that reached an order still in the book.
     """
     rng = np.random.default_rng(seed)
+    p_limit, p_market, _ = event_mix(p_cancel)
+    p_market_cum = p_limit + p_market
     picker = np.random.default_rng(seed + 104_729) if cancel_focus < 1.0 else None
     protected = set(protected_ids)
 
@@ -103,13 +146,30 @@ def simulate(book: LimitOrderBook, n_events: int = 5000, seed: int = 0,
     volume = 0
 
     live_ids: list[int] = [i for i in book._by_id if i not in protected]
+    # id -> slot in live_ids, kept only when the list is being cleaned, so the
+    # default path is the same code it always was
+    slot: dict[int, int] = ({i: k for k, i in enumerate(live_ids)}
+                            if clean_stale else {})
     last_mid = book.mid_price() or 100.0
+    cancel_events = 0
+    live_cancels = 0
+
+    def drop(idx: int) -> None:
+        """Swap-remove live_ids[idx], keeping the slot map in step."""
+        last = live_ids[-1]
+        gone = live_ids[idx]
+        live_ids[idx] = last
+        live_ids.pop()
+        if clean_stale:
+            slot.pop(gone, None)
+            if idx < len(live_ids):
+                slot[last] = idx
 
     for _i in range(n_events):
         roll = rng.random()
         mid = book.mid_price() or last_mid
 
-        if roll < P_LIMIT:
+        if roll < p_limit:
             side = Side.BUY if rng.random() < 0.5 else Side.SELL
             offset = abs(rng.normal(0, OFFSET_TICKS)) * TICK
             passive = rng.random() < P_PASSIVE
@@ -125,9 +185,11 @@ def simulate(book: LimitOrderBook, n_events: int = 5000, seed: int = 0,
             qty = int(rng.integers(*LIMIT_QTY))
             oid, trades = book.add_limit_order(side, to_tick(price), qty)
             if oid in book._by_id:
+                if clean_stale:
+                    slot[oid] = len(live_ids)
                 live_ids.append(oid)
 
-        elif roll < P_LIMIT + P_MARKET:
+        elif roll < p_market_cum:
             side = Side.BUY if rng.random() < 0.5 else Side.SELL
             qty = int(rng.integers(*MARKET_QTY))
             before = book.mid_price()
@@ -138,6 +200,7 @@ def simulate(book: LimitOrderBook, n_events: int = 5000, seed: int = 0,
 
         else:
             trades = []
+            cancel_events += 1
             if live_ids:
                 idx = int(rng.integers(0, len(live_ids)))
                 if picker is not None and live_ids[idx] in book._by_id:
@@ -159,9 +222,15 @@ def simulate(book: LimitOrderBook, n_events: int = 5000, seed: int = 0,
                 # Stale ids are left in the list on purpose: cancel() returning
                 # False for an already-filled order is exactly what a real
                 # gateway sees when a cancel races a fill.
-                book.cancel(live_ids[idx])
-                live_ids[idx] = live_ids[-1]
-                live_ids.pop()
+                if book.cancel(live_ids[idx]):
+                    live_cancels += 1
+                drop(idx)
+
+        if clean_stale:
+            for t in trades:
+                k = slot.get(t.maker_id)
+                if k is not None and t.maker_id not in book._by_id:
+                    drop(k)
 
         n_trades += len(trades)
         volume += sum(t.quantity for t in trades)
@@ -176,7 +245,8 @@ def simulate(book: LimitOrderBook, n_events: int = 5000, seed: int = 0,
             hook(_i, book, trades)
 
     return {"mids": mids, "spreads": spreads, "n_trades": n_trades,
-            "volume": volume, "impacts": impacts}
+            "volume": volume, "impacts": impacts,
+            "cancel_events": cancel_events, "live_cancels": live_cancels}
 
 
 def impact_exponent(impacts: list[tuple[int, float]],

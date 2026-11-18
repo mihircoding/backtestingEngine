@@ -1,0 +1,976 @@
+{
+  "rates": [
+    0.25,
+    0.3,
+    0.35,
+    0.4,
+    0.45
+  ],
+  "predicted_rates": [
+    0.25,
+    0.35,
+    0.45
+  ],
+  "focus": 0.3,
+  "n_seeds": 45,
+  "horizon": 1000,
+  "base_from": [
+    "results/queue_melt.json",
+    "results/queue_focus.json"
+  ],
+  "cells": {
+    "0.25_0.3": {
+      "horizon": 1000,
+      "buckets": [
+        {
+          "lo": 0,
+          "hi": 200,
+          "n": 25,
+          "median_ahead": 92,
+          "held_fill_rate": 1.0,
+          "melt_fill_rate": 1.0,
+          "held_events": 8.56,
+          "melt_events": 8.56,
+          "held_markout": -0.040000000000020464,
+          "melt_markout": -0.040000000000020464,
+          "held_adverse": -0.6399999999999864,
+          "melt_adverse": -0.6399999999999864,
+          "traded_share": 0.9116564417177914,
+          "cancelled_share": 0.08834355828220859,
+          "held_cancelled_share": 0.08834355828220859
+        },
+        {
+          "lo": 200,
+          "hi": 1000,
+          "n": 44,
+          "median_ahead": 592,
+          "held_fill_rate": 1.0,
+          "melt_fill_rate": 1.0,
+          "held_events": 41.22727272727273,
+          "melt_events": 40.40909090909091,
+          "held_markout": 0.4204545454545183,
+          "melt_markout": 0.23863636363643728,
+          "held_adverse": -0.49999999999996514,
+          "melt_adverse": -0.6136363636362254,
+          "traded_share": 0.8761923003256081,
+          "cancelled_share": 0.12380769967439188,
+          "held_cancelled_share": 0.033518483049224286
+        },
+        {
+          "lo": 1000,
+          "hi": 5000,
+          "n": 61,
+          "median_ahead": 2138,
+          "held_fill_rate": 0.9344262295081968,
+          "melt_fill_rate": 0.9672131147540983,
+          "held_events": 256.82456140350877,
+          "melt_events": 215.23728813559322,
+          "held_markout": 1.40350877192967,
+          "melt_markout": 1.1355932203388897,
+          "held_adverse": 0.2719298245613806,
+          "melt_adverse": 0.06779661016945394,
+          "traded_share": 0.7209795047706898,
+          "cancelled_share": 0.27471102014931825,
+          "held_cancelled_share": 0.10117898013894093
+        },
+        {
+          "lo": 5000,
+          "hi": 20000,
+          "n": 49,
+          "median_ahead": 8187,
+          "held_fill_rate": 0.5510204081632653,
+          "melt_fill_rate": 0.7959183673469388,
+          "held_events": 658.4444444444445,
+          "melt_events": 472.9230769230769,
+          "held_markout": 1.9074074074073568,
+          "melt_markout": 1.230769230769168,
+          "held_adverse": 0.7777777777776493,
+          "melt_adverse": 0.20512820512812788,
+          "traded_share": 0.5398900738735637,
+          "cancelled_share": 0.3801953770664202,
+          "held_cancelled_share": 0.04571530972428867
+        },
+        {
+          "lo": 20000,
+          "hi": 1000000000,
+          "n": 46,
+          "median_ahead": 30187,
+          "held_fill_rate": 0.0,
+          "melt_fill_rate": 0.0,
+          "held_events": null,
+          "melt_events": null,
+          "held_markout": null,
+          "melt_markout": null,
+          "held_adverse": null,
+          "melt_adverse": null,
+          "traded_share": 0.3078522015578262,
+          "cancelled_share": 0.3916113435717245,
+          "held_cancelled_share": 0.009500433520456613
+        }
+      ]
+    },
+    "0.3_0.3": {
+      "horizon": 1000,
+      "buckets": [
+        {
+          "lo": 0,
+          "hi": 200,
+          "n": 21,
+          "median_ahead": 69,
+          "held_fill_rate": 0.9523809523809523,
+          "melt_fill_rate": 0.9523809523809523,
+          "held_events": 7.85,
+          "melt_events": 7.85,
+          "held_markout": 0.30000000000001137,
+          "melt_markout": 0.30000000000001137,
+          "held_adverse": -0.37500000000008527,
+          "melt_adverse": -0.37500000000008527,
+          "traded_share": 0.8856664807585053,
+          "cancelled_share": 0.11433351924149471,
+          "held_cancelled_share": 0.11433351924149471
+        },
+        {
+          "lo": 200,
+          "hi": 1000,
+          "n": 49,
+          "median_ahead": 581,
+          "held_fill_rate": 0.9795918367346939,
+          "melt_fill_rate": 0.9795918367346939,
+          "held_events": 62.041666666666664,
+          "melt_events": 49.916666666666664,
+          "held_markout": 0.7500000000000581,
+          "melt_markout": 1.000000000000038,
+          "held_adverse": -0.2708333333334127,
+          "melt_adverse": 0.052083333333197146,
+          "traded_share": 0.7579686655861696,
+          "cancelled_share": 0.2276247073653881,
+          "held_cancelled_share": 0.06126418152350081
+        },
+        {
+          "lo": 1000,
+          "hi": 5000,
+          "n": 57,
+          "median_ahead": 2160,
+          "held_fill_rate": 0.9649122807017544,
+          "melt_fill_rate": 0.9649122807017544,
+          "held_events": 268.2181818181818,
+          "melt_events": 196.52727272727273,
+          "held_markout": 1.563636363636285,
+          "melt_markout": 1.4181818181817945,
+          "held_adverse": 0.281818181818003,
+          "melt_adverse": 0.19090909090904648,
+          "traded_share": 0.59600135756379,
+          "cancelled_share": 0.38478448674832616,
+          "held_cancelled_share": 0.1127009348677918
+        },
+        {
+          "lo": 5000,
+          "hi": 20000,
+          "n": 53,
+          "median_ahead": 8210,
+          "held_fill_rate": 0.49056603773584906,
+          "melt_fill_rate": 0.8867924528301887,
+          "held_events": 689.0384615384615,
+          "melt_events": 498.3191489361702,
+          "held_markout": 1.4807692307691958,
+          "melt_markout": 1.6595744680851692,
+          "held_adverse": 0.34615384615374994,
+          "melt_adverse": 0.29787234042550287,
+          "traded_share": 0.47461828532607525,
+          "cancelled_share": 0.4963967682709218,
+          "held_cancelled_share": 0.08879730316594216
+        },
+        {
+          "lo": 20000,
+          "hi": 1000000000,
+          "n": 45,
+          "median_ahead": 30210,
+          "held_fill_rate": 0.0,
+          "melt_fill_rate": 0.06666666666666667,
+          "held_events": null,
+          "melt_events": 939.3333333333334,
+          "held_markout": null,
+          "melt_markout": 1.6666666666670455,
+          "held_adverse": null,
+          "melt_adverse": 0.8333333333335228,
+          "traded_share": 0.266866480302026,
+          "cancelled_share": 0.48992766362143003,
+          "held_cancelled_share": 0.010414565261246721
+        }
+      ]
+    },
+    "0.35_0.3": {
+      "horizon": 1000,
+      "buckets": [
+        {
+          "lo": 0,
+          "hi": 200,
+          "n": 19,
+          "median_ahead": 102,
+          "held_fill_rate": 1.0,
+          "melt_fill_rate": 1.0,
+          "held_events": 9.631578947368421,
+          "melt_events": 9.631578947368421,
+          "held_markout": 0.6578947368419557,
+          "melt_markout": 0.6578947368419557,
+          "held_adverse": -0.26315789473690193,
+          "melt_adverse": -0.26315789473690193,
+          "traded_share": 0.6755555555555556,
+          "cancelled_share": 0.3244444444444444,
+          "held_cancelled_share": 0.3244444444444444
+        },
+        {
+          "lo": 200,
+          "hi": 1000,
+          "n": 57,
+          "median_ahead": 609,
+          "held_fill_rate": 0.9824561403508771,
+          "melt_fill_rate": 0.9824561403508771,
+          "held_events": 79.96428571428571,
+          "melt_events": 63.214285714285715,
+          "held_markout": 1.6428571428571712,
+          "melt_markout": 1.3125000000000244,
+          "held_adverse": 0.21428571428577317,
+          "melt_adverse": 0.08928571428583609,
+          "traded_share": 0.6178901165430604,
+          "cancelled_share": 0.37678220069623125,
+          "held_cancelled_share": 0.1581958528833056
+        },
+        {
+          "lo": 1000,
+          "hi": 5000,
+          "n": 59,
+          "median_ahead": 2133,
+          "held_fill_rate": 0.7966101694915254,
+          "melt_fill_rate": 0.9152542372881356,
+          "held_events": 296.6595744680851,
+          "melt_events": 150.7962962962963,
+          "held_markout": 1.9148936170213189,
+          "melt_markout": 2.046296296296277,
+          "held_adverse": 0.34042553191485614,
+          "melt_adverse": 0.7314814814813688,
+          "traded_share": 0.47913601502582565,
+          "cancelled_share": 0.5035138519330099,
+          "held_cancelled_share": 0.08141336672405697
+        },
+        {
+          "lo": 5000,
+          "hi": 20000,
+          "n": 45,
+          "median_ahead": 8219,
+          "held_fill_rate": 0.1111111111111111,
+          "melt_fill_rate": 0.8444444444444444,
+          "held_events": 873.2,
+          "melt_events": 403.60526315789474,
+          "held_markout": 4.10000000000025,
+          "melt_markout": 2.105263157894767,
+          "held_adverse": 2.300000000000182,
+          "melt_adverse": 0.7105263157895007,
+          "traded_share": 0.33295542043915777,
+          "cancelled_share": 0.6211693173671773,
+          "held_cancelled_share": 0.014284576374691342
+        },
+        {
+          "lo": 20000,
+          "hi": 1000000000,
+          "n": 45,
+          "median_ahead": 30219,
+          "held_fill_rate": 0.0,
+          "melt_fill_rate": 0.0,
+          "held_events": null,
+          "melt_events": null,
+          "held_markout": null,
+          "melt_markout": null,
+          "held_adverse": null,
+          "melt_adverse": null,
+          "traded_share": 0.22128886384756663,
+          "cancelled_share": 0.5801014173550998,
+          "held_cancelled_share": 0.003936690984392264
+        }
+      ]
+    },
+    "0.4_0.3": {
+      "horizon": 1000,
+      "buckets": [
+        {
+          "lo": 0,
+          "hi": 200,
+          "n": 32,
+          "median_ahead": 102,
+          "held_fill_rate": 1.0,
+          "melt_fill_rate": 1.0,
+          "held_events": 14.3125,
+          "melt_events": 14.3125,
+          "held_markout": 2.343749999999778,
+          "melt_markout": 2.343749999999778,
+          "held_adverse": -0.07812500000023981,
+          "melt_adverse": -0.07812500000023981,
+          "traded_share": 0.36388415672913116,
+          "cancelled_share": 0.6361158432708688,
+          "held_cancelled_share": 0.6361158432708688
+        },
+        {
+          "lo": 200,
+          "hi": 1000,
+          "n": 44,
+          "median_ahead": 602,
+          "held_fill_rate": 1.0,
+          "melt_fill_rate": 1.0,
+          "held_events": 113.4090909090909,
+          "melt_events": 58.25,
+          "held_markout": 5.170454545454526,
+          "melt_markout": 6.829545454545218,
+          "held_adverse": 2.1931818181818583,
+          "melt_adverse": 3.8977272727269896,
+          "traded_share": 0.3872660069154644,
+          "cancelled_share": 0.6127339930845356,
+          "held_cancelled_share": 0.1614005802631056
+        },
+        {
+          "lo": 1000,
+          "hi": 5000,
+          "n": 38,
+          "median_ahead": 2113,
+          "held_fill_rate": 0.9736842105263158,
+          "melt_fill_rate": 1.0,
+          "held_events": 386.7837837837838,
+          "melt_events": 160.47368421052633,
+          "held_markout": 2.891891891891605,
+          "melt_markout": 2.881578947368343,
+          "held_adverse": 0.5135135135132769,
+          "melt_adverse": 0.8552631578947817,
+          "traded_share": 0.33768684511098973,
+          "cancelled_share": 0.6623131548890103,
+          "held_cancelled_share": 0.036797934151065206
+        },
+        {
+          "lo": 5000,
+          "hi": 20000,
+          "n": 38,
+          "median_ahead": 8113,
+          "held_fill_rate": 0.10526315789473684,
+          "melt_fill_rate": 0.9736842105263158,
+          "held_events": 898.25,
+          "melt_events": 467.7567567567568,
+          "held_markout": -2.750000000000341,
+          "melt_markout": 3.3243243243241047,
+          "held_adverse": -4.8749999999998295,
+          "melt_adverse": 1.783783783783621,
+          "traded_share": 0.2871773597625005,
+          "cancelled_share": 0.7121744428743664,
+          "held_cancelled_share": 0.009606284921632938
+        },
+        {
+          "lo": 20000,
+          "hi": 1000000000,
+          "n": 38,
+          "median_ahead": 30113,
+          "held_fill_rate": 0.0,
+          "melt_fill_rate": 0.05263157894736842,
+          "held_events": null,
+          "melt_events": 950.0,
+          "held_markout": null,
+          "melt_markout": 0.999999999999801,
+          "held_adverse": null,
+          "melt_adverse": 0.0,
+          "traded_share": 0.1833841831011019,
+          "cancelled_share": 0.648670042671867,
+          "held_cancelled_share": 0.0025896685853280072
+        }
+      ]
+    },
+    "0.45_0.3": {
+      "horizon": 1000,
+      "buckets": [
+        {
+          "lo": 0,
+          "hi": 200,
+          "n": 19,
+          "median_ahead": 125,
+          "held_fill_rate": 1.0,
+          "melt_fill_rate": 1.0,
+          "held_events": 14.894736842105264,
+          "melt_events": 14.894736842105264,
+          "held_markout": -0.631578947368445,
+          "melt_markout": -0.631578947368445,
+          "held_adverse": -2.5789473684211006,
+          "melt_adverse": -2.5789473684211006,
+          "traded_share": 0.2513014671083767,
+          "cancelled_share": 0.7486985328916232,
+          "held_cancelled_share": 0.7486985328916232
+        },
+        {
+          "lo": 200,
+          "hi": 1000,
+          "n": 23,
+          "median_ahead": 625,
+          "held_fill_rate": 1.0,
+          "melt_fill_rate": 1.0,
+          "held_events": 60.08695652173913,
+          "melt_events": 21.869565217391305,
+          "held_markout": 0.8260869565217293,
+          "melt_markout": 0.23913043478263835,
+          "held_adverse": -1.2608695652174184,
+          "melt_adverse": -1.6086956521738092,
+          "traded_share": 0.3222471260212566,
+          "cancelled_share": 0.6777528739787434,
+          "held_cancelled_share": 0.1425782662135782
+        },
+        {
+          "lo": 1000,
+          "hi": 5000,
+          "n": 21,
+          "median_ahead": 2129,
+          "held_fill_rate": 1.0,
+          "melt_fill_rate": 1.0,
+          "held_events": 245.38095238095238,
+          "melt_events": 78.9047619047619,
+          "held_markout": 3.523809523809432,
+          "melt_markout": 3.071428571428688,
+          "held_adverse": 0.9999999999996996,
+          "melt_adverse": 1.3095238095240396,
+          "traded_share": 0.3055095925942489,
+          "cancelled_share": 0.6944904074057511,
+          "held_cancelled_share": 0.03973435892849157
+        },
+        {
+          "lo": 5000,
+          "hi": 20000,
+          "n": 21,
+          "median_ahead": 8129,
+          "held_fill_rate": 0.47619047619047616,
+          "melt_fill_rate": 1.0,
+          "held_events": 889.7,
+          "melt_events": 315.6190476190476,
+          "held_markout": 3.1500000000001194,
+          "melt_markout": 0.2857142857143642,
+          "held_adverse": 0.3999999999997783,
+          "melt_adverse": -1.5714285714286986,
+          "traded_share": 0.25043052447839176,
+          "cancelled_share": 0.7495694755216082,
+          "held_cancelled_share": 0.01040873466805684
+        },
+        {
+          "lo": 20000,
+          "hi": 1000000000,
+          "n": 21,
+          "median_ahead": 30129,
+          "held_fill_rate": 0.0,
+          "melt_fill_rate": 0.38095238095238093,
+          "held_events": null,
+          "melt_events": 916.125,
+          "held_markout": null,
+          "melt_markout": 1.4375000000001137,
+          "held_adverse": null,
+          "melt_adverse": -0.1875000000000071,
+          "traded_share": 0.1949481762922737,
+          "cancelled_share": 0.7667632862457762,
+          "held_cancelled_share": 0.0028085004156643834
+        }
+      ]
+    },
+    "0.45_1.0": {
+      "horizon": 1000,
+      "buckets": [
+        {
+          "lo": 0,
+          "hi": 200,
+          "n": 13,
+          "median_ahead": 90,
+          "held_fill_rate": 1.0,
+          "melt_fill_rate": 1.0,
+          "held_events": 15.923076923076923,
+          "melt_events": 15.923076923076923,
+          "held_markout": 2.153846153846381,
+          "melt_markout": 2.153846153846381,
+          "held_adverse": 0.269230769230743,
+          "melt_adverse": 0.269230769230743,
+          "traded_share": 0.1467146714671467,
+          "cancelled_share": 0.8532853285328533,
+          "held_cancelled_share": 0.8532853285328533
+        },
+        {
+          "lo": 200,
+          "hi": 1000,
+          "n": 13,
+          "median_ahead": 590,
+          "held_fill_rate": 1.0,
+          "melt_fill_rate": 1.0,
+          "held_events": 89.6923076923077,
+          "melt_events": 27.846153846153847,
+          "held_markout": 3.4230769230768705,
+          "melt_markout": 3.0769230769230114,
+          "held_adverse": 1.2692307692304894,
+          "melt_adverse": 1.153846153846307,
+          "traded_share": 0.32032584417290766,
+          "cancelled_share": 0.6796741558270923,
+          "held_cancelled_share": 0.12455656286953094
+        },
+        {
+          "lo": 1000,
+          "hi": 5000,
+          "n": 13,
+          "median_ahead": 2090,
+          "held_fill_rate": 1.0,
+          "melt_fill_rate": 1.0,
+          "held_events": 259.15384615384613,
+          "melt_events": 82.6923076923077,
+          "held_markout": 2.346153846154008,
+          "melt_markout": 4.423076923077054,
+          "held_adverse": 0.30769230769257444,
+          "melt_adverse": 1.8461538461536975,
+          "traded_share": 0.300284017557449,
+          "cancelled_share": 0.699715982442551,
+          "held_cancelled_share": 0.0349673564235919
+        },
+        {
+          "lo": 5000,
+          "hi": 20000,
+          "n": 13,
+          "median_ahead": 8090,
+          "held_fill_rate": 0.46153846153846156,
+          "melt_fill_rate": 1.0,
+          "held_events": 896.6666666666666,
+          "melt_events": 430.2307692307692,
+          "held_markout": 3.0833333333333712,
+          "melt_markout": 3.5769230769231033,
+          "held_adverse": 1.000000000000038,
+          "melt_adverse": 1.2692307692305986,
+          "traded_share": 0.20350867178506532,
+          "cancelled_share": 0.7964913282149347,
+          "held_cancelled_share": 0.009019037018009532
+        },
+        {
+          "lo": 20000,
+          "hi": 1000000000,
+          "n": 13,
+          "median_ahead": 30090,
+          "held_fill_rate": 0.0,
+          "melt_fill_rate": 0.0,
+          "held_events": null,
+          "melt_events": null,
+          "held_markout": null,
+          "melt_markout": null,
+          "held_adverse": null,
+          "melt_adverse": null,
+          "traded_share": 0.1182988972440049,
+          "cancelled_share": 0.7786203916535204,
+          "held_cancelled_share": 0.002423864324961456
+        }
+      ]
+    },
+    "0.15_0.3_clean": {
+      "horizon": 1000,
+      "buckets": [
+        {
+          "lo": 0,
+          "hi": 200,
+          "n": 28,
+          "median_ahead": 123,
+          "held_fill_rate": 1.0,
+          "melt_fill_rate": 1.0,
+          "held_events": 22.25,
+          "melt_events": 22.25,
+          "held_markout": 1.3035714285714104,
+          "melt_markout": 1.3035714285714104,
+          "held_adverse": 0.1428571428570637,
+          "melt_adverse": 0.1428571428570637,
+          "traded_share": 0.9197894084855992,
+          "cancelled_share": 0.08021059151440074,
+          "held_cancelled_share": 0.08021059151440074
+        },
+        {
+          "lo": 200,
+          "hi": 1000,
+          "n": 49,
+          "median_ahead": 623,
+          "held_fill_rate": 0.9387755102040817,
+          "melt_fill_rate": 0.9387755102040817,
+          "held_events": 87.80434782608695,
+          "melt_events": 89.45652173913044,
+          "held_markout": 1.5543478260868404,
+          "melt_markout": 1.4999999999998097,
+          "held_adverse": 0.2934782608693601,
+          "melt_adverse": 0.4239130434779989,
+          "traded_share": 0.7709090909090909,
+          "cancelled_share": 0.19969413763806287,
+          "held_cancelled_share": 0.07663551401869159
+        },
+        {
+          "lo": 1000,
+          "hi": 5000,
+          "n": 58,
+          "median_ahead": 2150,
+          "held_fill_rate": 0.7413793103448276,
+          "melt_fill_rate": 0.8275862068965517,
+          "held_events": 232.46511627906978,
+          "melt_events": 175.875,
+          "held_markout": 1.8837209302324642,
+          "melt_markout": 2.0937499999999907,
+          "held_adverse": 0.5930232558137446,
+          "melt_adverse": 0.9687499999998295,
+          "traded_share": 0.6910089349372734,
+          "cancelled_share": 0.23315787078472716,
+          "held_cancelled_share": 0.06298448142473567
+        },
+        {
+          "lo": 5000,
+          "hi": 20000,
+          "n": 45,
+          "median_ahead": 8155,
+          "held_fill_rate": 0.4,
+          "melt_fill_rate": 0.6444444444444445,
+          "held_events": 642.5,
+          "melt_events": 531.8275862068965,
+          "held_markout": 1.611111111110988,
+          "melt_markout": 1.7068965517240555,
+          "held_adverse": 0.3055555555555145,
+          "melt_adverse": 0.6724137931033758,
+          "traded_share": 0.5410540319930459,
+          "cancelled_share": 0.30317068258191726,
+          "held_cancelled_share": 0.009556570871275163
+        },
+        {
+          "lo": 20000,
+          "hi": 1000000000,
+          "n": 45,
+          "median_ahead": 30155,
+          "held_fill_rate": 0.0,
+          "melt_fill_rate": 0.0,
+          "held_events": null,
+          "melt_events": null,
+          "held_markout": null,
+          "melt_markout": null,
+          "held_adverse": null,
+          "melt_adverse": null,
+          "traded_share": 0.252337398671281,
+          "cancelled_share": 0.2383642012327657,
+          "held_cancelled_share": 0.0026372526935667415
+        }
+      ]
+    }
+  },
+  "flow": {
+    "0.15_1.0": {
+      "spread_ticks": 1.9658124999999629,
+      "trades_per_event": 0.6951708333333334,
+      "shares_per_event": 36.54674166666666,
+      "live_cancels_per_event": 0.04614583333333333,
+      "live_share_of_cancels": 0.3093972472082133,
+      "live_orders": 2160.6666666666665
+    },
+    "0.15_0.3": {
+      "spread_ticks": 2.0127791666666575,
+      "trades_per_event": 0.6919708333333333,
+      "shares_per_event": 36.44061249999999,
+      "live_cancels_per_event": 0.045554166666666666,
+      "live_share_of_cancels": 0.3054603636855127,
+      "live_orders": 2234.75
+    },
+    "0.25_0.3": {
+      "spread_ticks": 2.1217745319429264,
+      "trades_per_event": 0.6033333333333334,
+      "shares_per_event": 31.886958333333336,
+      "live_cancels_per_event": 0.08027083333333333,
+      "live_share_of_cancels": 0.3217789580105423,
+      "live_orders": 1315.75
+    },
+    "0.35_0.3": {
+      "spread_ticks": 2.7100832700773494,
+      "trades_per_event": 0.496275,
+      "shares_per_event": 26.802850000000003,
+      "live_cancels_per_event": 0.13370833333333335,
+      "live_share_of_cancels": 0.3817245611435975,
+      "live_orders": 378.8333333333333
+    },
+    "0.45_0.3": {
+      "spread_ticks": 4.623661637504288,
+      "trades_per_event": 0.17675833333333335,
+      "shares_per_event": 11.022462499999998,
+      "live_cancels_per_event": 0.2828833333333333,
+      "live_share_of_cancels": 0.62812244919336,
+      "live_orders": 3.1666666666666665
+    },
+    "0.45_1.0": {
+      "spread_ticks": 3.4571368152387936,
+      "trades_per_event": 0.18284999999999998,
+      "shares_per_event": 11.252854166666667,
+      "live_cancels_per_event": 0.27298333333333336,
+      "live_share_of_cancels": 0.6058798088529217,
+      "live_orders": 1.3333333333333333
+    },
+    "0.15_0.3_clean": {
+      "spread_ticks": 2.4025037688285047,
+      "trades_per_event": 0.6678666666666667,
+      "shares_per_event": 35.63330416666667,
+      "live_cancels_per_event": 0.14915833333333334,
+      "live_share_of_cancels": 1.0,
+      "live_orders": 652.0833333333334
+    },
+    "0.3_0.3": {
+      "spread_ticks": 2.2720121123739183,
+      "trades_per_event": 0.5554833333333333,
+      "shares_per_event": 29.463487500000003,
+      "live_cancels_per_event": 0.10166666666666667,
+      "live_share_of_cancels": 0.33881468583715885,
+      "live_orders": 841.5833333333334
+    },
+    "0.4_0.3": {
+      "spread_ticks": 4.492042189505959,
+      "trades_per_event": 0.33513333333333334,
+      "shares_per_event": 19.302262499999994,
+      "live_cancels_per_event": 0.22887499999999994,
+      "live_share_of_cancels": 0.5720867886872909,
+      "live_orders": 17.416666666666668
+    }
+  },
+  "facts": {
+    "default": {
+      "n_trades": 35128,
+      "volume": 1850207,
+      "live_share_of_cancels": 0.28642540024216334,
+      "spread_mean": 0.01979019999999987,
+      "spread_at_floor": 0.3786,
+      "depth": {
+        "buy": [
+          [
+            100.07,
+            940
+          ],
+          [
+            100.06,
+            5867
+          ],
+          [
+            100.05,
+            43400
+          ],
+          [
+            100.04,
+            76773
+          ],
+          [
+            100.03,
+            64406
+          ],
+          [
+            100.02,
+            35342
+          ],
+          [
+            100.01,
+            19458
+          ],
+          [
+            100.0,
+            11387
+          ]
+        ],
+        "sell": [
+          [
+            100.1,
+            739
+          ],
+          [
+            100.11,
+            6772
+          ],
+          [
+            100.12,
+            102217
+          ],
+          [
+            100.13,
+            74866
+          ],
+          [
+            100.14,
+            47915
+          ],
+          [
+            100.15,
+            20416
+          ],
+          [
+            100.16,
+            12214
+          ],
+          [
+            100.17,
+            6875
+          ]
+        ]
+      },
+      "touch_depth": 839.5,
+      "hump": 102217,
+      "impact_exponent": 0.9453764691711493,
+      "hurst": 0.32017443566697823,
+      "hurst_seeds_1_5": [
+        0.33897924206311153,
+        0.32251497542222923,
+        0.3182334532755098,
+        0.3623294408311928,
+        0.3133602218839333
+      ],
+      "live_orders": 5149
+    },
+    "clean": {
+      "n_trades": 34615,
+      "volume": 1832433,
+      "live_share_of_cancels": 1.0,
+      "spread_mean": 0.021140717903545776,
+      "spread_at_floor": 0.35206502372324877,
+      "depth": {
+        "buy": [
+          [
+            100.13,
+            393
+          ],
+          [
+            100.12,
+            1716
+          ],
+          [
+            100.11,
+            3046
+          ],
+          [
+            100.1,
+            2164
+          ],
+          [
+            100.09,
+            3258
+          ],
+          [
+            100.08,
+            2259
+          ],
+          [
+            100.07,
+            2396
+          ],
+          [
+            100.06,
+            1126
+          ]
+        ],
+        "sell": [
+          [
+            100.16,
+            739
+          ],
+          [
+            100.17,
+            2700
+          ],
+          [
+            100.18,
+            3003
+          ],
+          [
+            100.19,
+            2775
+          ],
+          [
+            100.2,
+            1259
+          ],
+          [
+            100.21,
+            1176
+          ],
+          [
+            100.22,
+            517
+          ],
+          [
+            100.23,
+            95
+          ]
+        ]
+      },
+      "touch_depth": 566.0,
+      "hump": 3258,
+      "impact_exponent": 0.9439888157108465,
+      "hurst": 0.33903459184014956,
+      "hurst_seeds_1_5": [
+        0.379148890908094,
+        0.3705993034223924,
+        0.3289469244982209,
+        0.4698669690040001,
+        0.34228240065978016
+      ],
+      "live_orders": 319
+    }
+  },
+  "ratio_by_rate_focus_0.3": [
+    [
+      0.15,
+      3.1865374896299192
+    ],
+    [
+      0.25,
+      1.420033241959291
+    ],
+    [
+      0.3,
+      0.9561268639586301
+    ],
+    [
+      0.35,
+      0.5360139516394459
+    ],
+    [
+      0.4,
+      0.4032401929553108
+    ],
+    [
+      0.45,
+      0.3340991497874468
+    ]
+  ],
+  "inversion_rate": 0.2952713372652415,
+  "verdicts": [
+    {
+      "claim": "the ratio from 5,000 back at focus 0.3 falls as (1-p)/p - about 1.7, 1.1, 0.7 at 0.25, 0.35, 0.45 - and inverts between 0.30 and 0.40",
+      "measured": "[(0.15, 3.19), (0.25, 1.42), (0.3, 0.96), (0.35, 0.54), (0.4, 0.4), (0.45, 0.33)], crosses 1 at 0.295",
+      "held": false
+    },
+    {
+      "claim": "under uniform cancels the ratio does not invert at 0.45, about 5: the rate alone is not enough",
+      "measured": "uniform 0.45: 0.26",
+      "held": false
+    },
+    {
+      "claim": "the 20,000+ melt at 1,000 events rises less than proportionally: about 30%, 40%, 50%, each within ten points",
+      "measured": "{0.25: '39.2%', 0.35: '58.0%', 0.45: '76.7%'}",
+      "held": false
+    },
+    {
+      "claim": "20,000+ still never fills at 1,000 events at any rate",
+      "measured": "{0.25: '0.0%', 0.35: '0.0%', 0.45: '38.1%'}",
+      "held": false
+    },
+    {
+      "claim": "the held fill rate from 5,000-20,000 back falls with the rate at every step, to under 45% at 0.45",
+      "measured": "['55%', '55%', '11%', '48%'] at 0.15, 0.25, 0.35, 0.45",
+      "held": false
+    },
+    {
+      "claim": "the spread widens with the rate, past 2.5 ticks at 0.45",
+      "measured": "[2.01, 2.12, 2.71, 4.62] ticks",
+      "held": true
+    },
+    {
+      "claim": "clean warm books move section 10's (0.15, 0.3) cell by little: 20,000+ melt up under five points, ratio down under one",
+      "measured": "melt +4.1%, ratio -1.40",
+      "held": false
+    },
+    {
+      "claim": "at the true 15%: spread mean within 10% and floor share within five points; hump shrinks more than five-fold; impact exponent rises but stays under 1; H rises but stays under 0.5",
+      "measured": "spread 0.0198 -> 0.0211, floor 37.9% -> 35.2%, hump 102,217 -> 3,258, impact 0.95 -> 0.94, H 0.32 -> 0.34",
+      "held": false
+    }
+  ]
+}

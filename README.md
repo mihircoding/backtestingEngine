@@ -196,6 +196,7 @@ python benchmark.py                 # throughput and latency
 python queue_study.py               # what a place in the queue is worth
 python melt_study.py                # and what holding the queue still was hiding
 python focus_study.py               # and whether it melts once the cancels know where the touch is
+python cancel_rate_study.py --part facts   # turn the cancel rate up; and the stylized facts on a clean cancel list
 python latency_study.py             # what a 15us disadvantage costs a market maker
 python auction_study.py             # the opening auction, where the rules differ
 ```
@@ -260,7 +261,13 @@ Section 9 lets the queue in front of that trader melt, and finds that in a
 book whose cancels do not know where the touch is, it hardly does. Section 10
 points the cancels at the touch, and the queue melts four times as fast - and
 only half as fast as the arithmetic said, because a long queue is the touch
-only half the time, and the cancels follow the touch.
+only half the time, and the cancels follow the touch. Section 11 turns the
+cancel rate up and the trade-to-cancel ratio inverts at a cancel share of
+0.30 - sooner than the arithmetic said, because the rate thins the book the
+arithmetic held fixed, and by 0.45 the book is empty and the focus no longer
+matters. The same section finds the depth hump of section 2 was mostly a
+bookkeeping artifact: two thirds of the cancels were landing on orders that
+had already traded.
 
 ### The event-driven backtester
 

@@ -132,16 +132,21 @@ class MakerOutcome:
 
 
 def warm_book(seed: int, n_events: int = WARMUP_EVENTS,
-              cancel_focus: float = 1.0) -> LimitOrderBook:
+              cancel_focus: float = 1.0, p_cancel: float | None = None,
+              clean_stale: bool = False) -> LimitOrderBook:
     """A book shaped by the flow the rest of the project characterized.
 
     cancel_focus below 1.0 warms it under the touch-focused cancel stream of
     section 10 instead, so the queue under study is measured in a book that
-    was built by the same flow that will be melting it.
+    was built by the same flow that will be melting it. p_cancel and
+    clean_stale go straight to simulate(): section 11 warms books under a
+    higher cancel rate, and under a cancel stream that reaches a live order
+    every time.
     """
     book = LimitOrderBook()
     seed_book(book, mid=100.0, levels=20, qty=200)
-    simulate(book, n_events=n_events, seed=seed, cancel_focus=cancel_focus)
+    simulate(book, n_events=n_events, seed=seed, cancel_focus=cancel_focus,
+             p_cancel=p_cancel, clean_stale=clean_stale)
     return book
 
 
@@ -151,7 +156,8 @@ def rest_one_order(book: LimitOrderBook, improve_ticks: int = 0,
                    markout: int = MARKOUT_EVENTS,
                    seed: int = 0, melt: bool = False,
                    pad_lot: int = PAD_LOT,
-                   cancel_focus: float = 1.0) -> MakerOutcome | None:
+                   cancel_focus: float = 1.0,
+                   p_cancel: float | None = None) -> MakerOutcome | None:
     """Rest one buy order and follow it until it fills or the horizon ends.
 
     improve_ticks=0 joins the best bid, behind whatever is already there.
@@ -172,7 +178,9 @@ def rest_one_order(book: LimitOrderBook, improve_ticks: int = 0,
     cancelling it.
 
     cancel_focus is passed straight to simulate(): below 1.0 the cancels that
-    do the melting cluster at the touch instead of landing anywhere.
+    do the melting cluster at the touch instead of landing anywhere. So is
+    p_cancel, the share of events that are cancels (section 11); the horizon
+    always starts from a clean list, so clean_stale has nothing to do here.
     """
     best_bid, best_ask = book.best_bid(), book.best_ask()
     if best_bid is None or best_ask is None:
@@ -234,7 +242,8 @@ def rest_one_order(book: LimitOrderBook, improve_ticks: int = 0,
 
     protect = [order_id] if melt else [order_id, *pad_ids]
     simulate(book, n_events=horizon, seed=seed + 7919, hook=watch,
-             protected_ids=protect, cancel_focus=cancel_focus)
+             protected_ids=protect, cancel_focus=cancel_focus,
+             p_cancel=p_cancel)
 
     if ahead_at_exit is None:
         still = book.queue_ahead(order_id)
@@ -303,7 +312,8 @@ def bucket(outcomes: list[MakerOutcome], edges=(0, 200, 1_000, 5_000, 20_000,
 
 def paired_melt(pads=(0, 500, 2_000, 8_000, 30_000), seeds=range(45),
                 horizon: int = 1_000, improve_ticks: int = 0,
-                cancel_focus: float = 1.0,
+                cancel_focus: float = 1.0, p_cancel: float | None = None,
+                clean_stale: bool = False,
                 **kwargs) -> list[tuple[MakerOutcome, MakerOutcome]]:
     """The same order in the same book twice: queue held still, queue melting.
 
@@ -316,19 +326,27 @@ def paired_melt(pads=(0, 500, 2_000, 8_000, 30_000), seeds=range(45),
 
     cancel_focus below 1.0 runs both sides under section 10's touch-focused
     cancels, warm-up included. The pairing survives it: the focused draw
-    consumes the main random stream exactly as the uniform one does.
+    consumes the main random stream exactly as the uniform one does. p_cancel
+    sets the cancel share of events for warm-up and horizon both (section
+    11); clean_stale applies to the warm-up only, since the horizon starts
+    from a clean list anyway. The pairing survives both as well: neither
+    changes which event is drawn, only what a cancel reaches.
     """
     pairs = []
     for pad in pads:
         for seed in seeds:
-            held = rest_one_order(warm_book(seed, cancel_focus=cancel_focus),
+            warm = dict(cancel_focus=cancel_focus, p_cancel=p_cancel,
+                        clean_stale=clean_stale)
+            held = rest_one_order(warm_book(seed, **warm),
                                   improve_ticks=improve_ticks, pad=pad,
                                   seed=seed, horizon=horizon, melt=False,
-                                  cancel_focus=cancel_focus, **kwargs)
-            melted = rest_one_order(warm_book(seed, cancel_focus=cancel_focus),
+                                  cancel_focus=cancel_focus, p_cancel=p_cancel,
+                                  **kwargs)
+            melted = rest_one_order(warm_book(seed, **warm),
                                     improve_ticks=improve_ticks, pad=pad,
                                     seed=seed, horizon=horizon, melt=True,
-                                    cancel_focus=cancel_focus, **kwargs)
+                                    cancel_focus=cancel_focus, p_cancel=p_cancel,
+                                    **kwargs)
             if held is not None and melted is not None:
                 pairs.append((held, melted))
     return pairs

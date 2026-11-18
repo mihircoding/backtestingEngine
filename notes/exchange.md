@@ -62,6 +62,10 @@ So liquidity accumulates far from the mid at levels that would never survive in 
 The honest summary: the *shape* is emergent, the *magnitude* is an artifact. Distinguishing
 those two is the entire skill in reading a simulation.
 
+*Section 11 found where most of the magnitude came from: the cancel stream was drawing two
+thirds of its cancels on orders that had already traded. With the list kept clean the same
+agents build the same shape at a thirtieth of the size.*
+
 ## 3. Price impact
 
 | Market order size | Mean \|mid move\| | n |
@@ -789,21 +793,190 @@ queue-jumper's cancels take away.
 
 ### What this does not model
 
-- **The focus is a shape, not a rate.** Real cancel flow is both: most cancels are at the touch
+- ~~**The focus is a shape, not a rate.** Real cancel flow is both: most cancels are at the touch
   *and* there are ten or more of them per trade. This run changed the shape with the rate held at
   the flow's 15% of events, and the ratio stopped at three. A cancel rate that rises with the
   focus, or a `P_CANCEL` sweep under it, is the direct test of the inversion the arithmetic above
-  says is available at 0.7.
+  says is available at 0.7.~~ Section 11 sweeps the rate: the ratio inverts at 0.30, and by 0.45
+  it inverts without the focus, because there is no book left to point the cancels at.
 - **Cancels still vanish.** A real repositioning cancel is followed by a re-post a tick away, so
   the liquidity moves rather than leaving. Here the cancelled order is gone and the flow's next
   passive limit order is its only replacement.
 - **The queue was built once and melted once.** Nothing re-joins, nothing re-pads. The improver
   that steps in front of the queue and is then pulled is the flow's own order, not a strategy, and
   the half-the-time number is a property of this spread and this offset distribution.
-- **The warm-up list is two thirds stale.** Sections 1-5 and every warm book here ran on a cancel
+- ~~**The warm-up list is two thirds stale.** Sections 1-5 and every warm book here ran on a cancel
   stream whose live share decays over the run. The stylized facts in those sections were measured
   on a 5% live cancel rate, not 15%, and nothing has yet asked whether they move when the list is
-  kept clean.
+  kept clean.~~ Section 11 asked: the spread, the impact and the Hurst exponent do not move, and
+  the depth hump falls thirty-fold.
+
+## 11. Turn the cancel rate up
+
+Section 10 ended on arithmetic. With the cancels pointed at the touch a share in front of you was
+still traded three times for every time it was cancelled, and if every one of the 148 live
+cancels in 1,000 events had landed on the 30,000-share queue it would have melted 14,800 shares
+against the 10,000 that traded — a ratio of 0.7, inverted. The placement had taken the ratio from
+twenty-four to three, the write-up said, and the *rate* had to do the rest. `simulate()` has the
+dial now: `p_cancel` sets the share of events that are cancels, and the limit and market shares
+scale down in their original 60:25 proportion, so the makers and takers keep their relative
+weight and the book is the same market with more of its messages being cancels. The flow's own
+rate reproduces the old thresholds exactly (`event_mix()`), which is what keeps sections 1-10
+where they were. `cancel_rate_study.py` runs section 10's short table — five pads, 45 seeds,
+1,000 events, held against melting — at 0.25, 0.35 and 0.45 under a focus of 0.3, with 0.30 and
+0.40 added afterwards for the crossing's resolution, and at 0.45 under uniform cancels as the
+control. The 0.15 columns are read from sections 9 and 10.
+
+The same section found the warm-up's cancel list two thirds stale. An order that trades stays in
+the pool a cancel draws from until a cancel happens to draw it, so over a long run the nominal
+15% cancel share is nearer 5% of events reaching a live order, and sections 1-5 were measured on
+that flow. `simulate(clean_stale=True)` removes a filled order the moment it fills; the two share
+their random stream event for event and differ only in what a cancel reaches. One thing was
+measured while building it and is reported rather than predicted: after a 20,000-event warm-up
+the clean book holds about 330 live orders against 2,200. The study reruns sections 1-4 (50,000
+events, seed 7) both ways, and runs section 10's (0.15, 0.3) cell once more on clean warm books.
+
+Eight predictions were written before the run and `rate_verdicts()` scores them. Seven failed,
+and the first two failures are the finding. The arithmetic was 3.2 × (0.15 / 0.85) × (1 − p) / p,
+from trades per event falling with the market share and cancels per event rising with p, which is
+1.7 at 0.25, 1.1 at 0.35, 0.7 at 0.45, and crosses one at 0.36.
+
+| cancel share, focus | warm spread | live orders, warm | trades / event | live cancels | 20,000+ melt | 5,000-20,000 held / melt | traded : cancelled |
+|---------------------|------------:|------------------:|---------------:|-------------:|-------------:|-------------------------:|-------------------:|
+| 0.15, uniform (s.9) |   1.97 ticks |            2,161 |           0.69 |    31% |  4.9% |   60% / 61% | 24.3 |
+| 0.15, 0.3 (s.10)    |   2.01       |            2,235 |           0.69 |    31% | 19.7% |   55% / 65% |  3.19 |
+| 0.25, 0.3           |   2.12       |            1,316 |           0.60 |    32% | 39.2% |   55% / 80% |  1.42 |
+| 0.30, 0.3           |   2.27       |              842 |           0.56 |    34% | 49.0% |   49% / 89% |  0.96 |
+| 0.35, 0.3           |   2.71       |              379 |           0.50 |    38% | 58.0% |   11% / 84% |  0.54 |
+| 0.40, 0.3           |   4.49       |               17 |           0.34 |    57% | 64.9% |   11% / 97% |  0.40 |
+| 0.45, 0.3           |   4.62       |                3 |           0.18 |    63% | 76.7% |  48% / 100% |  0.33 |
+| 0.45, uniform       |   3.46       |                1 |           0.18 |    61% | 77.9% |  46% / 100% |  0.26 |
+| 0.15, 0.3, clean warm-up | 2.40    |              652 |           0.67 |   100% | 23.8% |   40% / 64% |  1.78 |
+
+1,000 events to fill. "Live cancels" is the share of cancel events that reached an order still
+in the book during the warm-up; "live orders" is what the warm book held at the end of it. The
+ratio is section 10's, from 5,000 shares back.
+
+### The ratio inverts at 0.30, and by 0.45 the focus does not matter
+
+The ratio crosses one at a cancel share of 0.295, not 0.36, and the whole curve sits under the
+arithmetic: 1.42 at 0.25 against 1.7, 0.54 at 0.35 against 1.1, 0.33 at 0.45 against 0.7. The
+20,000+ row's melt went 39%, 58%, 77% against a prediction of 30%, 40%, 50% — more than in
+proportion to the rate, where the prediction said less. Both failures have the same cause, and it
+is in the third column. **The arithmetic held the book fixed, and the rate thins the book.** The
+flow's resting orders arrive at 0.6 × 0.8 × (1 − p) / 0.85 of events and leave by trade or by
+cancel; at 0.15 the cancels that reach a live order are 5% of events and the book grows by an
+order every two events, at 0.30 the warm book is 842 orders, at 0.35 it is 379, and at 0.40 it is
+seventeen. The queue's share of the cancel weight — 300 padded orders against a rest-of-book that
+section 10 put at 124 order-equivalents — climbs toward one as the rest of the book goes away,
+and so does the share of cancel events that reach a live order at all (31% to 63%), because the
+pool they draw from stops filling with the dead. The cancels per trade that land on the queue
+rise faster than (1 − p) / p on both counts.
+
+The control is the second failure. Under uniform cancels at 0.45 the ratio is 0.26, inverted
+harder than under the focus, where the prediction was five and the sentence behind it was that
+the rate alone is not enough and the placement is necessary. At 0.45 the warm book holds one
+live order. The padded queue *is* the book, a uniform draw from the book is a draw from the
+queue, and the focus has nothing left to point at. So the placement is necessary at the flow's
+rate, where there are 2,200 other orders for a uniform cancel to land on, and unnecessary at a
+rate that has emptied the book — which is to say the inversion this sweep found is the
+inversion of an empty market. The spread at 0.45 is 4.6 ticks, trades per event are a quarter of
+the flow's, and the 20,000+ row fills 38% of the time at 1,000 events (prediction 4 failed) not
+because the queue melted to nothing but because with no other depth every market sell that
+arrives hits our level. A real busy touch has ten cancels per trade *and* a deep book, because a
+real cancel is a re-post a tick away; this flow cannot have both, because a cancelled order here
+is gone and the flow's next passive limit order is its only replacement. Section 10's "a real
+busy touch inverts it" is still the right sentence, and what this run adds is that between the
+rate and the depth this flow can only give you one.
+
+The held side is where the sweep is strangest, and it says what the other columns mean. The held
+fill rate from 5,000-20,000 back goes 55%, 55%, 49%, 11%, 11%, 48% — not monotone (prediction 5
+failed). The held queue is one protected order with nothing melting in front of it, so what
+decides whether it fills is the race between the market orders and the improvers: passive limit
+orders landing inside the spread, which take the flow before it reaches the queue. At 0.35 the
+spread is 2.7 ticks, which is room for an improver on most events, and the cancel stream — 38%
+live, over 379 orders — is slow to pull it, so 89% of the time the queue waits behind something.
+At 0.45 the spread is wider still, but 63% of the cancels are live and there are three orders in
+the book, so an improver lasts a handful of events, and the queue is the touch again. Section 10
+measured the queue as the touch half the time at one spread; the spread is what sets that
+fraction, and the rate sets the spread (prediction 6 held: 2.0, 2.1, 2.7, 4.6 ticks).
+
+### The warm book was never the background
+
+Section 10's cell rerun on clean warm books moved by more than "little": the melt in the 20,000+
+row rose 19.7% to 23.8% (inside the five points allowed) but the ratio fell 3.19 to 1.78, and the
+held fill rate from 5,000-20,000 back fell from 55% to 40% (prediction 7 failed). The warm book
+has 652 live orders instead of 2,235 and a spread of 2.4 ticks instead of 2.0, and both act the
+way the sweep says they act: a thinner rest-of-book gives the queue more of the cancels, and a
+wider spread gives the improvers more of the trades. Nothing about the horizon changed — it starts
+from a fresh list either way — but the book the horizon runs in is a different book, and the
+queue-position numbers in sections 8-10 belong to the stale-list book as much as the stylized
+facts in sections 1-5 do. They are not wrong; they are measured in a market with 2,200 resting
+orders and a two-tick spread, and that market was made by a cancel stream that drew from the
+dead.
+
+### The hump was the stale list
+
+| | default list | clean list |
+|---|---:|---:|
+| trades | 35,128 | 34,615 |
+| cancels reaching a live order | 29% | 100% |
+| spread, mean | 0.0198 | 0.0211 |
+| share of time at one tick | 37.9% | 35.2% |
+| depth at the touch (mean of both sides) | 840 | 566 |
+| largest level in the top eight | 102,217 | 3,258 |
+| impact exponent | 0.945 | 0.944 |
+| Hurst exponent | 0.320 | 0.339 |
+| live orders at the end | 5,149 | 319 |
+
+50,000 events, seed 7, as in sections 1-4. The clean book's depth profile:
+
+| Level | Bid px | Bid qty | Ask px | Ask qty |
+|---|---|---|---|---|
+| 1 | 100.13 |   393 | 100.16 |   739 |
+| 2 | 100.12 | 1,716 | 100.17 | 2,700 |
+| 3 | 100.11 | 3,046 | 100.18 | 3,003 |
+| 4 | 100.10 | 2,164 | 100.19 | 2,775 |
+| 5 | 100.09 | 3,258 | 100.20 | 1,259 |
+| 6 | 100.08 | 2,259 | 100.21 | 1,176 |
+| 7 | 100.07 | 2,396 | 100.22 |   517 |
+| 8 | 100.06 | 1,126 | 100.23 |    95 |
+
+Prediction 8 failed on one clause of five — the impact exponent did not rise, 0.945 to 0.944 —
+and the other four are the result. The spread's mean moved 7% and its time at the floor 2.7
+points; the impact exponent did not move; H went 0.32 to 0.34 (0.31-0.36 to 0.33-0.47 across
+seeds 1-5 at 8,000 events, still under a half everywhere). Sections 1, 3 and 4 are made at the
+touch, by replenishment and consumption, and the cleaning does not reach the touch. Section 2 is
+made away from it, and the largest level in the top eight went from 102,217 shares to 3,258 — a
+thirty-fold fall, where the prediction said five — with the book holding 319 orders at the end
+instead of 5,149. Section 2 called its magnitude an artifact of agents who never reprice, and that
+is true, but it is not the mechanism: an order three ticks out survives here because the cancel
+stream that was meant to remove it was spending two thirds of its draws on orders that had
+already traded. Keep the list clean and the same agents, who still never reprice, build a hump of
+three thousand shares that is thin at the touch and fat two to five ticks out — the shape section
+2 claimed as emergent, at a tenth of the size it claimed was wrong. The depth artifact was mostly
+a bookkeeping artifact, and the stylized facts that mattered were never standing on it.
+
+The default stays the stale list, because sections 1-10 reproduce on it; `clean_stale=True` is
+the flow to use from here on, and the table above is what changes when you do.
+
+### What this does not model
+
+- **Cancels still vanish, and now it costs something.** The one thing a higher cancel rate
+  cannot do here is what it does in a real market, which is move liquidity rather than remove
+  it. A cancel-replace model — the pulled order re-posted a tick toward the touch — is what would
+  let the rate rise without the book collapsing, and it is the only way this flow gets to ask
+  the question section 10 meant: a busy touch with depth behind it.
+- **The rate sweep changes three things at once.** The cancel share, the spread and the depth
+  move together, and the held column shows they do not move monotonically with each other. A
+  sweep that holds the spread fixed (more passive arrivals as the rate rises) would separate the
+  improver effect from the melt.
+- **Markouts in a four-tick spread are a different unit.** The melting markouts at 0.40 and 0.45
+  (+2 to +7 ticks) are measured against a mid that moves two ticks when one side empties; they
+  are reported in the tables and read for sign only.
+- **Sections 8-10 were not rerun clean.** The clean cell above is one cell. The break-even
+  queue, the adverse-selection sign and the join-or-improve table all belong to the 2,200-order
+  book, and the one cell says the ratio and the held fill rate would both move.
 
 ## What isn't modeled
 
@@ -828,7 +1001,10 @@ queue-jumper's cancels take away.
   ahead. It also finds the adverse-selection sign REVERSED against the textbook account, for a
   reason that is a property of this null model rather than of queueing. Section 9 lets the queue
   in front melt and finds it barely does — 18,700 shares — because a uniform cancel stream eats
-  the touch twenty-four times slower than trading does.
+  the touch twenty-four times slower than trading does. Section 10 points the cancels at the touch and the ratio falls to
+  three; section 11 turns the cancel rate up and it inverts at 0.30 — by which point the rate
+  has thinned the book to a third, and by 0.45 to nothing, so the inversion is of an empty
+  market. Section 11 also finds the depth hump was mostly the stale cancel list.
 - Agents have no memory, no inventory, and no information — which is exactly what makes it a
   valid null model, exactly what makes the depth magnitudes wrong, and, per section 8, exactly
   why adverse selection comes out with the wrong sign here.
